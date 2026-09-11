@@ -1,0 +1,19 @@
+{
+  "name": "siteremade-app",
+  "version": "5.0.0",
+  "private": true,
+  "description": "SiteRemade client operations app \u2014 Supabase production foundation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "bootstrap-owner": "node scripts/bootstrap-owner.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "dotenv": "^16.4.7"
+  }
+}

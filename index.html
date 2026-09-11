@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SiteRemade — Client App</title>
+  <meta name="description" content="SiteRemade client dashboard for leads, conversations, scheduling and payments." />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="favicon.png" />
+  <link rel="stylesheet" href="app.css?v=14" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0d0e11" />
+</head>
+<body>
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+      <div class="auth-tabs" role="tablist">
+        <button type="button" class="auth-tab active" id="showLogin" aria-selected="true">Sign in</button>
+        <button type="button" class="auth-tab" id="showSignup" aria-selected="false">Create account</button>
+      </div>
+
+      <form id="loginForm">
+        <p class="eyebrow">CLIENT APP</p><h1>Sign in</h1><p>Access leads, conversations, bookings and payments.</p>
+        <label>Email<input name="email" type="email" placeholder="you@business.com" autocomplete="email" required /></label>
+        <label>Password<input name="password" type="password" placeholder="Password" autocomplete="current-password" required /></label>
+        <button class="primary-action auth-submit" type="submit">Sign in</button><small id="loginStatus">Supabase-secured account</small>
+      </form>
+
+      <form id="signupForm" hidden>
+        <p class="eyebrow">NEW CLIENT</p><h1>Create account</h1><p>Your SiteRemade workspace is created automatically.</p>
+        <div class="auth-two">
+          <label>Your name<input name="name" placeholder="Alex Smith" autocomplete="name" required /></label>
+          <label>Business name<input name="businessName" placeholder="Northline Electric" required /></label>
+        </div>
+        <label>Email<input name="email" type="email" placeholder="you@business.com" autocomplete="email" required /></label>
+        <label>Phone<input name="phone" type="tel" placeholder="403-555-0123" autocomplete="tel" /></label>
+        <div class="auth-two">
+          <label>Service / industry<input name="services" placeholder="Electrical, service calls" /></label>
+          <label>Service area<input name="serviceArea" placeholder="Calgary + area" /></label>
+        </div>
+        <label>Password<input name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="new-password" required /></label>
+        <button class="primary-action auth-submit" type="submit">Create my workspace</button><small id="signupStatus">Your account is isolated to your business workspace.</small>
+      </form>
+    </div>
+  </div>
+
+  <div class="subscription-lock" id="subscriptionLock" hidden>
+    <div class="subscription-lock-card">
+      <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+      <p class="eyebrow">ACCOUNT ACTIVATION</p>
+      <h1>Activate SiteRemade</h1>
+      <p class="subscription-lock-copy">Your workspace is ready. Start your monthly SiteRemade plan to unlock leads, AI conversations, bookings, payments, analytics and automations.</p>
+      <div class="subscription-lock-price"><strong id="lockSubscriptionPrice">$250</strong><span>/ month</span></div>
+      <span class="status-pill neutral" id="lockSubscriptionStatus">INACTIVE</span>
+      <button class="primary-action subscription-lock-primary" id="lockStartSubscriptionButton" type="button">Activate SiteRemade</button>
+      <button class="secondary-button" id="lockManageBillingButton" type="button">Manage billing</button>
+      <button class="text-button subscription-lock-signout" id="lockLogoutButton" type="button">Sign out</button>
+      <p class="helper-copy" id="lockBillingStatus">Secure billing is handled through Stripe.</p>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="app-brand" href="/" aria-label="SiteRemade app home">
+        <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+      </a>
+
+      <div class="workspace-card">
+        <div class="workspace-mark">N</div>
+        <div><small>WORKSPACE</small><strong id="workspaceName">Northline Electric</strong></div>
+        <button aria-label="Switch workspace" id="workspaceSwitchButton">⌄</button>
+      </div>
+      <div class="workspace-menu" id="workspaceMenu" hidden></div>
+
+      <nav class="side-nav" aria-label="App navigation">
+        <button class="nav-item active" data-view="home"><span>⌂</span><strong>Home</strong></button>
+        <button class="nav-item" data-view="leads"><span>◎</span><strong>Leads</strong><em id="leadBadge">0</em></button>
+        <button class="nav-item" data-view="prospecting"><span>⌖</span><strong>Market Finder</strong></button>
+        <button class="nav-item" data-view="inbox"><span>◌</span><strong>Inbox</strong><em id="inboxBadge">0</em></button>
+        <button class="nav-item" data-view="calendar"><span>□</span><strong>Calendar</strong></button>
+        <button class="nav-item" data-view="payments"><span>◇</span><strong>Payments</strong></button>
+      </nav>
+
+      <div class="side-divider"></div>
+
+      <nav class="side-nav secondary-nav">
+        <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
+        <button class="nav-item" data-view="website-updates"><span>✎</span><strong>Website Updates</strong><em id="websiteUpdateBadge">0</em></button>
+        <button class="nav-item" data-view="automations"><span>✦</span><strong>Automations</strong></button>
+        <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
+        <button class="nav-item" data-view="admin" id="adminNav"><span>▦</span><strong>Admin</strong></button>
+      </nav>
+
+      <div class="plan-card">
+        <div class="plan-orb"></div>
+        <small>SITEREMADE GROWTH</small>
+        <strong>Your customer system is live.</strong>
+        <span>Website · Leads · Scheduling</span>
+      </div>
+
+      <div class="user-card">
+        <div class="avatar">JF</div>
+        <div><strong>Administrator</strong><small id="workspaceRole">SiteRemade client</small></div>
+        <button id="logoutButton" title="Sign out">↪</button>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=13" alt="SiteRemade" /></div>
+        <div class="topbar-status"><span class="live-dot"></span><span id="systemStatus">All systems live</span></div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="globalSearchButton" aria-label="Search">⌕</button>
+          <button class="icon-button notification-button" id="notificationButton" aria-label="Notifications">♢<i id="notificationDot"></i></button>
+          <button class="primary-action" id="newLeadButton">+ Add lead</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-home">
+        <div class="page-head">
+          <div>
+            <p class="eyebrow" id="todayLabel">TODAY</p>
+            <h1 id="homeGreeting">Northline overview</h1>
+            <p>Leads, conversations, bookings and payments — right now.</p>
+          </div>
+          <div class="range-control" id="rangeControl"><button class="active" data-days="30">30 days</button><button data-days="90">90 days</button></div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card hero-metric">
+            <div class="metric-label"><span>NEW LEADS</span><small id="leadMetricPeriod">LAST 30 DAYS</small></div>
+            <div class="metric-value"><strong id="metricLeads">0</strong><span class="trend neutral" id="leadTrend">→ 0%</span></div>
+            <div class="micro-bars" id="leadBars" aria-hidden="true"></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>APPOINTMENTS</span><small>BOOKED</small></div>
+            <div class="metric-value"><strong id="metricAppointments">0</strong></div>
+            <p id="appointmentMeta">No upcoming appointments</p>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>RESPONSE TIME</span><small>AVG.</small></div>
+            <div class="metric-value"><strong id="metricResponse">—</strong></div>
+            <p id="responseMeta">Conversation activity</p>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label"><span>REPORTED VALUE</span><small>WON</small></div>
+            <div class="metric-value"><strong id="metricValue">$0</strong></div>
+            <p id="valueMeta">From won opportunities</p>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel leads-panel">
+            <div class="panel-head">
+              <div><p class="eyebrow">LIVE PIPELINE</p><h2>Recent leads</h2></div>
+              <button class="text-button" data-jump="leads">View all ↗</button>
+            </div>
+            <div class="lead-list" id="recentLeadList"></div>
+          </article>
+
+          <article class="panel activity-panel">
+            <div class="panel-head"><div><p class="eyebrow">TODAY</p><h2>Activity</h2></div><span class="status-pill">LIVE</span></div>
+            <div class="timeline" id="activityTimeline"></div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid lower-grid">
+          <article class="panel pipeline-panel">
+            <div class="panel-head"><div><p class="eyebrow">PIPELINE</p><h2>Where your leads are</h2></div><button class="text-button">Manage pipeline ↗</button></div>
+            <div class="pipeline-stats" id="pipelineStats"></div>
+          </article>
+          <article class="panel ai-panel assistant-panel">
+            <div class="ai-glow"></div>
+            <div class="panel-head"><div><p class="eyebrow">AI BUSINESS ASSISTANT</p><h2>Ask SiteRemade.</h2></div><span class="status-pill dark" id="assistantStatusPill">READY</span></div>
+            <p>Ask what needs attention, who to follow up with, what is making money, or have it draft a reply.</p>
+            <div class="assistant-quick">
+              <button data-assistant-prompt="Who should I follow up with today?">Who needs follow-up?</button>
+              <button data-assistant-prompt="Give me a quick business summary and what I should focus on next.">What should I focus on?</button>
+            </div>
+            <form class="assistant-form" id="assistantForm">
+              <input id="assistantInput" placeholder="Ask about your business…" autocomplete="off" />
+              <button class="light-button" type="submit">Ask ↗</button>
+            </form>
+            <div class="assistant-answer" id="assistantAnswer">Your assistant reads this workspace's leads, bookings, conversations, payments and ad spend.</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-leads">
+        <div class="page-head compact-head">
+          <div><p class="eyebrow">CUSTOMER PIPELINE</p><h1>Leads</h1><p>Every website inquiry, conversation and opportunity in one place.</p></div>
+          <div class="head-actions"><div class="search-box">⌕ <input id="leadSearch" placeholder="Search leads" /></div><button class="primary-action" id="newLeadButton2">+ Add lead</button></div>
+        </div>
+        <div class="lead-toolbar">
+          <div class="filter-tabs" id="leadFilters"><button class="active" data-status="all">All</button><button data-status="New">New</button><button data-status="Contacted">Contacted</button><button data-status="Quoted">Quoted</button><button data-status="Won">Won</button><button data-status="Lost">Lost</button></div>
+          <span id="leadCountLabel">0 leads</span>
+        </div>
+        <div class="lead-table-wrap">
+          <table class="lead-table">
+            <thead><tr><th>Customer</th><th>Service</th><th>Source</th><th>Created</th><th>Status</th><th></th></tr></thead>
+            <tbody id="leadTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section class="view" id="view-prospecting">
+        <div class="page-head compact-head">
+          <div><p class="eyebrow">MARKET INTELLIGENCE</p><h1>Market Finder</h1><p>Search real businesses for outbound prospects, commercial targets, referral partners or competitor research. Results are opportunities to investigate — not guaranteed customers.</p></div>
+          <span class="coming-badge" id="prospectingConnectionBadge">GOOGLE PLACES</span>
+        </div>
+        <div class="prospecting-grid">
+          <div class="panel prospecting-controls">
+            <p class="eyebrow">BUILD YOUR SEARCH</p>
+            <form id="prospectingForm">
+              <label>What are you looking for?
+                <select name="purpose" id="prospectPurpose">
+                  <option value="prospects" selected>Sales prospects</option>
+                  <option value="commercial">Commercial targets</option>
+                  <option value="partners">Referral partners</option>
+                  <option value="competitors">Competitors / market research</option>
+                </select>
+              </label>
+              <label>Business / category<input name="businessType" placeholder="Property managers, dental clinics, landscapers…" required /></label>
+              <label>Location<input name="location" placeholder="Calgary, Alberta" required /></label>
+              <div class="prospect-filter-grid">
+                <label>Min. rating<select name="minRating"><option value="">Any</option><option>3</option><option>3.5</option><option>4</option><option>4.5</option></select></label>
+                <label>Max. rating<select name="maxRating"><option value="">Any</option><option>3</option><option>3.5</option><option>4</option><option>4.5</option><option>5</option></select></label>
+                <label>Min. reviews<input name="minReviews" type="number" min="0" step="1" placeholder="0" /></label>
+                <label>Max. reviews<input name="maxReviews" type="number" min="0" step="1" placeholder="Any" /></label>
+                <label>Website<select name="website"><option value="any">Any</option><option value="yes">Has website</option><option value="no">No website</option></select></label>
+                <label>Phone<select name="phone"><option value="any">Any</option><option value="yes">Phone required</option></select></label>
+              </div>
+              <label class="prospect-check"><input type="checkbox" name="newOnly" value="true" /> Hide businesses already viewed</label>
+              <label>Sort results<select name="sort"><option value="relevance">Google relevance</option><option value="reviews_desc">Most reviews</option><option value="reviews_asc">Fewest reviews</option><option value="rating_desc">Highest rating</option><option value="rating_asc">Lowest rating</option></select></label>
+              <label>Results<select name="limit"><option value="10">10</option><option value="20" selected>20</option></select></label>
+              <button class="primary-action" type="submit">Search businesses</button>
+              <p class="modal-status" id="prospectingStatus"></p>
+            </form>
+            <div class="prospecting-tip">
+              <strong>Use it differently for every business.</strong>
+              <span>B2B companies can build call lists. Home-service companies can research competitors, commercial accounts and referral partners while inbound ads capture people who need service right now.</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div><p class="eyebrow">RESULTS</p><h2 id="prospectResultsTitle">Businesses</h2></div><span id="prospectCount" class="coming-badge">0 FOUND</span></div>
+            <div id="prospectResults" class="prospect-results"><div class="empty-state">Build a search to explore your market.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-inbox">
+        <div class="page-head compact-head"><div><p class="eyebrow">CONVERSATIONS</p><h1>Inbox</h1><p>Website messages and customer conversations in one place.</p></div><button class="primary-action" id="newConversationButton">+ New conversation</button></div>
+        <div class="placeholder-layout">
+          <div class="conversation-list" id="conversationList"></div>
+          <div class="conversation-window">
+            <div class="conversation-head"><div><strong id="conversationName">Select a conversation</strong><span id="conversationMode">No conversation selected</span></div><button id="takeoverButton" disabled>Take over</button></div>
+            <div class="messages" id="messageList"><div class="empty-state">Choose a conversation to view messages.</div></div>
+            <form class="message-box" id="messageForm"><input id="messageInput" placeholder="Reply…" autocomplete="off" disabled /><button type="submit" disabled>Send</button></form>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-calendar">
+        <div class="page-head compact-head"><div><p class="eyebrow">SCHEDULING</p><h1>Calendar</h1><p>Bookings from your website and assistant, without the back-and-forth.</p></div><button class="primary-action" id="newAppointmentButton">+ New appointment</button></div>
+        <div class="calendar-shell">
+          <div class="calendar-top"><button id="prevMonthButton">‹</button><h2 id="calendarTitle">September 2026</h2><button id="nextMonthButton">›</button><button class="today-button" id="todayButton">Today</button></div>
+          <div class="calendar-week"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-payments">
+        <div class="page-head compact-head"><div><p class="eyebrow">MONEY</p><h1>Payments</h1><p>Your SiteRemade account, advertising funds and customer payments in one place.</p></div><button class="primary-action" id="newInvoiceButton">+ Send customer invoice</button></div>
+
+        <div class="billing-grid">
+          <article class="panel billing-card billing-primary">
+            <div class="panel-head"><div><p class="eyebrow">SITEREMADE BILLING</p><h2>Your monthly system</h2></div><span class="status-pill neutral" id="subscriptionStatus">INACTIVE</span></div>
+            <div class="billing-price"><strong id="subscriptionPrice">$250</strong><span>/ month</span></div>
+            <p>Your SiteRemade growth system: website operations, managed lead delivery, AI receptionist, scheduling, payments, analytics and optional prospecting.</p>
+            <div class="billing-actions"><button class="primary-action" id="startSubscriptionButton" type="button">Start monthly plan</button><button class="secondary-button" id="manageBillingButton" type="button">Manage billing</button></div>
+            <p class="helper-copy" id="billingStatus">Billed by SiteRemade through Stripe.</p>
+          </article>
+
+          <article class="panel billing-card feature-blocked ad-feature-blocked">
+            <div class="feature-block-overlay"><span>COMING SOON</span><strong>Google + Meta advertising</strong><p>This module is being finished before client access is enabled.</p></div>
+            <div class="panel-head"><div><p class="eyebrow">MANAGED ADVERTISING</p><h2>Your Google + Meta budget</h2></div><span class="coming-badge">COMING SOON</span></div>
+            <div class="ad-balance"><div><span>FUNDED</span><strong id="adFundedTotal">$0</strong></div><div><span>SPENT</span><strong id="adFundSpent">$0</strong></div><div><span>AVAILABLE</span><strong id="adFundAvailable">$0</strong></div></div>
+            <form id="adFundForm" class="fund-form"><label>Platform<select name="platform"><option>Both</option><option>Google</option><option>Meta</option></select></label><label>Amount<input name="amount" type="number" min="50" step="1" placeholder="1000" required /></label><button class="primary-action" type="submit">Add ad funds</button></form>
+            <p class="helper-copy" id="adFundStatus">You approve the budget here. SiteRemade manages the campaigns and reports the spend and results back to this account.</p>
+          </article>
+        </div>
+
+        <div class="metric-grid payment-metrics">
+          <article class="metric-card"><div class="metric-label"><span>CUSTOMER PAYMENTS</span><small>COLLECTED</small></div><div class="metric-value"><strong id="payCollected">$0</strong></div><p id="payCollectedMeta">0 paid invoices</p></article>
+          <article class="metric-card"><div class="metric-label"><span>OUTSTANDING</span><small>OPEN</small></div><div class="metric-value"><strong id="payOutstanding">$0</strong></div><p id="payOutstandingMeta">0 open invoices</p></article>
+          <article class="metric-card"><div class="metric-label"><span>AVG. INVOICE</span><small>VALUE</small></div><div class="metric-value"><strong id="payAverage">$0</strong></div><p>Across all customer invoices</p></article>
+          <article class="metric-card"><div class="metric-label"><span>CONVERSION</span><small>PAID</small></div><div class="metric-value"><strong id="payConversion">0%</strong></div><p>Paid / total invoices</p></article>
+        </div>
+        <div class="panel"><div class="panel-head"><div><p class="eyebrow">YOUR BUSINESS</p><h2>Customer invoices & transactions</h2></div><span class="coming-badge">STRIPE CONNECT</span></div><div class="transaction-list" id="transactionList"></div></div>
+        <div class="panel funding-history feature-blocked ad-feature-blocked"><div class="feature-block-overlay compact"><span>COMING SOON</span><strong>Advertising funding</strong></div><div class="panel-head"><div><p class="eyebrow">SITEREMADE</p><h2>Ad funding history</h2></div></div><div id="adFundHistory" class="transaction-list"></div></div>
+      </section>
+
+      <section class="view" id="view-analytics"><div class="page-head compact-head"><div><p class="eyebrow">PERFORMANCE</p><h1>Analytics</h1><p>Real performance from your leads, bookings and payments.</p></div><span class="coming-badge">LIVE DATA</span></div>
+        <div class="metric-grid analytics-metrics"><article class="metric-card"><div class="metric-label"><span>LEADS</span></div><div class="metric-value"><strong id="analyticsLeads">0</strong></div><p>Total opportunities</p></article><article class="metric-card"><div class="metric-label"><span>WON RATE</span></div><div class="metric-value"><strong id="analyticsWinRate">0%</strong></div><p>Won / closed leads</p></article><article class="metric-card"><div class="metric-label"><span>BOOKINGS</span></div><div class="metric-value"><strong id="analyticsBookings">0</strong></div><p>Appointments scheduled</p></article><article class="metric-card"><div class="metric-label"><span>COLLECTED</span></div><div class="metric-value"><strong id="analyticsRevenue">$0</strong></div><p>Recorded paid invoices</p></article></div>
+        <div class="analytics-grid"><div class="panel"><div class="panel-head"><div><p class="eyebrow">PIPELINE</p><h2>Lead conversion</h2></div></div><div id="analyticsPipeline" class="analytics-bars"></div></div><div class="panel"><div class="panel-head"><div><p class="eyebrow">SOURCES</p><h2>Where leads come from</h2></div></div><div id="analyticsSources" class="analytics-bars"></div></div></div>
+        <div class="panel traffic-panel">
+          <div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>Website performance</h2><p>Save the business domain here. Real visitor counts appear after Google Analytics is connected.</p></div><span class="coming-badge neutral" id="trafficConnectionStatus">ADD WEBSITE DOMAIN</span></div>
+          <form id="websiteTrafficForm" class="traffic-domain-form"><label>Website domain<input id="trafficDomain" name="domain" placeholder="yourbusiness.com" required /></label><button class="secondary-button" type="submit">Save domain</button><p class="modal-status" id="websiteTrafficStatus"></p></form>
+          <div class="traffic-metrics"><div><span>SESSIONS</span><strong id="trafficSessions">—</strong></div><div><span>USERS</span><strong id="trafficUsers">—</strong></div><div><span>PAGEVIEWS</span><strong id="trafficPageviews">—</strong></div><div><span>LAST SYNC</span><strong id="trafficLastSync">Not connected</strong></div></div>
+          <p class="traffic-note">A domain alone cannot expose private traffic numbers. SiteRemade will use the site's Google Analytics connection for real data instead of showing made-up estimates.</p>
+        </div>
+        <div class="panel ads-panel feature-blocked ad-feature-blocked">
+          <div class="feature-block-overlay"><span>COMING SOON</span><strong>Google + Meta campaign management</strong><p>Campaign controls are intentionally blocked until the ad integrations are ready.</p></div>
+          <div class="panel-head"><div><p class="eyebrow">MANAGED AD PERFORMANCE</p><h2>Budget → leads → bookings → revenue</h2></div><span class="coming-badge" id="adsConnectionBadge">SITEREMADE MANAGED</span></div>
+          <div class="ad-metrics">
+            <div><span>AD SPEND</span><strong id="adSpendTotal">$0</strong></div>
+            <div><span>AD LEADS</span><strong id="adLeadTotal">0</strong></div>
+            <div><span>COST / LEAD</span><strong id="adCpl">—</strong></div>
+            <div><span>ROAS</span><strong id="adRoas">—</strong></div>
+          </div>
+          <div class="ads-grid">
+            <form id="adSpendForm" class="compact-form">
+              <label>Platform<select name="platform"><option>Google</option><option>Meta</option><option>Other</option></select></label>
+              <label>Campaign<input name="campaign" placeholder="Panel upgrades" /></label>
+              <label>Spend<input name="spend" type="number" min="0" step="0.01" required placeholder="250" /></label>
+              <label>Leads<input name="leads" type="number" min="0" step="1" value="0" /></label>
+              <button class="primary-action" type="submit">Add spend</button>
+              <p class="modal-status" id="adSpendStatus"></p>
+            </form>
+            <div>
+              <div id="adSpendList" class="ad-spend-list"><div class="empty-state">No ad spend recorded yet.</div></div>
+              <button class="secondary-button" id="askAdsButton" type="button">Ask AI what this means</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" id="view-website-updates">
+        <div class="page-head compact-head">
+          <div><p class="eyebrow">YOUR WEBSITE</p><h1>Website Updates</h1><p>Send SiteRemade a change request without emailing back and forth.</p></div>
+          <span class="coming-badge">INCLUDED WITH SITEREMADE</span>
+        </div>
+        <div class="website-update-grid">
+          <article class="panel website-update-form-card">
+            <div class="panel-head"><div><p class="eyebrow">NEW REQUEST</p><h2>What should we change?</h2></div></div>
+            <form id="websiteUpdateForm" class="website-update-form">
+              <label>Page<select name="page"><option>Home</option><option>Services</option><option>About</option><option>Contact</option><option>Other</option></select></label>
+              <label>Priority<select name="priority"><option>Normal</option><option>Important</option></select></label>
+              <label class="wide-field">Change requested<textarea name="request" rows="5" placeholder="Example: Replace the hero photo and update the wording under Electrical Services." required></textarea></label>
+              <label class="wide-field">Reference link / extra notes<textarea name="notes" rows="3" placeholder="Optional: paste a link to an image, document or example and add anything else we should know."></textarea></label>
+              <button class="primary-action" type="submit">Send update request</button>
+              <p class="modal-status" id="websiteUpdateStatus"></p>
+            </form>
+          </article>
+          <article class="panel website-update-history-card">
+            <div class="panel-head"><div><p class="eyebrow">REQUEST HISTORY</p><h2>Website changes</h2></div><span class="coming-badge" id="websiteUpdateCount">0 REQUESTS</span></div>
+            <div id="websiteUpdateList" class="website-update-list"><div class="empty-state">No website update requests yet.</div></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-automations"><div class="page-head compact-head"><div><p class="eyebrow">AUTOMATION</p><h1>Automations</h1><p>Follow-ups and internal actions triggered automatically.</p></div><span class="coming-badge">CONFIGURABLE</span></div><div class="automation-list" id="automationList"></div></section>
+      <section class="view" id="view-settings"><div class="page-head compact-head"><div><p class="eyebrow">WORKSPACE</p><h1>Settings</h1><p>Configure the business once. SiteRemade uses it everywhere.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">BUSINESS</p><form id="settingsForm"><label>Business name<input name="businessName" id="settingsBusiness" /></label><label>Lead notification email<input name="email" id="settingsEmail" type="email" /></label><label>Phone<input name="phone" id="settingsPhone" /></label><label>Timezone<input name="timezone" id="settingsTimezone" /></label><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">ACTIVE MODULES</p><div class="setting-row"><div><strong>Website</strong><span>SiteRemade website</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>Lead System</strong><span>Capture + pipeline</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>AI Receptionist</strong><span>Chat + qualification</span></div><span class="status-pill neutral" id="aiReceptionistBadge">OFF</span></div><div class="setting-row"><div><strong>Advertising</strong><span>Google + Meta</span></div><span class="status-pill neutral">OFF</span></div></div></div><div class="settings-grid settings-extra"><div class="panel settings-card"><p class="eyebrow">AI RECEPTIONIST</p><form id="aiSettingsForm"><label>Services<textarea name="services" id="aiServices" rows="3"></textarea></label><label>Service area<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label><label>Tone / instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label><div class="settings-actions"><button class="primary-action">Save AI settings</button><button class="secondary-button" id="testAiButton" type="button">Test receptionist</button></div><p class="helper-copy" id="aiSettingsStatus">The bot uses these instructions on your website chat.</p></form></div><div class="panel settings-card"><p class="eyebrow">INTEGRATIONS</p><div class="integration-list" id="integrationList"></div><p class="helper-copy">External services become live automatically when their environment keys are configured on the server.</p></div></div></section>
+      <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div></section>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobile navigation">
+    <button class="active" data-view="home"><span>⌂</span><small>Home</small></button>
+    <button data-view="leads"><span>◎</span><small>Leads</small></button>
+    <button data-view="inbox"><span>◌</span><small>Inbox</small></button>
+    <button data-view="calendar"><span>□</span><small>Calendar</small></button>
+    <button data-view="payments"><span>◇</span><small>Payments</small></button>
+  </nav>
+
+  <div class="modal-backdrop" id="leadModal" hidden>
+    <form class="lead-modal" id="manualLeadForm">
+      <div class="modal-head"><div><p class="eyebrow">NEW OPPORTUNITY</p><h2>Add lead</h2></div><button type="button" class="close-button" id="closeLeadModal">×</button></div>
+      <div class="form-grid"><label>Name<input name="name" required placeholder="Customer name" /></label><label>Phone<input name="phone" placeholder="(403) 555-0000" /></label><label>Email<input name="email" type="email" placeholder="customer@email.com" /></label><label>Service<input name="service" placeholder="Panel upgrade" /></label></div>
+      <label>Notes<textarea name="message" rows="4" placeholder="What does the customer need?"></textarea></label>
+      <div class="modal-actions"><button type="button" class="secondary-button" id="cancelLeadModal">Cancel</button><button type="submit" class="primary-action">Create lead</button></div>
+      <p class="modal-status" id="manualLeadStatus"></p>
+    </form>
+  </div>
+
+
+  <div class="modal-backdrop" id="appointmentModal" hidden><form class="lead-modal" id="appointmentForm"><div class="modal-head"><div><p class="eyebrow">SCHEDULING</p><h2>New appointment</h2></div><button type="button" class="close-button" data-close="appointmentModal">×</button></div><div class="form-grid"><label>Customer<select name="leadId" id="appointmentLead"></select></label><label>Title<input name="title" required placeholder="Estimate / service call" /></label><label>Date<input name="date" type="date" required /></label><label>Time<input name="time" type="time" required /></label><label>Duration<input name="duration" type="number" min="15" step="15" value="60" /></label></div><label>Notes<textarea name="notes" rows="3"></textarea></label><div class="modal-actions"><button type="button" class="secondary-button" data-close="appointmentModal">Cancel</button><button type="submit" class="primary-action">Book appointment</button></div><p class="modal-status" id="appointmentStatus"></p></form></div>
+
+  <div class="modal-backdrop" id="invoiceModal" hidden><form class="lead-modal" id="invoiceForm"><div class="modal-head"><div><p class="eyebrow">PAYMENTS</p><h2>Create invoice</h2></div><button type="button" class="close-button" data-close="invoiceModal">×</button></div><div class="form-grid"><label>Customer<select name="leadId" id="invoiceLead"></select></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="750" /></label><label class="wide-field">Description<input name="description" required placeholder="Deposit / final invoice" /></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close="invoiceModal">Cancel</button><button type="submit" class="primary-action">Create invoice</button></div><p class="modal-status" id="invoiceStatus"></p></form></div>
+
+  <div class="modal-backdrop" id="conversationModal" hidden><form class="lead-modal" id="conversationForm"><div class="modal-head"><div><p class="eyebrow">INBOX</p><h2>Start conversation</h2></div><button type="button" class="close-button" data-close="conversationModal">×</button></div><label>Lead<select name="leadId" id="conversationLead"></select></label><div class="modal-actions"><button type="button" class="secondary-button" data-close="conversationModal">Cancel</button><button type="submit" class="primary-action">Open conversation</button></div></form></div>
+
+  <aside class="lead-drawer" id="leadDrawer" hidden><div class="drawer-head"><div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="drawerName">Lead</h2></div><button class="close-button" id="closeDrawer">×</button></div><form id="leadDetailForm"><div class="drawer-grid"><label>Status<select name="status" id="drawerStatus"><option>New</option><option>Contacted</option><option>Quoted</option><option>Won</option><option>Lost</option></select></label><label>Value<input name="value" id="drawerValue" type="number" min="0" step="1" /></label><label>Name<input name="name" id="drawerLeadName" /></label><label>Service<input name="service" id="drawerService" /></label><label>Phone<input name="phone" id="drawerPhone" /></label><label>Email<input name="email" id="drawerEmail" type="email" /></label></div><label>Inquiry<textarea name="message" id="drawerMessage" rows="4"></textarea></label><label>Add note<textarea name="note" id="drawerNote" rows="2" placeholder="Add a note to the customer record"></textarea></label><div class="drawer-actions"><button type="button" class="danger-button" id="deleteLeadButton">Delete</button><button type="button" class="secondary-button" id="messageLeadButton">Message</button><button type="button" class="secondary-button" id="bookLeadButton">Book</button><button type="submit" class="primary-action">Save changes</button></div><div class="notes-list" id="drawerNotes"></div><p class="modal-status" id="drawerStatusText"></p></form></aside>
+
+  <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
+
+  <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
+  <script src="app.js?v=14"></script>
+</body>
+</html>
