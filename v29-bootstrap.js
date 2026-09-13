@@ -6,4 +6,5 @@ import('/v34-integrations.js?v=2').catch(()=>{});
 import('/v35-calendar-client.js?v=1').catch(()=>{});
 import('/v36-connectors-client.js?v=1').catch(()=>{});
 import('/v38-safe.js?v=6').catch(()=>{});
+import('/v39-phone-setup-client.js?v=1').catch(()=>{});
 })();
