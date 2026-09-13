@@ -45,18 +45,13 @@ document.documentElement.dataset.siteremadeVersion='23';
   function renderWebsiteResults(){
     const panel=qs('#view-analytics .traffic-panel');if(!panel)return;
     const web=websiteNumbers();
-    panel.classList.add('v23-website-results');
-    panel.innerHTML=`
-      <div class="panel-head v23-results-head">
-        <div><p class="eyebrow">WEBSITE RESULTS</p><h2>What your website is actually generating</h2><p>Only verified SiteRemade lead and booking data is shown here. No estimated visitor counts.</p></div>
-        <span class="status-pill">LIVE DATA</span>
-      </div>
-      <div class="v23-results-grid">
-        <article><span>WEBSITE INQUIRIES</span><strong>${web.leads}</strong><small>Leads captured from the website or website chat</small></article>
-        <article><span>CONVERSATIONS</span><strong>${web.conversations}</strong><small>Website leads with a real message thread</small></article>
-        <article><span>BOOKINGS</span><strong>${web.bookings}</strong><small>Appointments tied to website leads</small></article>
-        <article><span>WON VALUE</span><strong>${moneySafe(web.wonValue)}</strong><small>${web.won} won website lead${web.won===1?'':'s'} · ${web.closeRate}% close rate</small></article>
-      </div>`;
+    panel.className='panel traffic-panel v23-website-results';
+    panel.innerHTML=`<div class="panel-head v23-results-head"><div><p class="eyebrow">WEBSITE RESULTS</p><h2>What your website is actually generating</h2><p>Only verified SiteRemade lead and booking data is shown here. No estimated visitor counts.</p></div><span class="status-pill">LIVE DATA</span></div><div class="v23-results-grid"><article><span>WEBSITE INQUIRIES</span><strong>${web.leads}</strong><small>Leads captured from the website or website chat</small></article><article><span>CONVERSATIONS</span><strong>${web.conversations}</strong><small>Website leads with a real message thread</small></article><article><span>BOOKINGS</span><strong>${web.bookings}</strong><small>Appointments tied to website leads</small></article><article><span>WON VALUE</span><strong>${moneySafe(web.wonValue)}</strong><small>${web.won} won website lead${web.won===1?'':'s'} · ${web.closeRate}% close rate</small></article></div>`;
+  }
+
+  function fixInboxExplainer(){
+    const explainer=qs('#v17InboxExplainer'),view=qs('#view-inbox');
+    if(explainer&&view&&explainer.parentElement!==view)view.insertBefore(explainer,view.firstChild);
   }
 
   function polishAnalytics(){
@@ -72,7 +67,7 @@ document.documentElement.dataset.siteremadeVersion='23';
     const home=qs('[data-view="home"] strong');if(home)home.textContent='Overview';
   }
 
-  function renderV22(){renderHomeHero();renderAnalyticsHero();polishAnalytics();polishNav();}
-  function install(){if(!wait())return setTimeout(install,80);const old=renderAll;renderAll=function(){const r=old();renderV22();return r;};renderV22();}
+  function renderV22(){fixInboxExplainer();renderHomeHero();renderAnalyticsHero();polishAnalytics();polishNav();}
+  function install(){if(!wait())return setTimeout(install,80);const old=renderAll;renderAll=function(){const r=old();renderV22();return r;};renderV22();setTimeout(renderV22,250);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install);else install();
 })();
