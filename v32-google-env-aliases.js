@@ -14,3 +14,5 @@ if (googleClientSecret) {
   process.env.GOOGLE_CLIENT_SECRET = googleClientSecret;
   process.env.GOOGLE_OAUTH_CLIENT_SECRET = googleClientSecret;
 }
+
+require('./v35-loader');
