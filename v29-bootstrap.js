@@ -1,1 +1,1 @@
-(()=>{if(!document.querySelector('link[data-v29-mail]')){const l=document.createElement('link');l.rel='stylesheet';l.href='/v29-mail.css?v=37';l.dataset.v29Mail='1';document.head.appendChild(l)}import('/v29-mail-client.js?v=38').catch(()=>{});})();
+(()=>{if(!document.querySelector('link[data-v29-mail]')){const l=document.createElement('link');l.rel='stylesheet';l.href='/v29-mail.css?v=41';l.dataset.v29Mail='1';document.head.appendChild(l)}import('/v29-mail-client.js?v=41').catch(()=>{});})();
