@@ -15,4 +15,5 @@ if (googleClientSecret) {
   process.env.GOOGLE_OAUTH_CLIENT_SECRET = googleClientSecret;
 }
 
+require('./v40-twilio-subaccounts');
 require('./v35-loader');
