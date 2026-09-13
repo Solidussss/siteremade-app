@@ -24,17 +24,8 @@ async function context(req,res){
   if(!db||!anon)return null;
   const c=cookies(req);
   let user=null;
-  if(c.sr_access){
-    const got=await anon.auth.getUser(c.sr_access);
-    user=got.data?.user||null;
-  }
-  if(!user&&c.sr_refresh){
-    const refreshed=await anon.auth.refreshSession({refresh_token:c.sr_refresh});
-    if(!refreshed.error&&refreshed.data?.session&&refreshed.data?.user){
-      user=refreshed.data.user;
-      res.setHeader('Set-Cookie',authCookies(refreshed.data.session));
-    }
-  }
+  if(c.sr_access){const got=await anon.auth.getUser(c.sr_access);user=got.data?.user||null;}
+  if(!user&&c.sr_refresh){const refreshed=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!refreshed.error&&refreshed.data?.session&&refreshed.data?.user){user=refreshed.data.user;res.setHeader('Set-Cookie',authCookies(refreshed.data.session));}}
   if(!user)return null;
   const p=(await db.from('profiles').select('role').eq('id',user.id).maybeSingle()).data;
   if(!p)return null;
@@ -47,7 +38,11 @@ async function context(req,res){
   return{user,wid};
 }
 function state(obj){const p=Buffer.from(JSON.stringify(obj)).toString('base64url');const s=crypto.createHmac('sha256',stateSecret).update(p).digest('base64url');return p+'.'+s}
-function googleUrl(ctx){const q=new URLSearchParams({client_id:clientId,redirect_uri:redirectUri,response_type:'code',scope:'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',state:state({w:ctx.wid,u:ctx.user.id,p:'gmail',t:Date.now()}),access_type:'offline',prompt:'consent',include_granted_scopes:'true'});return 'https://accounts.google.com/o/oauth2/v2/auth?'+q.toString()}
+function googleUrl(ctx){
+  const scopes=['openid','email','https://www.googleapis.com/auth/gmail.modify','https://www.googleapis.com/auth/gmail.send','https://www.googleapis.com/auth/calendar.events'];
+  const q=new URLSearchParams({client_id:clientId,redirect_uri:redirectUri,response_type:'code',scope:scopes.join(' '),state:state({w:ctx.wid,u:ctx.user.id,p:'gmail',t:Date.now()}),access_type:'offline',prompt:'consent',include_granted_scopes:'true'});
+  return 'https://accounts.google.com/o/oauth2/v2/auth?'+q.toString();
+}
 http.createServer=function(listener){return prevCreate(async(req,res)=>{try{const u=new URL(req.url,'http://'+(req.headers.host||'localhost'));if(req.method==='GET'&&u.pathname==='/api/app/gmail/start'){const c=await context(req,res);if(!c){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent('Authentication required.')});return res.end()}if(!clientId||!clientSecret){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent('Google OAuth credentials are missing on the server.')});return res.end()}res.writeHead(302,{Location:googleUrl(c),'Cache-Control':'no-store'});return res.end()}return listener(req,res)}catch(e){console.error('Gmail direct start:',e);if(!res.headersSent){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent(e.message||'Google connection failed.')});return res.end()}res.end()}})};
 
 fs.readFileSync=function(file,...args){const out=prevRead(file,...args);if(typeof out!=='string')return out;const name=String(file||'');if(!name.endsWith('index.html')&&!name.endsWith('app.html'))return out;if(out.includes('data-gmail-direct-v34'))return out;const script=`<script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>`;return out.replace('</body>',script+'\n</body>')};
