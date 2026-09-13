@@ -1,4 +1,6 @@
 (()=>{
+  if(!document.querySelector('link[href^="/v28-market.css"]')){const l=document.createElement('link');l.rel='stylesheet';l.href='/v28-market.css?v=28';document.head.appendChild(l);}
+  if(!document.querySelector('script[src^="/v28-market-client.js"]')){const s=document.createElement('script');s.src='/v28-market-client.js?v=28';s.defer=true;document.head.appendChild(s);}
   let lastKey='';
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=n=>Number(n?.value??n??0).toLocaleString();
