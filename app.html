@@ -7,14 +7,14 @@
   <meta name="description" content="SiteRemade client dashboard for leads, conversations, scheduling and payments." />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
-  <link rel="stylesheet" href="app.css?v=15" />
+  <link rel="stylesheet" href="app.css?v=16" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0d0e11" />
 </head>
 <body>
   <div class="auth-screen" id="authScreen">
     <div class="auth-card">
-      <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
+      <img src="siteremade-logo-black.png?v=16" alt="SiteRemade" />
       <div class="auth-tabs" role="tablist">
         <button type="button" class="auth-tab active" id="showLogin" aria-selected="true">Sign in</button>
         <button type="button" class="auth-tab" id="showSignup" aria-selected="false">Create account</button>
@@ -47,7 +47,7 @@
 
   <div class="subscription-lock" id="subscriptionLock" hidden>
     <div class="subscription-lock-card">
-      <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
+      <img src="siteremade-logo-black.png?v=16" alt="SiteRemade" />
       <p class="eyebrow">ACCOUNT ACTIVATION</p>
       <h1>Activate SiteRemade</h1>
       <p class="subscription-lock-copy">Your workspace is ready. Start your monthly SiteRemade plan to unlock leads, AI conversations, bookings, payments, analytics and automations.</p>
@@ -63,7 +63,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <a class="app-brand" href="/" aria-label="SiteRemade app home">
-        <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
+        <img src="siteremade-logo-black.png?v=16" alt="SiteRemade" />
       </a>
 
       <div class="workspace-card">
@@ -108,11 +108,11 @@
 
     <main class="main-panel">
       <header class="topbar">
-        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=15" alt="SiteRemade" /></div>
+        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=16" alt="SiteRemade" /></div>
         <div class="topbar-status"><span class="live-dot"></span><span id="systemStatus">All systems live</span></div>
         <div class="topbar-actions">
           <button class="icon-button" id="globalSearchButton" aria-label="Search">⌕</button>
-          <button class="icon-button notification-button" id="notificationButton" aria-label="Notifications">♢<i id="notificationDot"></i></button>
+          <button class="icon-button notification-button" id="notificationButton" aria-label="Notifications">♢<i id="notificationDot"></i><span id="notificationCount" class="notification-count" hidden>0</span></button>
           <button class="primary-action" id="newLeadButton">+ Add lead</button>
         </div>
       </header>
@@ -256,8 +256,9 @@
           <div class="conversation-list" id="conversationList"></div>
           <div class="conversation-window">
             <div class="conversation-head"><div><strong id="conversationName">Select a conversation</strong><span id="conversationMode">No conversation selected</span></div><button id="takeoverButton" disabled>Take over</button></div>
+            <div class="conversation-contact" id="conversationContact" hidden></div>
             <div class="messages" id="messageList"><div class="empty-state">Choose a conversation to view messages.</div></div>
-            <form class="message-box" id="messageForm"><input id="messageInput" placeholder="Reply…" autocomplete="off" disabled /><button type="submit" disabled>Send</button></form>
+            <div class="delivery-status" id="deliveryStatus">Select a customer to see delivery channels.</div><form class="message-box" id="messageForm"><input id="messageInput" placeholder="Reply…" autocomplete="off" disabled /><button type="submit" disabled>Send</button></form>
           </div>
         </div>
       </section>
@@ -398,6 +399,6 @@
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

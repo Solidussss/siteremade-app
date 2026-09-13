@@ -244,15 +244,19 @@ async function api(req,res,u){
   if(m==='POST'&&p==='/api/public/lead'){
     const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});
     const name=clean(b.name,120);if(!name)return json(res,400,{ok:false,message:'Name required.'});
-    const lead=await q(db.from('leads').insert({workspace_id:w.id,name,email:clean(b.email,254),phone:clean(b.phone,80),service:clean(b.service||'General inquiry',160),source:clean(b.source||'Website',80),status:'New',value:Math.max(0,Number(b.value)||0),message:clean(b.message,4000),notes:[]}).select('*').single());
+    const service=clean(b.service||'General inquiry',160),message=clean(b.message,4000);
+    const lead=await q(db.from('leads').insert({workspace_id:w.id,name,email:clean(b.email,254),phone:clean(b.phone,80),service,source:clean(b.source||'Website',80),status:'New',value:Math.max(0,Number(b.value)||0),message,notes:[]}).select('*').single());
+    const cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'human',unread:1}).select('*').single());
+    const customerText=message||`New ${service} inquiry submitted from the website.`;
+    await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'customer',text:customerText});
+    await activity(w.id,'lead','New website inquiry',`${lead.name} · ${lead.service}`);
     const autos=await q(db.from('automations').select('*').eq('workspace_id',w.id));
-    if(autos.some(a=>a.automation_key==='lead-alert'&&a.enabled)){await activity(w.id,'lead','New website inquiry',`${lead.name} · ${lead.service}`);notify(`New lead — ${lead.name}`,`${lead.name} requested ${lead.service}. ${lead.phone||lead.email||''}`,w.email);sms(w.phone,`SiteRemade: New lead — ${lead.name} · ${lead.service}`);}
+    if(autos.some(a=>a.automation_key==='lead-alert'&&a.enabled)){notify(`New lead — ${lead.name}`,`${lead.name} requested ${lead.service}. ${lead.phone||lead.email||''}`,w.email);sms(w.phone,`SiteRemade: New lead — ${lead.name} · ${lead.service}`);}
     if(autos.some(a=>a.automation_key==='lead-confirmation'&&a.enabled)){
-      const cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'ai',unread:0}).select('*').single());
       const text=`Thanks for reaching out to ${w.business_name}. We received your request and will follow up shortly.`;
       await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text});notify('We received your request',text,lead.email);
     }
-    return json(res,201,{ok:true,leadId:lead.id});
+    return json(res,201,{ok:true,leadId:lead.id,conversationId:cv.id});
   }
   if(m==='POST'&&p==='/api/public/chat'){
     const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message required.'});
@@ -261,14 +265,19 @@ async function api(req,res,u){
     if(!lead)lead=await q(db.from('leads').insert({workspace_id:w.id,name:visitorName||'Website visitor',email:visitorEmail,phone:visitorPhone,service:clean(b.service||'Website chat',160),source:'AI Chat',status:'New',value:0,message:'',notes:[]}).select('*').single());
     else if(visitorName||visitorEmail||visitorPhone){const patch={updated_at:now()};if(visitorName&&lead.name==='Website visitor')patch.name=visitorName;if(visitorEmail&&!lead.email)patch.email=visitorEmail;if(visitorPhone&&!lead.phone)patch.phone=visitorPhone;const updated=await q(db.from('leads').update(patch).eq('id',lead.id).eq('workspace_id',w.id).select('*').single());lead=updated;}
     let cv=(await db.from('conversations').select('*').eq('workspace_id',w.id).eq('lead_id',lead.id).maybeSingle()).data;
-    if(!cv)cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'ai',unread:1}).select('*').single());
+    if(!cv)cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'ai',unread:0}).select('*').single());
     await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'customer',text});
     const history=await q(db.from('messages').select('*').eq('conversation_id',cv.id).order('created_at',{ascending:true}));
-    let reply=w.ai_enabled?await externalAI(w,history).catch(()=>null):null;if(!reply)reply=w.ai_enabled?localAI(w,text):`Thanks for reaching out to ${w.business_name}. Your message has been received and the team will follow up.`;
-    await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text:reply});
-    await db.from('conversations').update({unread:1,updated_at:now()}).eq('id',cv.id).eq('workspace_id',w.id);
-    await activity(w.id,'message','AI chat activity',`${lead.name} · ${text.slice(0,60)}`);
-    return json(res,200,{ok:true,leadId:lead.id,conversationId:cv.id,reply});
+    let reply=null;
+    if(cv.mode==='ai'){
+      reply=w.ai_enabled?await externalAI(w,history).catch(()=>null):null;
+      if(!reply)reply=w.ai_enabled?localAI(w,text):`Thanks for reaching out to ${w.business_name}. Your message has been received and the team will follow up.`;
+      await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text:reply});
+    }
+    const nextUnread=Math.max(0,Number(cv.unread)||0)+1;
+    await db.from('conversations').update({unread:nextUnread,updated_at:now(),name:lead.name}).eq('id',cv.id).eq('workspace_id',w.id);
+    await activity(w.id,'message','Customer message',`${lead.name} · ${text.slice(0,60)}`);
+    return json(res,200,{ok:true,leadId:lead.id,conversationId:cv.id,reply,mode:cv.mode});
   }
 
   if(m==='POST'&&p==='/api/public/chat/history'){
@@ -394,7 +403,7 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   x=p.match(/^\/api\/app\/conversations\/([^/]+)$/);
   if(x&&m==='PATCH'){const b=await body(req),patch={};if(b.mode)patch.mode=b.mode==='ai'?'ai':'human';if(b.read)patch.unread=0;patch.updated_at=now();const cv=await q(db.from('conversations').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());const msgs=await q(db.from('messages').select('*').eq('conversation_id',cv.id).order('created_at',{ascending:true}));return json(res,200,{ok:true,conversation:mapConversation(cv,msgs)});}
   x=p.match(/^\/api\/app\/conversations\/([^/]+)\/messages$/);
-  if(x&&m==='POST'){const b=await body(req),cv=(await db.from('conversations').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!cv)return json(res,404,{ok:false,message:'Conversation not found.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message empty.'});await db.from('messages').insert({workspace_id:c.wid,conversation_id:cv.id,sender:'business',text});await db.from('conversations').update({updated_at:now(),mode:'human'}).eq('id',cv.id);await activity(c.wid,'message','Message sent',`${cv.name} · ${text.slice(0,60)}`);const lead=(await db.from('leads').select('*').eq('id',cv.lead_id).eq('workspace_id',c.wid).maybeSingle()).data;if(lead?.email)notify(`Message from ${c.workspace.business_name}`,text,lead.email);if(lead?.phone)sms(lead.phone,`${c.workspace.business_name}: ${text}`);return json(res,201,{ok:true,delivery:{website:true,email:!!lead?.email&&!!process.env.RESEND_API_KEY,sms:!!lead?.phone&&!!process.env.TWILIO_ACCOUNT_SID}});}
+  if(x&&m==='POST'){const b=await body(req),cv=(await db.from('conversations').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!cv)return json(res,404,{ok:false,message:'Conversation not found.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message empty.'});await db.from('messages').insert({workspace_id:c.wid,conversation_id:cv.id,sender:'business',text});await db.from('conversations').update({updated_at:now(),mode:'human',unread:0}).eq('id',cv.id);await activity(c.wid,'message','Message sent',`${cv.name} · ${text.slice(0,60)}`);const lead=(await db.from('leads').select('*').eq('id',cv.lead_id).eq('workspace_id',c.wid).maybeSingle()).data;if(lead?.status==='New')await db.from('leads').update({status:'Contacted',updated_at:now()}).eq('id',lead.id).eq('workspace_id',c.wid);if(lead?.email)notify(`Message from ${c.workspace.business_name}`,text,lead.email);if(lead?.phone)sms(lead.phone,`${c.workspace.business_name}: ${text}`);return json(res,201,{ok:true,delivery:{website:true,email:!!lead?.email&&!!process.env.RESEND_API_KEY,sms:!!lead?.phone&&!!process.env.TWILIO_ACCOUNT_SID},leadStatus:lead?.status==='New'?'Contacted':lead?.status||''});}
 
   if(m==='POST'&&p==='/api/app/appointments'){const b=await body(req),st=new Date(b.start);if(Number.isNaN(st.getTime()))return json(res,400,{ok:false,message:'Valid date required.'});const lead=b.leadId?(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data:null;const a=await q(db.from('appointments').insert({workspace_id:c.wid,lead_id:lead?.id||null,title:clean(b.title,160)||'Appointment',customer:lead?.name||clean(b.customer,160),start_at:st.toISOString(),duration:Math.max(15,Number(b.duration)||60),status:'Booked',notes:clean(b.notes,1000)}).select('*').single());await activity(c.wid,'appointment','Appointment booked',`${a.customer} · ${a.title}`);return json(res,201,{ok:true,appointment:mapAppointment(a)});}
   x=p.match(/^\/api\/app\/appointments\/([^/]+)$/);if(x&&m==='DELETE'){await db.from('appointments').delete().eq('id',x[1]).eq('workspace_id',c.wid);return json(res,200,{ok:true});}
@@ -459,4 +468,4 @@ function serve(res,p){let rel=p==='/'?'index.html':decodeURIComponent(p.slice(1)
 setInterval(processAppointmentReminders,15*60*1000).unref();
 setTimeout(processAppointmentReminders,5000).unref();
 
-http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname))return;serve(res,'/');}catch(e){console.error(e);if(!res.headersSent)json(res,500,{ok:false,message:e.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V5 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
+http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname))return;serve(res,'/');}catch(e){console.error(e);if(!res.headersSent)json(res,500,{ok:false,message:e.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
