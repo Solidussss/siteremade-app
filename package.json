@@ -2,7 +2,7 @@
   "name": "siteremade-app",
   "version": "5.0.0",
   "private": true,
-  "description": "SiteRemade client operations app \u2014 Supabase production foundation",
+  "description": "SiteRemade client operations app — Supabase production foundation",
   "main": "v17-server.js",
   "scripts": {
     "start": "node v17-server.js",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "twilio": "^5.8.0"
   }
 }
