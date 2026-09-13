@@ -1,29 +1,14 @@
 (()=>{
 let installed=false,status=null,syncing=false;
 const $=s=>document.querySelector(s);
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function call(url,opts={}){const r=await fetch(url,{credentials:'same-origin',...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}}),j=await r.json().catch(()=>({}));if(!r.ok||j.ok===false)throw Error(j.message||'Request failed');return j}
 function ensure(){const view=$('#view-inbox');if(!view||$('#v29MailboxBar'))return;const layout=view.querySelector('.placeholder-layout');if(!layout)return;const bar=document.createElement('section');bar.id='v29MailboxBar';bar.className='v29-mailbar';layout.insertAdjacentElement('beforebegin',bar)}
-function draw(){
-  ensure();
-  const bar=$('#v29MailboxBar');
-  if(!bar)return;
-  if(!status){
-    bar.innerHTML='<div><span class="v29-dot"></span><strong>Email inbox</strong><small>Checking mailbox connection…</small></div><div class="v29-mail-actions"><a class="secondary-button" href="/api/app/gmail/start">Connect Gmail</a></div>';
-    return;
-  }
-  if(status.connected){
-    bar.innerHTML=`<div><span class="v29-dot live"></span><strong>${status.provider==='gmail'?'Gmail':'Outlook'} connected</strong><small>${esc(status.email)}${status.lastSync?' · synced '+new Date(status.lastSync).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):''}</small></div><div class="v29-mail-actions"><button type="button" class="secondary-button" id="v29SyncMailbox">Sync now</button><button type="button" class="text-button" id="v29DisconnectMailbox">Disconnect</button></div>`;
-    $('#v29SyncMailbox').onclick=sync;
-    $('#v29DisconnectMailbox').onclick=disconnect;
-    return;
-  }
-  const o=status.available?.outlook;
-  bar.innerHTML=`<div><span class="v29-dot"></span><strong>Connect your business inbox</strong><small>Connect Gmail so customer email replies appear here inside SiteRemade.</small></div><div class="v29-mail-actions"><a class="secondary-button" href="/api/app/gmail/start">Connect Gmail</a>${o?'<button type="button" class="secondary-button" data-v29-provider="outlook">Connect Outlook</button>':''}</div>`;
-  bar.querySelectorAll('[data-v29-provider]').forEach(b=>b.onclick=()=>connect(b.dataset.v29Provider));
-}
+function gmailButton(){return '<button type="button" class="secondary-button" id="v29ConnectGmail">Connect Gmail</button>'}
+function bindGmail(){const b=$('#v29ConnectGmail');if(b)b.onclick=()=>connect('gmail')}
+function draw(){ensure();const bar=$('#v29MailboxBar');if(!bar)return;if(!status){bar.innerHTML='<div><span class="v29-dot"></span><strong>Email inbox</strong><small>Checking mailbox connection…</small></div><div class="v29-mail-actions">'+gmailButton()+'</div>';bindGmail();return}if(status.connected){bar.innerHTML=`<div><span class="v29-dot live"></span><strong>${status.provider==='gmail'?'Gmail':'Outlook'} connected</strong><small>${esc(status.email)}${status.lastSync?' · synced '+new Date(status.lastSync).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):''}</small></div><div class="v29-mail-actions"><button type="button" class="secondary-button" id="v29SyncMailbox">Sync now</button><button type="button" class="text-button" id="v29DisconnectMailbox">Disconnect</button></div>`;$('#v29SyncMailbox').onclick=sync;$('#v29DisconnectMailbox').onclick=disconnect;return}const o=status.available?.outlook;bar.innerHTML='<div><span class="v29-dot"></span><strong>Connect your business inbox</strong><small>Connect Gmail so customer email replies appear here inside SiteRemade.</small></div><div class="v29-mail-actions">'+gmailButton()+(o?'<button type="button" class="secondary-button" data-v29-provider="outlook">Connect Outlook</button>':'')+'</div>';bindGmail();bar.querySelectorAll('[data-v29-provider="outlook"]').forEach(b=>b.onclick=()=>connect('outlook'))}
 async function load(){ensure();try{status=await call('/api/app/mailbox/status');draw()}catch(e){status={connected:false,available:{}};draw();const bar=$('#v29MailboxBar');if(bar)bar.dataset.error=e.message}}
-async function connect(provider){try{const j=await call('/api/app/mailbox/connect?provider='+encodeURIComponent(provider));if(j.url)location.href=j.url}catch(e){alert(e.message)}}
+async function connect(provider){const b=provider==='gmail'?$('#v29ConnectGmail'):null;if(b){b.disabled=true;b.textContent='Connecting…'}try{const j=await call('/api/app/mailbox/connect?provider='+encodeURIComponent(provider));if(!j.url)throw Error('Google did not return an authorization URL.');window.location.assign(j.url)}catch(e){if(b){b.disabled=false;b.textContent='Connect Gmail'}alert(e.message)}}
 async function sync(){if(syncing)return;syncing=true;const b=$('#v29SyncMailbox');if(b){b.disabled=true;b.textContent='Syncing…'}try{await call('/api/app/mailbox/sync',{method:'POST'});if(typeof refreshLight==='function')await refreshLight();await load()}catch(e){alert(e.message)}finally{syncing=false}}
 async function disconnect(){if(!confirm('Disconnect this mailbox from SiteRemade?'))return;try{await call('/api/app/mailbox',{method:'DELETE'});status=null;await load()}catch(e){alert(e.message)}}
 function patchConversation(){const old=renderConversationWindow;renderConversationWindow=function(){const r=old.apply(this,arguments);const c=state.conversations.find(x=>x.id===state.selectedConversationId),lead=c?state.leads.find(l=>l.id===c.leadId):null,mode=$('#conversationMode');if(mode&&status?.connected&&lead?.email)mode.textContent=`Email · ${status.provider==='gmail'?'Gmail':'Outlook'} · ${lead.email}`;return r}}
