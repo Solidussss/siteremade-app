@@ -2,14 +2,17 @@
   let lastKey='';
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=n=>Number(n?.value??n??0).toLocaleString();
-  const currentWorkspace=()=>window.state?.workspace?.id||'';
+  const ready=()=>typeof state!=='undefined'&&typeof renderAll==='function';
+  const currentWorkspace=()=>typeof state!=='undefined'&&state.workspace?.id?state.workspace.id:'';
+  const currentBusiness=()=>typeof state!=='undefined'&&state.workspace?.businessName?state.workspace.businessName:'';
+  const currentDomain=()=>typeof state!=='undefined'&&state.websiteAnalytics?.domain?state.websiteAnalytics.domain:'';
 
   function setupMarkup(domain=''){
     return `<div class="v24-site-picker">
       <div>
         <p class="eyebrow">CLIENT WEBSITE</p>
         <h2>Website analytics</h2>
-        <p>Choose the website this workspace should track. SiteRemade creates and links the private analytics property automatically.</p>
+        <p>Select the website this workspace should track. SiteRemade creates and links its private analytics property automatically.</p>
       </div>
       <form id="v24WebsiteForm" class="traffic-domain-form v21-domain-form">
         <label>Website domain<input name="domain" value="${esc(domain)}" placeholder="yourbusiness.com" autocomplete="url" required /></label>
@@ -37,11 +40,16 @@
           method:'POST',
           credentials:'same-origin',
           headers:{'content-type':'application/json',...(wid?{'x-workspace-id':wid}:{})},
-          body:JSON.stringify({domain,businessName:window.state?.workspace?.businessName||''})
+          body:JSON.stringify({domain,businessName:currentBusiness()})
         });
         const j=await r.json();
         if(!r.ok)throw Error(j.message||'Could not connect website');
-        if(window.state?.websiteAnalytics){window.state.websiteAnalytics.domain=j.domain;window.state.websiteAnalytics.connected=true;window.state.websiteAnalytics.provider='umami';}
+        if(typeof state!=='undefined'){
+          state.websiteAnalytics=state.websiteAnalytics||{};
+          state.websiteAnalytics.domain=j.domain;
+          state.websiteAnalytics.connected=true;
+          state.websiteAnalytics.provider='umami';
+        }
         if(status)status.textContent='Website connected.';
         lastKey='';
         setTimeout(load,150);
@@ -54,7 +62,7 @@
 
   async function load(){
     const view=document.querySelector('#view-analytics');
-    if(!view||view.classList.contains('hidden'))return;
+    if(!view||!view.classList.contains('active'))return;
     const wid=currentWorkspace();
     const key=wid+':'+Math.floor(Date.now()/30000);
     if(key===lastKey)return;
@@ -66,7 +74,7 @@
       if(!r.ok)throw Error(j.message||'Analytics unavailable');
       if(!j.connected){
         panel.className='panel traffic-panel';
-        panel.innerHTML=`${setupMarkup(j.domain||'')}<div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>No website connected yet</h2><p>Enter this client's website above. Once tracking is installed on that website, its real visitor data appears here.</p></div><span class="status-pill neutral">SETUP</span></div>`;
+        panel.innerHTML=`${setupMarkup(j.domain||currentDomain())}<div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>No website connected yet</h2><p>Enter this client's website above. Once tracking is installed on that website, its real visitor data appears here.</p></div><span class="status-pill neutral">SETUP</span></div>`;
         bindSetup(panel);
         return;
       }
@@ -84,15 +92,15 @@
       bindSetup(panel);
     }catch(e){
       panel.className='panel traffic-panel';
-      panel.innerHTML=`${setupMarkup(window.state?.websiteAnalytics?.domain||'')}<div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>Analytics temporarily unavailable</h2><p>${esc(e.message)}</p></div></div>`;
+      panel.innerHTML=`${setupMarkup(currentDomain())}<div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>Analytics temporarily unavailable</h2><p>${esc(e.message)}</p></div></div>`;
       bindSetup(panel);
     }
   }
 
   function install(){
-    if(typeof window.renderAll!=='function'||typeof window.state==='undefined')return setTimeout(install,100);
-    const old=window.renderAll;
-    window.renderAll=function(){const r=old.apply(this,arguments);setTimeout(()=>{lastKey='';load()},20);return r;};
+    if(!ready())return setTimeout(install,100);
+    const old=renderAll;
+    renderAll=function(){const r=old.apply(this,arguments);setTimeout(()=>{lastKey='';load()},20);return r;};
     document.addEventListener('click',e=>{if(e.target.closest('[data-view="analytics"]'))setTimeout(()=>{lastKey='';load()},80)});
     setTimeout(()=>{lastKey='';load()},250);
   }
