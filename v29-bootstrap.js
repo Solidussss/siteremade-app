@@ -5,5 +5,5 @@ import('/v29-mail-client.js?v=42').catch(()=>{});
 import('/v34-integrations.js?v=2').catch(()=>{});
 import('/v35-calendar-client.js?v=1').catch(()=>{});
 import('/v36-connectors-client.js?v=1').catch(()=>{});
-import('/v38-safe.js?v=5').catch(()=>{});
+import('/v38-safe.js?v=6').catch(()=>{});
 })();
