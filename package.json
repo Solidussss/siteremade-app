@@ -3,10 +3,10 @@
   "version": "5.0.0",
   "private": true,
   "description": "SiteRemade client operations app \u2014 Supabase production foundation",
-  "main": "server.js",
+  "main": "v17-server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node v17-server.js",
+    "dev": "node v17-server.js",
     "bootstrap-owner": "node scripts/bootstrap-owner.js"
   },
   "engines": {
