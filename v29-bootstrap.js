@@ -4,4 +4,5 @@ if(!document.querySelector('link[data-v34-integrations]')){const l=document.crea
 import('/v29-mail-client.js?v=42').catch(()=>{});
 import('/v34-integrations.js?v=1').catch(()=>{});
 import('/v35-calendar-client.js?v=1').catch(()=>{});
+import('/v36-connectors-client.js?v=1').catch(()=>{});
 })();
