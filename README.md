@@ -213,3 +213,15 @@ No new SQL is required.
 - Google/Meta advertising UI is intentionally blocked as Coming Soon while preserving the underlying ad funding/spend code and database data.
 - New Website Updates module for clients to send page/priority/change requests. SiteRemade owners can move requests through Requested → In Progress → Completed.
 - Run `V13-MIGRATION.sql` once after V12 to create the website_updates table.
+
+## V15 — connected customer workflow
+
+- Website chat now has a public-key-protected history endpoint and polls while open, so replies sent by the business from SiteRemade Inbox can appear back in the customer's website chat.
+- Business replies are stored in the shared conversation and can also fan out through configured Resend email and Twilio SMS.
+- Lead sidebar badge now reflects current New leads and hides at zero.
+- Notification dot reflects actionable unread conversations/new leads instead of staying lit forever because historical activity exists.
+- Lead drawer now exposes direct Call / Email actions and source context.
+- Calendar event cards now show customer + appointment title/status, full grid borders are restored, and clicking an appointment opens details/customer actions instead of immediately asking to delete it.
+- No V15 SQL migration is required.
+
+Important: email delivery still requires `RESEND_API_KEY`; SMS delivery still requires the existing Twilio environment variables. The website chat reply path itself does not require either provider.

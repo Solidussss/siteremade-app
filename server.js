@@ -271,6 +271,15 @@ async function api(req,res,u){
     return json(res,200,{ok:true,leadId:lead.id,conversationId:cv.id,reply});
   }
 
+  if(m==='POST'&&p==='/api/public/chat/history'){
+    const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});
+    const leadId=clean(b.leadId,80);if(!leadId)return json(res,400,{ok:false,message:'Lead required.'});
+    const lead=(await db.from('leads').select('id').eq('id',leadId).eq('workspace_id',w.id).maybeSingle()).data;if(!lead)return json(res,404,{ok:false,message:'Conversation not found.'});
+    const cv=(await db.from('conversations').select('*').eq('workspace_id',w.id).eq('lead_id',lead.id).maybeSingle()).data;if(!cv)return json(res,200,{ok:true,messages:[],mode:'human'});
+    const msgs=await q(db.from('messages').select('*').eq('conversation_id',cv.id).eq('workspace_id',w.id).order('created_at',{ascending:true}).limit(200));
+    return json(res,200,{ok:true,conversationId:cv.id,mode:cv.mode,messages:msgs.map(mapMessage)});
+  }
+
   if(m==='POST'&&p==='/api/webhooks/stripe'){
     if(!process.env.STRIPE_WEBHOOK_SECRET)return json(res,503,{ok:false,message:'Stripe webhook is not configured.'});
     const raw=await new Promise((resolve,reject)=>{let z='';req.on('data',c=>z+=c);req.on('end',()=>resolve(z));req.on('error',reject)});
@@ -385,7 +394,7 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   x=p.match(/^\/api\/app\/conversations\/([^/]+)$/);
   if(x&&m==='PATCH'){const b=await body(req),patch={};if(b.mode)patch.mode=b.mode==='ai'?'ai':'human';if(b.read)patch.unread=0;patch.updated_at=now();const cv=await q(db.from('conversations').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());const msgs=await q(db.from('messages').select('*').eq('conversation_id',cv.id).order('created_at',{ascending:true}));return json(res,200,{ok:true,conversation:mapConversation(cv,msgs)});}
   x=p.match(/^\/api\/app\/conversations\/([^/]+)\/messages$/);
-  if(x&&m==='POST'){const b=await body(req),cv=(await db.from('conversations').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!cv)return json(res,404,{ok:false,message:'Conversation not found.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message empty.'});await db.from('messages').insert({workspace_id:c.wid,conversation_id:cv.id,sender:'business',text});await db.from('conversations').update({updated_at:now()}).eq('id',cv.id);await activity(c.wid,'message','Message sent',`${cv.name} · ${text.slice(0,60)}`);const lead=(await db.from('leads').select('*').eq('id',cv.lead_id).maybeSingle()).data;if(lead?.email)notify(`Message from ${c.workspace.business_name}`,text,lead.email);return json(res,201,{ok:true});}
+  if(x&&m==='POST'){const b=await body(req),cv=(await db.from('conversations').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!cv)return json(res,404,{ok:false,message:'Conversation not found.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message empty.'});await db.from('messages').insert({workspace_id:c.wid,conversation_id:cv.id,sender:'business',text});await db.from('conversations').update({updated_at:now(),mode:'human'}).eq('id',cv.id);await activity(c.wid,'message','Message sent',`${cv.name} · ${text.slice(0,60)}`);const lead=(await db.from('leads').select('*').eq('id',cv.lead_id).eq('workspace_id',c.wid).maybeSingle()).data;if(lead?.email)notify(`Message from ${c.workspace.business_name}`,text,lead.email);if(lead?.phone)sms(lead.phone,`${c.workspace.business_name}: ${text}`);return json(res,201,{ok:true,delivery:{website:true,email:!!lead?.email&&!!process.env.RESEND_API_KEY,sms:!!lead?.phone&&!!process.env.TWILIO_ACCOUNT_SID}});}
 
   if(m==='POST'&&p==='/api/app/appointments'){const b=await body(req),st=new Date(b.start);if(Number.isNaN(st.getTime()))return json(res,400,{ok:false,message:'Valid date required.'});const lead=b.leadId?(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data:null;const a=await q(db.from('appointments').insert({workspace_id:c.wid,lead_id:lead?.id||null,title:clean(b.title,160)||'Appointment',customer:lead?.name||clean(b.customer,160),start_at:st.toISOString(),duration:Math.max(15,Number(b.duration)||60),status:'Booked',notes:clean(b.notes,1000)}).select('*').single());await activity(c.wid,'appointment','Appointment booked',`${a.customer} · ${a.title}`);return json(res,201,{ok:true,appointment:mapAppointment(a)});}
   x=p.match(/^\/api\/app\/appointments\/([^/]+)$/);if(x&&m==='DELETE'){await db.from('appointments').delete().eq('id',x[1]).eq('workspace_id',c.wid);return json(res,200,{ok:true});}

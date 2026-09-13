@@ -7,14 +7,14 @@
   <meta name="description" content="SiteRemade client dashboard for leads, conversations, scheduling and payments." />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
-  <link rel="stylesheet" href="app.css?v=14" />
+  <link rel="stylesheet" href="app.css?v=15" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0d0e11" />
 </head>
 <body>
   <div class="auth-screen" id="authScreen">
     <div class="auth-card">
-      <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+      <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
       <div class="auth-tabs" role="tablist">
         <button type="button" class="auth-tab active" id="showLogin" aria-selected="true">Sign in</button>
         <button type="button" class="auth-tab" id="showSignup" aria-selected="false">Create account</button>
@@ -47,7 +47,7 @@
 
   <div class="subscription-lock" id="subscriptionLock" hidden>
     <div class="subscription-lock-card">
-      <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+      <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
       <p class="eyebrow">ACCOUNT ACTIVATION</p>
       <h1>Activate SiteRemade</h1>
       <p class="subscription-lock-copy">Your workspace is ready. Start your monthly SiteRemade plan to unlock leads, AI conversations, bookings, payments, analytics and automations.</p>
@@ -63,7 +63,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <a class="app-brand" href="/" aria-label="SiteRemade app home">
-        <img src="siteremade-logo-black.png?v=13" alt="SiteRemade" />
+        <img src="siteremade-logo-black.png?v=15" alt="SiteRemade" />
       </a>
 
       <div class="workspace-card">
@@ -108,7 +108,7 @@
 
     <main class="main-panel">
       <header class="topbar">
-        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=13" alt="SiteRemade" /></div>
+        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=15" alt="SiteRemade" /></div>
         <div class="topbar-status"><span class="live-dot"></span><span id="systemStatus">All systems live</span></div>
         <div class="topbar-actions">
           <button class="icon-button" id="globalSearchButton" aria-label="Search">⌕</button>
@@ -391,11 +391,13 @@
 
   <div class="modal-backdrop" id="conversationModal" hidden><form class="lead-modal" id="conversationForm"><div class="modal-head"><div><p class="eyebrow">INBOX</p><h2>Start conversation</h2></div><button type="button" class="close-button" data-close="conversationModal">×</button></div><label>Lead<select name="leadId" id="conversationLead"></select></label><div class="modal-actions"><button type="button" class="secondary-button" data-close="conversationModal">Cancel</button><button type="submit" class="primary-action">Open conversation</button></div></form></div>
 
-  <aside class="lead-drawer" id="leadDrawer" hidden><div class="drawer-head"><div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="drawerName">Lead</h2></div><button class="close-button" id="closeDrawer">×</button></div><form id="leadDetailForm"><div class="drawer-grid"><label>Status<select name="status" id="drawerStatus"><option>New</option><option>Contacted</option><option>Quoted</option><option>Won</option><option>Lost</option></select></label><label>Value<input name="value" id="drawerValue" type="number" min="0" step="1" /></label><label>Name<input name="name" id="drawerLeadName" /></label><label>Service<input name="service" id="drawerService" /></label><label>Phone<input name="phone" id="drawerPhone" /></label><label>Email<input name="email" id="drawerEmail" type="email" /></label></div><label>Inquiry<textarea name="message" id="drawerMessage" rows="4"></textarea></label><label>Add note<textarea name="note" id="drawerNote" rows="2" placeholder="Add a note to the customer record"></textarea></label><div class="drawer-actions"><button type="button" class="danger-button" id="deleteLeadButton">Delete</button><button type="button" class="secondary-button" id="messageLeadButton">Message</button><button type="button" class="secondary-button" id="bookLeadButton">Book</button><button type="submit" class="primary-action">Save changes</button></div><div class="notes-list" id="drawerNotes"></div><p class="modal-status" id="drawerStatusText"></p></form></aside>
+  <div class="modal-backdrop" id="appointmentDetailModal" hidden><div class="lead-modal appointment-detail-card"><div class="modal-head"><div><p class="eyebrow">APPOINTMENT</p><h2 id="appointmentDetailName">Customer</h2><p class="appointment-detail-meta" id="appointmentDetailMeta"></p></div><button type="button" class="close-button" data-close="appointmentDetailModal">×</button></div><div class="appointment-detail-body"><strong id="appointmentDetailTitle">Appointment</strong><p id="appointmentDetailNotes">No appointment notes.</p><div class="drawer-contact-actions" id="appointmentDetailContact"></div></div><div class="modal-actions"><button type="button" class="danger-button" id="appointmentDeleteButton">Delete appointment</button><button type="button" class="primary-action" data-close="appointmentDetailModal">Done</button></div></div></div>
+
+  <aside class="lead-drawer" id="leadDrawer" hidden><div class="drawer-head"><div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="drawerName">Lead</h2></div><button class="close-button" id="closeDrawer">×</button></div><form id="leadDetailForm"><div class="drawer-contact-actions" id="drawerContactActions"></div><div class="drawer-grid"><label>Status<select name="status" id="drawerStatus"><option>New</option><option>Contacted</option><option>Quoted</option><option>Won</option><option>Lost</option></select></label><label>Value<input name="value" id="drawerValue" type="number" min="0" step="1" /></label><label>Name<input name="name" id="drawerLeadName" /></label><label>Service<input name="service" id="drawerService" /></label><label>Phone<input name="phone" id="drawerPhone" /></label><label>Email<input name="email" id="drawerEmail" type="email" /></label></div><label>Inquiry<textarea name="message" id="drawerMessage" rows="4"></textarea></label><label>Add note<textarea name="note" id="drawerNote" rows="2" placeholder="Add a note to the customer record"></textarea></label><div class="drawer-actions"><button type="button" class="danger-button" id="deleteLeadButton">Delete</button><button type="button" class="secondary-button" id="messageLeadButton">Message</button><button type="button" class="secondary-button" id="bookLeadButton">Book</button><button type="submit" class="primary-action">Save changes</button></div><div class="notes-list" id="drawerNotes"></div><p class="modal-status" id="drawerStatusText"></p></form></aside>
 
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
