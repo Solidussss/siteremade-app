@@ -1,6 +1,9 @@
 require('dotenv').config();
 const http=require('http');
+const fs=require('fs');
 const previous=http.createServer.bind(http);
+const previousRead=fs.readFileSync.bind(fs);
+fs.readFileSync=function(file,...args){const out=previousRead(file,...args);if(typeof out!=='string')return out;const name=String(file||'');if(!name.endsWith('app.html')&&!name.endsWith('index.html'))return out;if(out.includes('v40-existing-number-client.js'))return out;return out.replace('</body>','<script src="/v40-existing-number-client.js?v=1"></script></body>')};
 const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
 const readJson=req=>new Promise((resolve,reject)=>{let s='';req.on('data',c=>s+=c);req.on('end',()=>{try{resolve(s?JSON.parse(s):{})}catch{reject(Error('Invalid JSON'))}});req.on('error',reject)});
 function normalize(v){let d=String(v||'').replace(/\D/g,'');if(d.length===10)d='1'+d;return d.length===11&&d[0]==='1'?`+${d}`:''}
