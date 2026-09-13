@@ -2,7 +2,8 @@
 const http=require('http');
 const {createClient}=require('@supabase/supabase-js');
 const originalCreate=http.createServer;
-const BASE=String(process.env.UMAMI_BASE_URL||'').replace(/\/$/,'');
+function normalizeBase(raw){let v=String(raw||'').trim().replace(/\/$/,'');if(v&&!/^https?:\/\//i.test(v))v='https://'+v;return v;}
+const BASE=normalizeBase(process.env.UMAMI_BASE_URL);
 const USER=process.env.UMAMI_USERNAME||'';
 const PASS=process.env.UMAMI_PASSWORD||'';
 const SB_URL=process.env.SUPABASE_URL||'';
