@@ -15,120 +15,12 @@ const db = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey, { a
 
 const clean = (v, n = 4000) => String(v ?? '').trim().slice(0, n);
 const normalizePhone = v => String(v || '').replace(/\D/g, '').slice(-10);
-const xml = (res, status, body = '<Response></Response>') => {
-  res.writeHead(status, { 'Content-Type': 'text/xml; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
-  res.end(body);
-};
-const json = (res, status, body) => {
-  const text = JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store' });
-  res.end(text);
-};
-
-function readRaw(req, limit = 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    let raw = '';
-    req.on('data', chunk => {
-      raw += chunk;
-      if (raw.length > limit) {
-        reject(new Error('Payload too large'));
-        req.destroy();
-      }
-    });
-    req.on('end', () => resolve(raw));
-    req.on('error', reject);
-  });
-}
-
-function publicRequestUrl(req) {
-  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-  return `${proto}://${host}${req.url}`;
-}
-
-function validTwilioSignature(req, params) {
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const signature = String(req.headers['x-twilio-signature'] || '');
-  if (!token || !signature) return false;
-  let payload = publicRequestUrl(req);
-  for (const key of Object.keys(params).sort()) payload += key + params[key];
-  const expected = crypto.createHmac('sha1', token).update(payload).digest('base64');
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-async function findLeadByPhone(phone) {
-  if (!db) return null;
-  const target = normalizePhone(phone);
-  if (!target) return null;
-  const { data, error } = await db.from('leads').select('*').order('updated_at', { ascending: false }).limit(2000);
-  if (error) throw error;
-  return (data || []).find(l => normalizePhone(l.phone) === target) || null;
-}
-
-async function recordInboundSms(params) {
-  const from = clean(params.From, 80);
-  const to = clean(params.To, 80);
-  const text = clean(params.Body, 4000);
-  if (!from || !text) return { matched: false };
-  if (process.env.TWILIO_FROM && normalizePhone(to) !== normalizePhone(process.env.TWILIO_FROM)) return { matched: false };
-
-  const lead = await findLeadByPhone(from);
-  if (!lead) return { matched: false };
-
-  let { data: conversation, error: convError } = await db.from('conversations').select('*').eq('workspace_id', lead.workspace_id).eq('lead_id', lead.id).maybeSingle();
-  if (convError) throw convError;
-  if (!conversation) {
-    const created = await db.from('conversations').insert({ workspace_id: lead.workspace_id, lead_id: lead.id, name: lead.name, mode: 'human', unread: 0 }).select('*').single();
-    if (created.error) throw created.error;
-    conversation = created.data;
-  }
-
-  const inserted = await db.from('messages').insert({ workspace_id: lead.workspace_id, conversation_id: conversation.id, sender: 'customer', text });
-  if (inserted.error) throw inserted.error;
-
-  const nextUnread = Math.max(0, Number(conversation.unread) || 0) + 1;
-  const updated = await db.from('conversations').update({ unread: nextUnread, updated_at: new Date().toISOString(), mode: 'human', name: lead.name }).eq('id', conversation.id).eq('workspace_id', lead.workspace_id);
-  if (updated.error) throw updated.error;
-
-  await db.from('activities').insert({ workspace_id: lead.workspace_id, type: 'message', title: 'Customer text message', detail: `${lead.name} · ${text.slice(0, 80)}` });
-  return { matched: true, leadId: lead.id, conversationId: conversation.id };
-}
-
-function enhancedHtml(filename) {
-  let html = fs.readFileSync(path.join(ROOT, filename), 'utf8');
-  if (!html.includes('/v17.css')) html = html.replace('</head>', '  <link rel="stylesheet" href="/v17.css?v=17" />\n</head>');
-  if (!html.includes('/v17-client.js')) html = html.replace('</body>', '  <script src="/v17-client.js?v=17"></script>\n</body>');
-  return html;
-}
-
-http.createServer = function patchedCreateServer(listener) {
-  return originalCreateServer(async (req, res) => {
-    try {
-      const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-
-      if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html' || u.pathname === '/app.html')) {
-        const file = u.pathname === '/app.html' ? 'app.html' : 'index.html';
-        const body = enhancedHtml(file);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' });
-        return res.end(body);
-      }
-
-      if (req.method === 'POST' && u.pathname === '/api/public/twilio/inbound') {
-        if (!db) return xml(res, 503, '<Response></Response>');
-        const raw = await readRaw(req);
-        const params = Object.fromEntries(new URLSearchParams(raw));
-        if (!validTwilioSignature(req, params)) return xml(res, 403, '<Response></Response>');
-        await recordInboundSms(params);
-        return xml(res, 200);
-      }
-
-      return listener(req, res);
-    } catch (error) {
-      console.error('V17 middleware:', error);
-      if (!res.headersSent) return json(res, 500, { ok: false, message: 'Server error' });
-      res.end();
-    }
-  });
-};
+const xml = (res, status, body = '<Response></Response>') => { res.writeHead(status, { 'Content-Type': 'text/xml; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' }); res.end(body); };
+const json = (res, status, body) => { const text = JSON.stringify(body); res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store' }); res.end(text); };
+function readRaw(req, limit = 1024 * 1024) { return new Promise((resolve, reject) => { let raw = ''; req.on('data', chunk => { raw += chunk; if (raw.length > limit) { reject(new Error('Payload too large')); req.destroy(); } }); req.on('end', () => resolve(raw)); req.on('error', reject); }); }
+function publicRequestUrl(req) { const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim(); const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim(); return `${proto}://${host}${req.url}`; }
+function validTwilioSignature(req, params) { const token = process.env.TWILIO_AUTH_TOKEN; const signature = String(req.headers['x-twilio-signature'] || ''); if (!token || !signature) return false; let payload = publicRequestUrl(req); for (const key of Object.keys(params).sort()) payload += key + params[key]; const expected = crypto.createHmac('sha1', token).update(payload).digest('base64'); const a = Buffer.from(signature), b = Buffer.from(expected); return a.length === b.length && crypto.timingSafeEqual(a, b); }
+async function findLeadByPhone(phone) { if (!db) return null; const target = normalizePhone(phone); if (!target) return null; const { data, error } = await db.from('leads').select('*').order('updated_at', { ascending: false }).limit(2000); if (error) throw error; return (data || []).find(l => normalizePhone(l.phone) === target) || null; }
+async function recordInboundSms(params) { const from = clean(params.From, 80), to = clean(params.To, 80), text = clean(params.Body, 4000); if (!from || !text) return { matched: false }; if (process.env.TWILIO_FROM && normalizePhone(to) !== normalizePhone(process.env.TWILIO_FROM)) return { matched: false }; const lead = await findLeadByPhone(from); if (!lead) return { matched: false }; let { data: conversation, error: convError } = await db.from('conversations').select('*').eq('workspace_id', lead.workspace_id).eq('lead_id', lead.id).maybeSingle(); if (convError) throw convError; if (!conversation) { const created = await db.from('conversations').insert({ workspace_id: lead.workspace_id, lead_id: lead.id, name: lead.name, mode: 'human', unread: 0 }).select('*').single(); if (created.error) throw created.error; conversation = created.data; } const inserted = await db.from('messages').insert({ workspace_id: lead.workspace_id, conversation_id: conversation.id, sender: 'customer', text }); if (inserted.error) throw inserted.error; const nextUnread = Math.max(0, Number(conversation.unread) || 0) + 1; const updated = await db.from('conversations').update({ unread: nextUnread, updated_at: new Date().toISOString(), mode: 'human', name: lead.name }).eq('id', conversation.id).eq('workspace_id', lead.workspace_id); if (updated.error) throw updated.error; await db.from('activities').insert({ workspace_id: lead.workspace_id, type: 'message', title: 'Customer text message', detail: `${lead.name} · ${text.slice(0, 80)}` }); return { matched: true, leadId: lead.id, conversationId: conversation.id }; }
+function enhancedHtml(filename) { let html = fs.readFileSync(path.join(ROOT, filename), 'utf8'); if (!html.includes('/v17.css')) html = html.replace('</head>', '  <link rel="stylesheet" href="/v17.css?v=17" />\n</head>'); if (!html.includes('/v18.css')) html = html.replace('</head>', '  <link rel="stylesheet" href="/v18.css?v=18" />\n</head>'); if (!html.includes('/v17-client.js')) html = html.replace('</body>', '  <script src="/v17-client.js?v=17"></script>\n</body>'); if (!html.includes('/v18-client.js')) html = html.replace('</body>', '  <script src="/v18-client.js?v=18"></script>\n</body>'); return html; }
+http.createServer = function patchedCreateServer(listener) { return originalCreateServer(async (req, res) => { try { const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`); if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html' || u.pathname === '/app.html')) { const file = u.pathname === '/app.html' ? 'app.html' : 'index.html'; const body = enhancedHtml(file); res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store' }); return res.end(body); } if (req.method === 'POST' && u.pathname === '/api/public/twilio/inbound') { if (!db) return xml(res, 503); const raw = await readRaw(req); const params = Object.fromEntries(new URLSearchParams(raw)); if (!validTwilioSignature(req, params)) return xml(res, 403); await recordInboundSms(params); return xml(res, 200); } return listener(req, res); } catch (error) { console.error('V18 middleware:', error); if (!res.headersSent) return json(res, 500, { ok: false, message: 'Server error' }); res.end(); } }); };
