@@ -1,161 +1,24 @@
 require('dotenv').config();
-const http = require('http');
-const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-
-const previousCreateServer = http.createServer.bind(http);
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ANON_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
-const BASE_URL = String(process.env.PUBLIC_BASE_URL || 'https://app.siteremade.com').replace(/\/$/, '');
-const GMAIL_REDIRECT_URI = BASE_URL + '/api/app/gmail/callback';
-const stateSecret = process.env.MAILBOX_STATE_SECRET || SERVICE_KEY || 'siteremade-mail';
-const db = SUPABASE_URL && SERVICE_KEY ? createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-const anon = SUPABASE_URL && ANON_KEY ? createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-
-function send(res, status, obj) {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
-  res.end(body);
-}
-function cookies(req) {
-  return Object.fromEntries(String(req.headers.cookie || '').split(';').map(x => x.trim().split('=')).filter(x => x[0]).map(([k, ...v]) => [k, decodeURIComponent(v.join('='))]));
-}
-async function context(req) {
-  if (!db || !anon) return null;
-  const token = cookies(req).sr_access;
-  if (!token) return null;
-  const user = (await anon.auth.getUser(token)).data?.user;
-  if (!user) return null;
-  const profile = (await db.from('profiles').select('role').eq('id', user.id).maybeSingle()).data;
-  if (!profile) return null;
-  let workspaces = [];
-  if (profile.role === 'owner') {
-    workspaces = (await db.from('workspaces').select('*').order('created_at')).data || [];
-  } else {
-    workspaces = ((await db.from('workspace_members').select('workspace_id,workspaces(*)').eq('user_id', user.id)).data || []).map(x => x.workspaces).filter(Boolean);
-  }
-  if (!workspaces.length) return null;
-  const c = cookies(req);
-  let wid = req.headers['x-workspace-id'] || c.sr_workspace || workspaces[0].id;
-  if (!workspaces.some(w => w.id === wid)) wid = workspaces[0].id;
-  return { user, wid };
-}
-function signState(obj) {
-  const payload = Buffer.from(JSON.stringify(obj)).toString('base64url');
-  const sig = crypto.createHmac('sha256', stateSecret).update(payload).digest('base64url');
-  return payload + '.' + sig;
-}
-function verifyState(value) {
-  try {
-    const [payload, sig] = String(value || '').split('.');
-    if (!payload || !sig) return null;
-    const expected = crypto.createHmac('sha256', stateSecret).update(payload).digest('base64url');
-    const a = Buffer.from(sig), b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (Date.now() - Number(data.t || 0) > 10 * 60 * 1000) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-async function mailboxStatus(req, res) {
-  const c = await context(req);
-  if (!c) return send(res, 401, { ok: false, message: 'Authentication required.' });
-  const row = db ? (await db.from('mailbox_connections').select('*').eq('workspace_id', c.wid).maybeSingle()).data : null;
-  return send(res, 200, {
-    ok: true,
-    connected: !!row,
-    provider: row?.provider || '',
-    email: row?.email || '',
-    lastSync: row?.last_sync || null,
-    available: {
-      gmail: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
-      outlook: !!(process.env.MICROSOFT_OAUTH_CLIENT_ID && process.env.MICROSOFT_OAUTH_CLIENT_SECRET)
-    }
-  });
-}
-async function startGmail(req, res) {
-  const c = await context(req);
-  if (!c) return send(res, 401, { ok: false, message: 'Authentication required.' });
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return send(res, 503, { ok: false, message: 'Google OAuth is not configured on the server.' });
-  const state = signState({ w: c.wid, u: c.user.id, p: 'gmail', t: Date.now() });
-  const q = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GMAIL_REDIRECT_URI,
-    response_type: 'code',
-    scope: 'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
-    state,
-    access_type: 'offline',
-    prompt: 'consent',
-    include_granted_scopes: 'true'
-  });
-  return send(res, 200, { ok: true, url: 'https://accounts.google.com/o/oauth2/v2/auth?' + q.toString() });
-}
-async function finishGmail(u, res) {
-  const error = u.searchParams.get('error');
-  if (error) {
-    res.writeHead(302, { Location: BASE_URL + '/?mailbox=error&reason=' + encodeURIComponent(error), 'Cache-Control': 'no-store' });
-    return res.end();
-  }
-  const state = verifyState(u.searchParams.get('state'));
-  if (!state || state.p !== 'gmail') {
-    res.writeHead(302, { Location: BASE_URL + '/?mailbox=error&reason=' + encodeURIComponent('Mailbox connection expired. Try again.'), 'Cache-Control': 'no-store' });
-    return res.end();
-  }
-  try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code: u.searchParams.get('code') || '',
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: GMAIL_REDIRECT_URI,
-        grant_type: 'authorization_code'
-      })
-    });
-    const token = await tokenRes.json();
-    if (!tokenRes.ok || !token.access_token) throw new Error(token.error_description || token.error || 'Google token exchange failed.');
-    const meRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: 'Bearer ' + token.access_token } });
-    const me = await meRes.json().catch(() => ({}));
-    if (!meRes.ok || !me.email) throw new Error('Could not read the connected Google account email.');
-    const existing = (await db.from('mailbox_connections').select('*').eq('workspace_id', state.w).maybeSingle()).data;
-    const row = {
-      workspace_id: state.w,
-      provider: 'gmail',
-      email: me.email,
-      access_token: token.access_token,
-      refresh_token: token.refresh_token || existing?.refresh_token || '',
-      expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1000).toISOString(),
-      scope: token.scope || 'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',
-      updated_at: new Date().toISOString()
-    };
-    const saved = await db.from('mailbox_connections').upsert(row, { onConflict: 'workspace_id' });
-    if (saved.error) throw saved.error;
-    res.writeHead(302, { Location: BASE_URL + '/?mailbox=connected', 'Cache-Control': 'no-store' });
-    return res.end();
-  } catch (e) {
-    res.writeHead(302, { Location: BASE_URL + '/?mailbox=error&reason=' + encodeURIComponent(e.message || 'Google connection failed.'), 'Cache-Control': 'no-store' });
-    return res.end();
-  }
-}
-
-http.createServer = function gmailOAuthFixedCreateServer(listener) {
-  return previousCreateServer(async (req, res) => {
-    try {
-      const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      if (req.method === 'GET' && u.pathname === '/api/app/mailbox/status') return mailboxStatus(req, res);
-      if (req.method === 'GET' && u.pathname === '/api/app/mailbox/connect' && u.searchParams.get('provider') === 'gmail') return startGmail(req, res);
-      if (req.method === 'GET' && u.pathname === '/api/app/gmail/callback') return finishGmail(u, res);
-      return listener(req, res);
-    } catch (e) {
-      console.error('Gmail OAuth fix:', e);
-      if (!res.headersSent) return send(res, 500, { ok: false, message: e.message || 'Google connection failed.' });
-      res.end();
-    }
-  });
-};
+const http=require('http');
+const crypto=require('crypto');
+const {createClient}=require('@supabase/supabase-js');
+const previous=http.createServer.bind(http);
+const url=process.env.SUPABASE_URL;
+const serviceKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
+const googleId=process.env.GOOGLE_CLIENT_ID||process.env.GOOGLE_OAUTH_CLIENT_ID||'';
+const googleSecret=process.env.GOOGLE_CLIENT_SECRET||process.env.GOOGLE_OAUTH_CLIENT_SECRET||'';
+const base=String(process.env.PUBLIC_BASE_URL||'https://app.siteremade.com').replace(/\/$/,'');
+const redirect=base+'/api/app/gmail/callback';
+const secret=process.env.MAILBOX_STATE_SECRET||serviceKey||'siteremade-mail';
+const db=url&&serviceKey?createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
+const anon=url&&anonKey?createClient(url,anonKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
+const parse=req=>Object.fromEntries(String(req.headers.cookie||'').split(';').map(v=>v.trim().split('=')).filter(v=>v[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));
+const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
+function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [`sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,`sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`]}
+async function context(req,res){if(!db||!anon)return null;const c=parse(req);let user=null;if(c.sr_access)user=(await anon.auth.getUser(c.sr_access)).data?.user||null;if(!user&&c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){user=r.data.user;res.setHeader('Set-Cookie',authCookies(r.data.session))}}if(!user)return null;const profile=(await db.from('profiles').select('role').eq('id',user.id).maybeSingle()).data;if(!profile)return null;let ws=[];if(profile.role==='owner')ws=(await db.from('workspaces').select('id').order('created_at')).data||[];else ws=((await db.from('workspace_members').select('workspace_id').eq('user_id',user.id)).data||[]).map(x=>({id:x.workspace_id}));if(!ws.length)return null;let wid=req.headers['x-workspace-id']||c.sr_workspace||ws[0].id;if(!ws.some(x=>x.id===wid))wid=ws[0].id;return{user,wid}}
+function sign(obj){const p=Buffer.from(JSON.stringify(obj)).toString('base64url');return p+'.'+crypto.createHmac('sha256',secret).update(p).digest('base64url')}
+function verify(v){try{const [p,s]=String(v||'').split('.');if(!p||!s)return null;const x=crypto.createHmac('sha256',secret).update(p).digest('base64url');const a=Buffer.from(s),b=Buffer.from(x);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;const o=JSON.parse(Buffer.from(p,'base64url').toString());return Date.now()-Number(o.t||0)<=600000?o:null}catch{return null}}
+function googleUrl(c){const q=new URLSearchParams({client_id:googleId,redirect_uri:redirect,response_type:'code',scope:'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',state:sign({w:c.wid,u:c.user.id,p:'gmail',t:Date.now()}),access_type:'offline',prompt:'consent',include_granted_scopes:'true'});return 'https://accounts.google.com/o/oauth2/v2/auth?'+q}
+async function finish(u,res){const err=u.searchParams.get('error');if(err){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent(err)});return res.end()}const st=verify(u.searchParams.get('state'));if(!st){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent('Connection expired. Try again.')});return res.end()}try{const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code:u.searchParams.get('code')||'',client_id:googleId,client_secret:googleSecret,redirect_uri:redirect,grant_type:'authorization_code'})});const token=await r.json();if(!r.ok||!token.access_token)throw Error(token.error_description||token.error||'Google token exchange failed.');const meR=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+token.access_token}});const me=await meR.json();if(!meR.ok||!me.email)throw Error('Could not read Google account email.');const old=(await db.from('mailbox_connections').select('refresh_token').eq('workspace_id',st.w).maybeSingle()).data;const saved=await db.from('mailbox_connections').upsert({workspace_id:st.w,provider:'gmail',email:me.email,access_token:token.access_token,refresh_token:token.refresh_token||old?.refresh_token||'',expires_at:new Date(Date.now()+Number(token.expires_in||3600)*1000).toISOString(),scope:token.scope||'',updated_at:new Date().toISOString()},{onConflict:'workspace_id'});if(saved.error)throw saved.error;res.writeHead(302,{Location:base+'/?mailbox=connected'});res.end()}catch(e){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent(e.message||'Google connection failed.')});res.end()}}
+http.createServer=function(listener){return previous(async(req,res)=>{try{const u=new URL(req.url,'http://'+(req.headers.host||'localhost'));if(req.method==='GET'&&u.pathname==='/api/app/mailbox/status'){const c=await context(req,res);if(!c)return send(res,401,{ok:false,message:'Authentication required.'});const row=(await db.from('mailbox_connections').select('*').eq('workspace_id',c.wid).maybeSingle()).data;return send(res,200,{ok:true,connected:!!row,provider:row?.provider||'',email:row?.email||'',lastSync:row?.last_sync||null,available:{gmail:!!(googleId&&googleSecret),outlook:!!(process.env.MICROSOFT_OAUTH_CLIENT_ID&&process.env.MICROSOFT_OAUTH_CLIENT_SECRET)}})}if(req.method==='GET'&&u.pathname==='/api/app/mailbox/connect'&&u.searchParams.get('provider')==='gmail'){const c=await context(req,res);if(!c)return send(res,401,{ok:false,message:'Authentication required.'});if(!googleId||!googleSecret)return send(res,503,{ok:false,message:'Google OAuth credentials are missing.'});return send(res,200,{ok:true,url:googleUrl(c)})}if(req.method==='GET'&&u.pathname==='/api/app/gmail/callback')return finish(u,res);return listener(req,res)}catch(e){console.error('Gmail OAuth:',e);if(!res.headersSent)return send(res,500,{ok:false,message:e.message||'Google connection failed.'});res.end()}})};
