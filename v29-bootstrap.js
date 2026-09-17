@@ -13,5 +13,6 @@ import('/v39-phone-setup-client.js?v=3').catch(()=>{});
 import('/v41-experience.js?v=1').catch(err=>console.error('SiteRemade experience layer:',err));
 import('/v42-daily-workflow.js?v=1').catch(err=>console.error('SiteRemade daily workflow layer:',err));
 import('/v43-ad-control.js?v=1').catch(err=>console.error('SiteRemade ad control layer:',err));
-import('/v44-google-ads-client.js?v=1').catch(err=>console.error('SiteRemade Google Ads layer:',err));
+import('/v44-google-ads-client.js?v=2').catch(err=>console.error('SiteRemade Google Ads layer:',err));
+import('/v46-google-ads-account-fallback.js?v=1').catch(err=>console.error('SiteRemade Google Ads account fallback:',err));
 })();
