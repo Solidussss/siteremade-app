@@ -14,5 +14,6 @@ import('/v41-experience.js?v=1').catch(err=>console.error('SiteRemade experience
 import('/v42-daily-workflow.js?v=1').catch(err=>console.error('SiteRemade daily workflow layer:',err));
 import('/v43-ad-control.js?v=1').catch(err=>console.error('SiteRemade ad control layer:',err));
 import('/v44-google-ads-client.js?v=2').catch(err=>console.error('SiteRemade Google Ads layer:',err));
-import('/v46-google-ads-account-fallback.js?v=1').catch(err=>console.error('SiteRemade Google Ads account fallback:',err));
+import('/v45-ad-intelligence-client.js?v=2').catch(err=>console.error('SiteRemade ad intelligence layer:',err));
+import('/v46-google-ads-account-fallback.js?v=2').catch(err=>console.error('SiteRemade Google Ads account fallback:',err));
 })();
