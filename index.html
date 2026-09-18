@@ -372,7 +372,20 @@
     <button data-view="inbox"><span>◌</span><small>Inbox</small></button>
     <button data-view="calendar"><span>□</span><small>Calendar</small></button>
     <button data-view="payments"><span>◇</span><small>Payments</small></button>
+    <button type="button" id="mobileMoreButton" aria-expanded="false"><span>•••</span><small>More</small></button>
   </nav>
+
+  <div class="mobile-more-sheet" id="mobileMoreSheet" hidden>
+    <div class="mobile-more-head"><div><p class="eyebrow">SITEREMADE</p><strong>More tools</strong></div><button type="button" id="mobileMoreClose" aria-label="Close menu">×</button></div>
+    <div class="mobile-more-grid">
+      <button data-view="prospecting"><span>⌖</span><strong>Market Finder</strong><small>Find businesses and opportunities</small></button>
+      <button data-view="analytics"><span>↗</span><strong>Analytics</strong><small>See performance and conversion</small></button>
+      <button data-view="website-updates"><span>✎</span><strong>Website Updates</strong><small>Request website changes</small></button>
+      <button data-view="automations"><span>✦</span><strong>Automations</strong><small>Manage follow-up workflows</small></button>
+      <button data-view="settings"><span>⚙</span><strong>Settings</strong><small>Workspace and integrations</small></button>
+      <button data-view="admin" id="mobileAdminNav"><span>▦</span><strong>Admin</strong><small>Owner controls</small></button>
+    </div>
+  </div>
 
   <div class="modal-backdrop" id="leadModal" hidden>
     <form class="lead-modal" id="manualLeadForm">
