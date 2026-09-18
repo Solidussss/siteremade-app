@@ -225,3 +225,72 @@ if('serviceWorker' in navigator){
 }
 
 bootstrap().then(ok=>{if(ok)startLiveSync();});
+
+
+function installMetaAdsSetup(){
+  async function getStatus(){
+    try{return await api('/api/app/integrations/status')}catch{return{providers:{}}}
+  }
+  async function paintMetaSetup(){
+    const admin=qs('#view-admin');
+    if(!admin)return;
+    let host=qs('#metaAdsSetupCard');
+    if(!host){
+      host=document.createElement('section');
+      host.id='metaAdsSetupCard';
+      host.className='panel';
+      host.style.marginTop='12px';
+      const anchor=qs('#v43AdControl')||admin.querySelector('.panel:last-of-type');
+      if(anchor)anchor.insertAdjacentElement('afterend',host);else admin.appendChild(host);
+    }
+    const st=await getStatus();
+    const meta=st?.providers?.meta_ads||{};
+    host.innerHTML=`
+      <div class="panel-head">
+        <div><p class="eyebrow">META ADS CONNECTION</p><h2>${meta.configured?'Ready to connect':'Setup required'}</h2></div>
+        <span class="status-pill ${meta.configured?'':'neutral'}">${meta.configured?'READY':'NOT CONFIGURED'}</span>
+      </div>
+      <div style="display:grid;gap:10px">
+        <p class="helper-copy" style="margin:0">Connect Facebook and Instagram advertising so SiteRemade can report spend, leads, cost per lead and attributed revenue beside Google Ads.</p>
+        <div class="settings-grid" style="grid-template-columns:1fr 1fr">
+          <div class="setting-row"><div><strong>Meta App ID</strong><span>${meta.configured?'Configured in Railway':'Missing META_APP_ID'}</span></div></div>
+          <div class="setting-row"><div><strong>Meta App Secret</strong><span>${meta.configured?'Configured in Railway':'Missing META_APP_SECRET'}</span></div></div>
+        </div>
+        <div class="setting-row">
+          <div><strong>OAuth callback</strong><span>https://app.siteremade.com/api/app/meta-ads/callback</span></div>
+        </div>
+        <div class="setting-row">
+          <div><strong>Required Meta access</strong><span>Ads Management + Ads Read for the connected Business / ad account.</span></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="primary-action" ${meta.configured?'':'disabled'} id="metaAdsConnectButton">${meta.configured?'Connect Meta Ads':'Add Meta credentials first'}</button>
+          <button type="button" class="secondary-button" id="metaAdsRefreshButton">Refresh status</button>
+        </div>
+        <p class="modal-status" id="metaAdsSetupStatus">${meta.configured?'Meta app credentials detected. OAuth/account connection can be enabled next.':'Railway is missing META_APP_ID and META_APP_SECRET, so Meta cannot authorize yet.'}</p>
+      </div>`;
+    qs('#metaAdsRefreshButton')?.addEventListener('click',paintMetaSetup);
+    qs('#metaAdsConnectButton')?.addEventListener('click',()=>{
+      const s=qs('#metaAdsSetupStatus');
+      if(s)s.textContent='Meta credentials are ready, but the OAuth callback flow still needs to be enabled on the server before account authorization.';
+    });
+  }
+  document.addEventListener('click',e=>{
+    const v=e.target.closest?.('[data-view]')?.dataset.view;
+    if(v==='admin')setTimeout(paintMetaSetup,180);
+    if(v==='integrations')setTimeout(()=>{
+      const card=[...document.querySelectorAll('.v34-card')].find(x=>x.querySelector('[data-v34="meta_ads"]'));
+      if(card){
+        const btn=card.querySelector('[data-v34="meta_ads"]');
+        const state=card.querySelector('.v34-state');
+        getStatus().then(st=>{
+          const meta=st?.providers?.meta_ads||{};
+          if(state){state.textContent=meta.configured?'Ready':'Needs setup';state.className='v34-state '+(meta.configured?'ready':'')}
+          if(btn){btn.disabled=false;btn.textContent=meta.configured?'Manage':'Set up';btn.onclick=ev=>{ev.preventDefault();document.querySelector('[data-view="admin"]')?.click();setTimeout(()=>qs('#metaAdsSetupCard')?.scrollIntoView({behavior:'smooth',block:'center'}),250)}}
+        });
+      }
+    },400);
+  },true);
+  setTimeout(()=>{if(qs('#view-admin')?.classList.contains('active'))paintMetaSetup()},500);
+}
+
+installMetaAdsSetup();
