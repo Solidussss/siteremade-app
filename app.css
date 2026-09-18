@@ -228,3 +228,158 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   .auth-card{max-height:calc(100dvh - 24px);overflow:auto;-webkit-overflow-scrolling:touch}
   .auth-card input{font-size:16px!important;min-height:48px}
 }
+
+
+/* V20 — mobile usability polish */
+@media(max-width:700px){
+  /* Calendar: preserve readable day cells instead of crushing seven columns. */
+  #view-calendar .calendar-shell{
+    padding:10px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scroll-snap-type:x proximity;
+  }
+  #view-calendar .calendar-top{
+    position:sticky;
+    left:0;
+    min-width:100%;
+    width:max-content;
+    margin-bottom:10px;
+    padding:2px 2px 8px;
+    background:#fff;
+    z-index:3;
+  }
+  #view-calendar .calendar-top h2{
+    min-width:150px;
+    font-size:16px;
+  }
+  #view-calendar .calendar-week,
+  #view-calendar .calendar-grid{
+    min-width:700px;
+    grid-template-columns:repeat(7,minmax(96px,1fr))!important;
+  }
+  #view-calendar .calendar-week{
+    position:sticky;
+    top:0;
+    z-index:2;
+    background:#fff;
+  }
+  #view-calendar .calendar-week span{
+    padding:9px 4px;
+    font-size:8px;
+  }
+  #view-calendar .calendar-day{
+    min-height:112px!important;
+    padding:8px!important;
+  }
+  #view-calendar .calendar-day>span{
+    font-size:10px;
+    font-weight:750;
+  }
+  #view-calendar .calendar-event{
+    margin-top:6px;
+    padding:7px;
+    font-size:8px!important;
+    line-height:1.35;
+    min-height:34px;
+  }
+
+  /* Payments: make each transaction scan like a mobile card. */
+  #view-payments .transaction-list>div{
+    display:grid!important;
+    grid-template-columns:34px minmax(0,1fr) auto!important;
+    grid-template-areas:
+      "icon customer amount"
+      "icon description description"
+      "icon status delete";
+    gap:6px 10px!important;
+    align-items:center;
+    padding:14px 0!important;
+  }
+  #view-payments .transaction-list>div .payment-icon{grid-area:icon}
+  #view-payments .transaction-list>div strong{grid-area:customer;font-size:11px}
+  #view-payments .transaction-list>div>span:not(.payment-icon){grid-area:description!important;display:block!important;font-size:9px}
+  #view-payments .transaction-list>div em{grid-area:amount;font-size:11px}
+  #view-payments .transaction-list>div select{grid-area:status!important;width:max-content;max-width:150px}
+  #view-payments .transaction-list>div .transaction-delete{grid-area:delete!important;justify-self:end}
+
+  /* Inbox: larger, easier-to-tap conversation cards. */
+  #view-inbox .conversation-list{
+    gap:8px;
+    padding:8px;
+    background:#fafbfc;
+  }
+  #view-inbox .conversation{
+    flex:0 0 245px!important;
+    min-width:245px!important;
+    border:1px solid var(--line);
+    border-radius:13px;
+    padding:12px!important;
+    scroll-snap-align:start;
+    background:#fff;
+  }
+  #view-inbox .conversation-window{min-height:480px}
+  #view-inbox .messages{padding:16px}
+  #view-inbox .message-box{margin:10px}
+
+  /* Market Finder: actions stack cleanly and remain thumb-friendly. */
+  #view-prospecting .prospect-card{
+    padding:14px;
+    gap:10px;
+  }
+  #view-prospecting .prospect-actions{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    width:100%;
+    gap:7px;
+  }
+  #view-prospecting .prospect-actions button,
+  #view-prospecting .prospect-actions a{
+    width:100%;
+    min-height:40px;
+    justify-content:center;
+    text-align:center;
+  }
+
+  /* Website updates + settings: remove compressed side-by-side controls. */
+  #view-website-updates .website-update-top,
+  #view-website-updates .website-update-meta,
+  #view-settings .setting-row{
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  #view-website-updates .website-update-status{
+    width:100%;
+    min-height:42px;
+  }
+  #view-settings .setting-row>.status-pill,
+  #view-settings .setting-row>button{
+    align-self:flex-start;
+  }
+
+  /* Keep key topbar actions usable on narrow phones. */
+  .topbar-actions{
+    gap:6px;
+    min-width:0;
+  }
+  .topbar-actions .primary-action{
+    padding:0 11px;
+    white-space:nowrap;
+  }
+}
+@media(max-width:410px){
+  .topbar-actions .primary-action{
+    display:inline-flex!important;
+    min-height:34px;
+    padding:0 9px;
+    font-size:9px;
+  }
+  .topbar-actions .notification-button{
+    width:34px;
+    height:34px;
+  }
+  .mobile-brand img{
+    width:28px!important;
+    height:28px!important;
+  }
+}
