@@ -191,3 +191,40 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   .subscription-lock{padding:12px}
   .subscription-lock-card{max-height:calc(100dvh - 24px);overflow:auto}
 }
+
+
+/* V19 — auth interaction hardening */
+.auth-screen{
+  z-index:2147483000!important;
+  pointer-events:auto!important;
+  touch-action:auto!important;
+}
+.auth-screen::before,.auth-screen::after,
+.auth-card::before,.auth-card::after{pointer-events:none!important}
+.auth-card,.auth-card form,.auth-card label{
+  position:relative;
+  z-index:1;
+  pointer-events:auto!important;
+}
+.auth-card input{
+  position:relative;
+  z-index:2;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  opacity:1!important;
+  visibility:visible!important;
+  caret-color:#111!important;
+}
+.auth-card button{
+  position:relative;
+  z-index:2;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+}
+@media(max-width:700px){
+  .auth-screen{padding:12px!important;align-items:center!important}
+  .auth-card{max-height:calc(100dvh - 24px);overflow:auto;-webkit-overflow-scrolling:touch}
+  .auth-card input{font-size:16px!important;min-height:48px}
+}
