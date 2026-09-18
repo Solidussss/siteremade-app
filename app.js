@@ -221,9 +221,7 @@ async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)ret
 let liveSyncStarted=false;
 function startLiveSync(){if(liveSyncStarted||!state.user)return;liveSyncStarted=true;const c=renderBadges();lastLiveCounts={leads:c.newLeads,unread:c.unread};setInterval(liveRefresh,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveRefresh();});window.addEventListener('focus',liveRefresh);}
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.map(r=>r.unregister()))).finally(()=>{
-    navigator.serviceWorker.register('/sw.js?v=16').catch(()=>{});
-  });
+  navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.map(r=>r.unregister()))).catch(()=>{});
 }
 
 bootstrap().then(ok=>{if(ok)startLiveSync();});
