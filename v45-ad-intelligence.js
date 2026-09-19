@@ -1,14 +1,9 @@
 require('dotenv').config();
 const http=require('http');
 const fs=require('fs');
-const {createClient}=require('@supabase/supabase-js');
-
 const previous=http.createServer.bind(http);
 const prevRead=fs.readFileSync.bind(fs);
-const serviceKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
-const db=process.env.SUPABASE_URL&&serviceKey?createClient(process.env.SUPABASE_URL,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const anon=process.env.SUPABASE_URL&&anonKey?createClient(process.env.SUPABASE_URL,anonKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
+const { db, sendJson: send, readJsonBody: body, getContext: context } = require('./lib/context');
 
 fs.readFileSync=function(file,...args){
   const out=prevRead(file,...args);
@@ -19,11 +14,6 @@ fs.readFileSync=function(file,...args){
   return out.replace('</body>','<script src="/v45-ad-intelligence-client.js"></script>\n</body>');
 };
 
-const cookies=req=>Object.fromEntries(String(req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));
-const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
-function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [`sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,`sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`]}
-async function context(req,res){if(!db||!anon)return null;const c=cookies(req);let user=null;if(c.sr_access)user=(await anon.auth.getUser(c.sr_access)).data?.user||null;if(!user&&c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){user=r.data.user;res.setHeader('Set-Cookie',authCookies(r.data.session))}}if(!user)return null;const profile=(await db.from('profiles').select('role').eq('id',user.id).maybeSingle()).data;if(!profile)return null;let ws=[];if(profile.role==='owner')ws=(await db.from('workspaces').select('id,business_name').order('created_at')).data||[];else ws=((await db.from('workspace_members').select('workspace_id,workspaces(id,business_name)').eq('user_id',user.id)).data||[]).map(x=>x.workspaces).filter(Boolean);if(!ws.length)return null;let wid=req.headers['x-workspace-id']||c.sr_workspace||ws[0].id;if(!ws.some(x=>x.id===wid))wid=ws[0].id;return{user,wid,owner:profile.role==='owner',workspace:ws.find(x=>x.id===wid)}}
-async function body(req){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>500000)throw Error('Payload too large');}if(!raw)return{};try{return JSON.parse(raw)}catch{throw Error('Invalid JSON')}}
 const defaults={mode:'observe',objective:'Leads',daily_cap:25,monthly_cap:750,max_shift:15,min_data:20,cooldown_hours:48,execution_locked:true};
 async function getSettings(wid){const r=await db.from('ad_control_settings').select('*').eq('workspace_id',wid).maybeSingle();if(r.error)throw r.error;return r.data||{workspace_id:wid,...defaults}}
 async function saveSettings(wid,p){const payload={workspace_id:wid,mode:['observe','recommend','autopilot'].includes(p.mode)?p.mode:'observe',objective:String(p.objective||'Leads').slice(0,80),daily_cap:Math.max(0,Number(p.dailyCap??p.daily_cap??25)||0),monthly_cap:Math.max(0,Number(p.monthlyCap??p.monthly_cap??750)||0),max_shift:Math.min(30,Math.max(0,Number(p.maxShift??p.max_shift??15)||0)),min_data:Math.max(1,Math.round(Number(p.minData??p.min_data??20)||20)),cooldown_hours:Math.max(1,Math.round(Number(p.cooldown??p.cooldown_hours??48)||48)),execution_locked:true,updated_at:new Date().toISOString()};const r=await db.from('ad_control_settings').upsert(payload,{onConflict:'workspace_id'}).select('*').single();if(r.error)throw r.error;return r.data}

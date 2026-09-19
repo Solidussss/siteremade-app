@@ -1,9 +1,8 @@
 require('dotenv').config();
 const http=require('http');
 const crypto=require('crypto');
-const {createClient}=require('@supabase/supabase-js');
-
 const previous=http.createServer.bind(http);
+const { db, anon, cookies, sendJson: send, getContext: context } = require('./lib/context');
 const base=String(process.env.PUBLIC_BASE_URL||'https://app.siteremade.com').replace(/\/$/,'');
 const redirectUri=base+'/api/app/google-ads/callback';
 const googleId=process.env.GOOGLE_GMAIL_CLIENT_ID||process.env.GOOGLE_CLIENT_ID||process.env.GOOGLE_OAUTH_CLIENT_ID||'';
@@ -11,16 +10,7 @@ const googleSecret=process.env.GOOGLE_GMAIL_CLIENT_SECRET||process.env.GOOGLE_CL
 const managerId=String(process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID||'').replace(/\D/g,'');
 const apiVersion=process.env.GOOGLE_ADS_API_VERSION||'v25';
 const adsScope='https://www.googleapis.com/auth/adwords';
-const serviceKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
-const db=process.env.SUPABASE_URL&&serviceKey?createClient(process.env.SUPABASE_URL,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const anon=process.env.SUPABASE_URL&&anonKey?createClient(process.env.SUPABASE_URL,anonKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const stateSecret=process.env.GOOGLE_ADS_STATE_SECRET||serviceKey||'siteremade-google-ads';
-
-const cookies=req=>Object.fromEntries(String(req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));
-const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
-function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [`sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,`sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`]}
-async function context(req,res){if(!db||!anon)return null;const c=cookies(req);let user=null;if(c.sr_access)user=(await anon.auth.getUser(c.sr_access)).data?.user||null;if(!user&&c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){user=r.data.user;res.setHeader('Set-Cookie',authCookies(r.data.session))}}if(!user)return null;const profile=(await db.from('profiles').select('role').eq('id',user.id).maybeSingle()).data;if(!profile)return null;let ws=[];if(profile.role==='owner')ws=(await db.from('workspaces').select('id,business_name').order('created_at')).data||[];else ws=((await db.from('workspace_members').select('workspace_id,workspaces(id,business_name)').eq('user_id',user.id)).data||[]).map(x=>x.workspaces).filter(Boolean);if(!ws.length)return null;let wid=req.headers['x-workspace-id']||c.sr_workspace||ws[0].id;if(!ws.some(x=>x.id===wid))wid=ws[0].id;return{user,wid,owner:profile.role==='owner',workspace:ws.find(x=>x.id===wid)}}
+const stateSecret=process.env.GOOGLE_ADS_STATE_SECRET||process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'siteremade-google-ads';
 function sign(obj){const p=Buffer.from(JSON.stringify(obj)).toString('base64url');const s=crypto.createHmac('sha256',stateSecret).update(p).digest('base64url');return p+'.'+s}
 function verify(v){try{const [p,s]=String(v||'').split('.');if(!p||!s)return null;const expected=crypto.createHmac('sha256',stateSecret).update(p).digest('base64url');const a=Buffer.from(s),b=Buffer.from(expected);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;const o=JSON.parse(Buffer.from(p,'base64url').toString());return Date.now()-Number(o.t||0)<=10*60*1000?o:null}catch{return null}}
 function hasAdsScope(row){return String(row?.scope||'').split(/\s+/).includes(adsScope)}

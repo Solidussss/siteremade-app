@@ -1,79 +1,13 @@
 require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
-const { createClient } = require('@supabase/supabase-js');
-
 const previousCreateServer = http.createServer.bind(http);
 const previousReadFileSync = fs.readFileSync.bind(fs);
-
-const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
-const db = process.env.SUPABASE_URL && serviceKey
-  ? createClient(process.env.SUPABASE_URL, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
-  : null;
-const anon = process.env.SUPABASE_URL && anonKey
-  ? createClient(process.env.SUPABASE_URL, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
-  : null;
+const { db, sendJson: send, readJsonBody, getContext: context } = require('./lib/context');
 
 const clean = (v, n = 12000) => String(v ?? '').trim().slice(0, n);
-const cookies = req => Object.fromEntries(
-  String(req.headers.cookie || '')
-    .split(';')
-    .map(x => x.trim().split('='))
-    .filter(x => x[0])
-    .map(([k, ...v]) => [k, decodeURIComponent(v.join('='))])
-);
-const send = (res, status, obj) => {
-  const body = JSON.stringify(obj);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Length': Buffer.byteLength(body)
-  });
-  res.end(body);
-};
 async function readBody(req) {
-  let raw = '';
-  for await (const chunk of req) {
-    raw += chunk;
-    if (raw.length > 1_500_000) throw Error('Payload too large');
-  }
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch { throw Error('Invalid JSON'); }
-}
-function authCookies(session) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return [
-    `sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60, session.expires_in || 3600)}${secure}`,
-    `sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`
-  ];
-}
-async function context(req, res) {
-  if (!db || !anon) return null;
-  const c = cookies(req);
-  let user = null;
-  if (c.sr_access) user = (await anon.auth.getUser(c.sr_access)).data?.user || null;
-  if (!user && c.sr_refresh) {
-    const refreshed = await anon.auth.refreshSession({ refresh_token: c.sr_refresh });
-    if (!refreshed.error && refreshed.data?.session) {
-      user = refreshed.data.user;
-      res.setHeader('Set-Cookie', authCookies(refreshed.data.session));
-    }
-  }
-  if (!user) return null;
-  const profile = (await db.from('profiles').select('*').eq('id', user.id).maybeSingle()).data;
-  if (!profile) return null;
-  let workspaces = [];
-  if (profile.role === 'owner') {
-    workspaces = (await db.from('workspaces').select('*').order('created_at')).data || [];
-  } else {
-    workspaces = ((await db.from('workspace_members').select('workspace_id,workspaces(*)').eq('user_id', user.id)).data || [])
-      .map(x => x.workspaces).filter(Boolean);
-  }
-  if (!workspaces.length) return null;
-  let wid = req.headers['x-workspace-id'] || c.sr_workspace || workspaces[0].id;
-  if (!workspaces.some(x => x.id === wid)) wid = workspaces[0].id;
-  return { user, profile, owner: profile.role === 'owner', wid, workspace: workspaces.find(x => x.id === wid) };
+  return readJsonBody(req, 1_500_000);
 }
 
 function extractJson(text) {

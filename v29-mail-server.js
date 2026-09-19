@@ -1,19 +1,12 @@
 require('dotenv').config();
 const http=require('http');
 const crypto=require('crypto');
-const {createClient}=require('@supabase/supabase-js');
 const previous=http.createServer.bind(http);
-const secret=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
-const db=process.env.SUPABASE_URL&&secret?createClient(process.env.SUPABASE_URL,secret,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const anon=process.env.SUPABASE_URL&&anonKey?createClient(process.env.SUPABASE_URL,anonKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
+const { db, sendJson: send, getContext: context } = require('./lib/context');
 const base=String(process.env.PUBLIC_BASE_URL||'https://app.siteremade.com').replace(/\/$/,'');
-const stateSecret=process.env.MAILBOX_STATE_SECRET||secret||'siteremade-mail';
+const stateSecret=process.env.MAILBOX_STATE_SECRET||process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'siteremade-mail';
 const clean=(v,n=4000)=>String(v??'').trim().slice(0,n);
-const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
-const cookies=req=>Object.fromEntries(String(req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));
 const read=req=>new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6){reject(Error('Payload too large'));req.destroy()}});req.on('end',()=>{try{resolve(s?JSON.parse(s):{})}catch{reject(Error('Invalid JSON'))}});req.on('error',reject)});
-async function context(req){if(!db||!anon)return null;const c=cookies(req),token=c.sr_access;if(!token)return null;const u=(await anon.auth.getUser(token)).data?.user;if(!u)return null;const p=(await db.from('profiles').select('role').eq('id',u.id).maybeSingle()).data;if(!p)return null;let ws=[];if(p.role==='owner')ws=(await db.from('workspaces').select('*').order('created_at')).data||[];else ws=((await db.from('workspace_members').select('workspace_id,workspaces(*)').eq('user_id',u.id)).data||[]).map(x=>x.workspaces).filter(Boolean);if(!ws.length)return null;let wid=req.headers['x-workspace-id']||c.sr_workspace||ws[0].id;if(!ws.some(x=>x.id===wid))wid=ws[0].id;return{user:u,owner:p.role==='owner',wid,workspace:ws.find(x=>x.id===wid)}}
 function signState(obj){const payload=Buffer.from(JSON.stringify(obj)).toString('base64url');const sig=crypto.createHmac('sha256',stateSecret).update(payload).digest('base64url');return payload+'.'+sig}
 function verifyState(v){try{const [p,s]=String(v||'').split('.');const x=crypto.createHmac('sha256',stateSecret).update(p).digest('base64url');if(!crypto.timingSafeEqual(Buffer.from(s||''),Buffer.from(x)))return null;const o=JSON.parse(Buffer.from(p,'base64url').toString());if(Date.now()-Number(o.t||0)>10*60*1000)return null;return o}catch{return null}}
 function providerConfig(provider){if(provider==='gmail')return{clientId:process.env.GOOGLE_OAUTH_CLIENT_ID||'',clientSecret:process.env.GOOGLE_OAUTH_CLIENT_SECRET||'',auth:'https://accounts.google.com/o/oauth2/v2/auth',token:'https://oauth2.googleapis.com/token',scope:'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',redirect:base+'/api/app/mailbox/callback/gmail'};if(provider==='outlook')return{clientId:process.env.MICROSOFT_OAUTH_CLIENT_ID||'',clientSecret:process.env.MICROSOFT_OAUTH_CLIENT_SECRET||'',auth:'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',token:'https://login.microsoftonline.com/common/oauth2/v2.0/token',scope:'openid email offline_access User.Read Mail.ReadWrite Mail.Send',redirect:base+'/api/app/mailbox/callback/outlook'};return null}
@@ -33,7 +26,7 @@ async function completeOAuth(provider,code,state){const st=verifyState(state);if
 http.createServer=function(listener){return previous(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`),p=u.pathname;
 if(req.method==='GET'&&p.startsWith('/api/app/mailbox/callback/')){const provider=p.split('/').pop();try{await completeOAuth(provider,u.searchParams.get('code'),u.searchParams.get('state'));res.writeHead(302,{Location:base+'/?mailbox=connected'});return res.end()}catch(e){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent(e.message)});return res.end()}}
 if(!p.startsWith('/api/app/mailbox')&&!/^\/api\/app\/conversations\/[^/]+\/messages$/.test(p))return listener(req,res);
-const c=await context(req);if(!c)return send(res,401,{ok:false,message:'Authentication required.'});
+const c=await context(req,res);if(!c)return send(res,401,{ok:false,message:'Authentication required.'});
 if(req.method==='GET'&&p==='/api/app/mailbox/status'){const row=await connection(c.wid);return send(res,200,{ok:true,connected:!!row,provider:row?.provider||'',email:row?.email||'',lastSync:row?.last_sync||null,available:{gmail:!!(process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),outlook:!!(process.env.MICROSOFT_OAUTH_CLIENT_ID&&process.env.MICROSOFT_OAUTH_CLIENT_SECRET)}})}
 if(req.method==='GET'&&p==='/api/app/mailbox/connect'){const provider=clean(u.searchParams.get('provider'),20);const cfg=providerConfig(provider);if(!cfg?.clientId||!cfg?.clientSecret)return send(res,503,{ok:false,message:'This mailbox provider is not configured yet.'});const state=signState({w:c.wid,u:c.user.id,p:provider,t:Date.now()});const q=new URLSearchParams({client_id:cfg.clientId,redirect_uri:cfg.redirect,response_type:'code',scope:cfg.scope,state,access_type:'offline',prompt:'consent'});if(provider==='outlook')q.delete('access_type');return send(res,200,{ok:true,url:cfg.auth+'?'+q.toString()})}
 if(req.method==='POST'&&p==='/api/app/mailbox/sync'){const row=await connection(c.wid);if(!row)return send(res,400,{ok:false,message:'Connect Gmail or Outlook first.'});const added=await sync(row);return send(res,200,{ok:true,added})}

@@ -1,22 +1,13 @@
 require('dotenv').config();
 const http=require('http');
 const crypto=require('crypto');
-const {createClient}=require('@supabase/supabase-js');
 const previous=http.createServer.bind(http);
-const url=process.env.SUPABASE_URL;
-const serviceKey=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
-const anonKey=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY;
+const { db, sendJson: send, getContext: context } = require('./lib/context');
 const googleId=process.env.GOOGLE_CLIENT_ID||process.env.GOOGLE_OAUTH_CLIENT_ID||'';
 const googleSecret=process.env.GOOGLE_CLIENT_SECRET||process.env.GOOGLE_OAUTH_CLIENT_SECRET||'';
 const base=String(process.env.PUBLIC_BASE_URL||'https://app.siteremade.com').replace(/\/$/,'');
 const redirect=base+'/api/app/gmail/callback';
-const secret=process.env.MAILBOX_STATE_SECRET||serviceKey||'siteremade-mail';
-const db=url&&serviceKey?createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const anon=url&&anonKey?createClient(url,anonKey,{auth:{persistSession:false,autoRefreshToken:false}}):null;
-const parse=req=>Object.fromEntries(String(req.headers.cookie||'').split(';').map(v=>v.trim().split('=')).filter(v=>v[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));
-const send=(res,status,obj)=>{const body=JSON.stringify(obj);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Content-Length':Buffer.byteLength(body)});res.end(body)};
-function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [`sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,`sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`]}
-async function context(req,res){if(!db||!anon)return null;const c=parse(req);let user=null;if(c.sr_access)user=(await anon.auth.getUser(c.sr_access)).data?.user||null;if(!user&&c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){user=r.data.user;res.setHeader('Set-Cookie',authCookies(r.data.session))}}if(!user)return null;const profile=(await db.from('profiles').select('role').eq('id',user.id).maybeSingle()).data;if(!profile)return null;let ws=[];if(profile.role==='owner')ws=(await db.from('workspaces').select('id').order('created_at')).data||[];else ws=((await db.from('workspace_members').select('workspace_id').eq('user_id',user.id)).data||[]).map(x=>({id:x.workspace_id}));if(!ws.length)return null;let wid=req.headers['x-workspace-id']||c.sr_workspace||ws[0].id;if(!ws.some(x=>x.id===wid))wid=ws[0].id;return{user,wid}}
+const secret=process.env.MAILBOX_STATE_SECRET||process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY||'siteremade-mail';
 function sign(obj){const p=Buffer.from(JSON.stringify(obj)).toString('base64url');return p+'.'+crypto.createHmac('sha256',secret).update(p).digest('base64url')}
 function verify(v){try{const [p,s]=String(v||'').split('.');if(!p||!s)return null;const x=crypto.createHmac('sha256',secret).update(p).digest('base64url');const a=Buffer.from(s),b=Buffer.from(x);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;const o=JSON.parse(Buffer.from(p,'base64url').toString());return Date.now()-Number(o.t||0)<=600000?o:null}catch{return null}}
 function googleUrl(c){const q=new URLSearchParams({client_id:googleId,redirect_uri:redirect,response_type:'code',scope:'openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send',state:sign({w:c.wid,u:c.user.id,p:'gmail',t:Date.now()}),access_type:'offline',prompt:'consent',include_granted_scopes:'true'});return 'https://accounts.google.com/o/oauth2/v2/auth?'+q}
