@@ -4,19 +4,18 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
-const { createClient } = require('@supabase/supabase-js');
+const {
+  db, anon, configured,
+  cookies, authCookies, clearAuthCookies,
+  sendJson: json, readJsonBody: body,
+  getAuthUser: getAuth, membershipsFor, getContext: ctx
+} = require('./lib/context');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const configured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
 const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3900));
 const ADS_FEATURE_ENABLED = false; // V13: preserve ad data/code, but block new ad actions until integrations are ready.
 const hasSiteRemadeAccess=c=>c.owner||['active','trialing'].includes(String(c.workspace?.siteremade_subscription_status||'inactive').toLowerCase());
-const anon = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-const db = configured ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
 const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
@@ -25,36 +24,7 @@ const signupAttempts=new Map();
 function signupAllowed(req){const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();const t=Date.now(),windowMs=3600000,max=5;const recent=(signupAttempts.get(ip)||[]).filter(x=>t-x<windowMs);if(recent.length>=max)return false;recent.push(t);signupAttempts.set(ip,recent);return true;}
 
 
-function json(res,status,obj,cookies=[]){
-  const body=JSON.stringify(obj);
-  const h={'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(body),'Cache-Control':'no-store'};
-  if(cookies.length) h['Set-Cookie']=cookies;
-  res.writeHead(status,h); res.end(body);
-}
-function cookies(req){return Object.fromEntries((req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));}
-function body(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6){reject(Error('Payload too large'));req.destroy();}});req.on('end',()=>{if(!s)return resolve({});try{resolve(JSON.parse(s))}catch{reject(Error('Invalid JSON'))}});req.on('error',reject);});}
-function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [
-  `sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,
-  `sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`
-];}
-function clearAuthCookies(){return ['sr_access=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0','sr_refresh=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0','sr_workspace=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'];}
 async function q(promise){const {data,error}=await promise;if(error)throw error;return data;}
-async function getAuth(req,res){
-  if(!configured) return null;
-  const c=cookies(req); let access=c.sr_access; let user=null; let renewed=null;
-  if(access){const r=await anon.auth.getUser(access); user=r.data?.user||null;}
-  if(!user && c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){renewed=r.data.session;access=renewed.access_token;user=r.data.user;}}
-  if(!user) return null;
-  const profile=(await db.from('profiles').select('*').eq('id',user.id).maybeSingle()).data;
-  if(!profile) return null;
-  if(renewed) res.setHeader('Set-Cookie',authCookies(renewed));
-  return {user,profile,access};
-}
-async function membershipsFor(userId,owner=false){
-  if(owner) return await q(db.from('workspaces').select('*').order('created_at',{ascending:true}));
-  const memberships=await q(db.from('workspace_members').select('workspace_id,workspaces(*)').eq('user_id',userId));
-  return memberships.map(m=>m.workspaces).filter(Boolean);
-}
 function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
@@ -66,14 +36,6 @@ function mapAdSpend(a){return {id:a.id,platform:a.platform,campaign:a.campaign,s
 function mapAdFund(a){return {id:a.id,amount:Number(a.amount)||0,platform:a.platform||'Both',status:a.status,createdAt:a.created_at,fundedAt:a.funded_at||null};}
 function mapWebsiteAnalytics(a){return a?{domain:a.domain||'',provider:a.provider||'google_analytics',connected:!!a.connected,sessions:Number(a.sessions)||0,users:Number(a.users)||0,pageviews:Number(a.pageviews)||0,lastSync:a.last_sync||null}:{domain:'',provider:'google_analytics',connected:false,sessions:0,users:0,pageviews:0,lastSync:null};}
 function mapWebsiteUpdate(r){return {id:r.id,page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
-async function ctx(req,res,u){
-  const a=await getAuth(req,res); if(!a)return null;
-  const owner=a.profile.role==='owner'; const workspaces=await membershipsFor(a.user.id,owner); if(!workspaces.length)return null;
-  const c=cookies(req); let wid=req.headers['x-workspace-id']||u.searchParams.get('workspaceId')||c.sr_workspace||workspaces[0].id;
-  if(!workspaces.some(w=>w.id===wid))wid=workspaces[0].id;
-  const workspace=workspaces.find(w=>w.id===wid);
-  return {...a,owner,workspaces,wid,workspace};
-}
 async function activity(wid,type,title,detail){await db.from('activities').insert({workspace_id:wid,type,title,detail:clean(detail,1000)});}
 async function audit(userId,wid,action,detail){await db.from('audit_logs').insert({user_id:userId,workspace_id:wid||null,action,detail:clean(detail,1000)});}
 async function workspaceSnapshot(c){
