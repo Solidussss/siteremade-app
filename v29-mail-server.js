@@ -27,7 +27,13 @@ http.createServer=function(listener){return previous(async(req,res)=>{try{const 
 if(req.method==='GET'&&p.startsWith('/api/app/mailbox/callback/')){const provider=p.split('/').pop();try{await completeOAuth(provider,u.searchParams.get('code'),u.searchParams.get('state'));res.writeHead(302,{Location:base+'/?mailbox=connected'});return res.end()}catch(e){res.writeHead(302,{Location:base+'/?mailbox=error&reason='+encodeURIComponent(e.message)});return res.end()}}
 if(!p.startsWith('/api/app/mailbox')&&!/^\/api\/app\/conversations\/[^/]+\/messages$/.test(p))return listener(req,res);
 const c=await context(req,res);if(!c)return send(res,401,{ok:false,message:'Authentication required.'});
-if(req.method==='GET'&&p==='/api/app/mailbox/status'){const row=await connection(c.wid);return send(res,200,{ok:true,connected:!!row,provider:row?.provider||'',email:row?.email||'',lastSync:row?.last_sync||null,available:{gmail:!!(process.env.GOOGLE_OAUTH_CLIENT_ID&&process.env.GOOGLE_OAUTH_CLIENT_SECRET),outlook:!!(process.env.MICROSOFT_OAUTH_CLIENT_ID&&process.env.MICROSOFT_OAUTH_CLIENT_SECRET)}})}
+// GET /api/app/mailbox/status used to be handled here too, but
+// v33-gmail-oauth-fix.js (required before this file, so it always gets
+// first look) unconditionally intercepts that exact path — this file's
+// copy could never run. Removed as confirmed dead code rather than left
+// duplicated. mailbox/connect stays here: v33 only intercepts
+// ?provider=gmail and falls through for everything else (outlook), so this
+// generic handler is still the live implementation for that case.
 if(req.method==='GET'&&p==='/api/app/mailbox/connect'){const provider=clean(u.searchParams.get('provider'),20);const cfg=providerConfig(provider);if(!cfg?.clientId||!cfg?.clientSecret)return send(res,503,{ok:false,message:'This mailbox provider is not configured yet.'});const state=signState({w:c.wid,u:c.user.id,p:provider,t:Date.now()});const q=new URLSearchParams({client_id:cfg.clientId,redirect_uri:cfg.redirect,response_type:'code',scope:cfg.scope,state,access_type:'offline',prompt:'consent'});if(provider==='outlook')q.delete('access_type');return send(res,200,{ok:true,url:cfg.auth+'?'+q.toString()})}
 if(req.method==='POST'&&p==='/api/app/mailbox/sync'){const row=await connection(c.wid);if(!row)return send(res,400,{ok:false,message:'Connect Gmail or Outlook first.'});const added=await sync(row);return send(res,200,{ok:true,added})}
 if(req.method==='DELETE'&&p==='/api/app/mailbox'){await db.from('mailbox_connections').delete().eq('workspace_id',c.wid);return send(res,200,{ok:true})}
