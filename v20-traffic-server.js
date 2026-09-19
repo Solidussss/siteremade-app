@@ -1,10 +1,8 @@
 require('dotenv').config();
 const http=require('http');
 const {URL}=require('url');
-const {createClient}=require('@supabase/supabase-js');
 const previous=http.createServer.bind(http);
-const key=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
-const db=process.env.SUPABASE_URL&&key?createClient(process.env.SUPABASE_URL,key,{auth:{persistSession:false,autoRefreshToken:false}}):null;
+const { db } = require('./lib/context');
 let UMAMI=String(process.env.UMAMI_BASE_URL||'').trim().replace(/\/$/,'');if(UMAMI&&!/^https?:\/\//i.test(UMAMI))UMAMI='https://'+UMAMI;
 const send=(res,status,obj,type='application/json; charset=utf-8')=>{const body=typeof obj==='string'?obj:JSON.stringify(obj);res.writeHead(status,{'Content-Type':type,'Content-Length':Buffer.byteLength(body),'Cache-Control':'no-store','Access-Control-Allow-Origin':'*'});res.end(body)};
 async function config(workspaceId,publicKey){if(!db)return null;const ws=(await db.from('workspaces').select('id').eq('id',String(workspaceId||'')).eq('public_key',String(publicKey||'')).maybeSingle()).data;if(!ws)return null;const row=(await db.from('website_analytics').select('domain,provider,connected').eq('workspace_id',ws.id).maybeSingle()).data;const provider=String(row?.provider||'');const websiteId=provider.startsWith('umami:')?provider.slice(6):'';return{domain:row?.domain||'',connected:!!row?.connected&&!!websiteId,websiteId};}
