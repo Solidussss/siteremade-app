@@ -4,7 +4,7 @@ fs.readFileSync=function(file,...args){
   const out=prevRead(file,...args);
   if(typeof out!=='string')return out;
   const name=String(file||'');
-  if(!name.endsWith('app.html')&&!name.endsWith('index.html'))return out;
+  if(!name.endsWith('index.html'))return out;
   if(out.includes('id="view-integrations"'))return out;
   let html=out;
   const nav='<button class="nav-item" data-view="integrations"><span>⌘</span><strong>Integrations</strong><em id="integrationBadge" hidden>0</em></button>';

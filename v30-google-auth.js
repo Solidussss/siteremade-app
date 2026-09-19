@@ -93,7 +93,7 @@ http.createServer = function patchedGoogleCreateServer(listener) {
       const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       if (req.method === 'GET' && u.pathname === '/auth/google') return await startGoogle(req, res);
       if (req.method === 'POST' && u.pathname === '/api/auth/oauth-session') return await finishGoogle(req, res);
-      if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html' || u.pathname === '/app.html')) {
+      if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html')) {
         const originalEnd = res.end.bind(res);
         res.end = (chunk, ...args) => {
           try {

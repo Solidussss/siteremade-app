@@ -9,7 +9,7 @@ fs.readFileSync=function(file,...args){
   const out=prevRead(file,...args);
   if(typeof out!=='string')return out;
   const name=String(file||'');
-  if(!name.endsWith('app.html')&&!name.endsWith('index.html'))return out;
+  if(!name.endsWith('index.html'))return out;
   if(out.includes('v45-ad-intelligence-client.js'))return out;
   return out.replace('</body>','<script src="/v45-ad-intelligence-client.js"></script>\n</body>');
 };

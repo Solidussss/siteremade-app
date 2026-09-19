@@ -4,7 +4,7 @@ fs.readFileSync=function(file,...args){
   const out=original(file,...args);
   if(typeof out!=='string')return out;
   const name=String(file||'');
-  if(!name.endsWith('index.html')&&!name.endsWith('app.html'))return out;
+  if(!name.endsWith('index.html'))return out;
   let html=out;
   if(!html.includes('/v20.css'))html=html.replace('</head>','  <link rel="stylesheet" href="/v20.css?v=20" />\n</head>');
 
