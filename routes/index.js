@@ -10,7 +10,8 @@ const registerers = [
   require('./integrations'),
   require('./twilio-provisioning'),
   require('./google-ads'),
-  require('./ad-intelligence')
+  require('./ad-intelligence'),
+  require('./twilio-existing-number')
 ];
 
 function buildRouter() {

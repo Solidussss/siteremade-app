@@ -1,0 +1,109 @@
+// Migrated from v40-existing-number.js's http.createServer route block
+// (the "port your existing business number" hosted-SMS wizard). That file
+// is NOT deleted: it still owns the fs.readFileSync patch that injects
+// v40-existing-number-client.js into index.html, which is frontend-
+// consolidation work for a later phase, not a route.
+//
+// All five routes shared two preamble checks before their own logic: auth
+// required, and Twilio must be configured (env vars present) — regardless
+// of auth. The auth check is now the router's auth:'user' mode; the
+// Twilio-configured check is kept as an explicit first line in each
+// handler since it isn't something the router's auth modes express.
+const { db, readJsonBody: readJson } = require('../lib/context');
+
+const base = String(process.env.PUBLIC_BASE_URL || 'https://app.siteremade.com').replace(/\/$/, '');
+
+function normalize(v) { let d = String(v || '').replace(/\D/g, ''); if (d.length === 10) d = '1' + d; return d.length === 11 && d[0] === '1' ? `+${d}` : ''; }
+function clean(v, n = 160) { return String(v || '').trim().slice(0, n); }
+function parentAuth() { return 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID || ''}:${process.env.TWILIO_AUTH_TOKEN || ''}`).toString('base64'); }
+async function integration(wid) { return (await db.from('integration_connections').select('*').eq('workspace_id', wid).eq('provider', 'twilio').maybeSingle()).data || null; }
+async function save(wid, patch) { const current = await integration(wid); const config = { ...(current?.config || {}), ...(patch.config || {}) }; const next = { workspace_id: wid, provider: 'twilio', status: patch.status || current?.status || 'provisioning', external_id: patch.external_id ?? current?.external_id ?? null, account_label: patch.account_label ?? current?.account_label ?? null, config, updated_at: new Date().toISOString() }; const { data, error } = await db.from('integration_connections').upsert(next, { onConflict: 'workspace_id,provider' }).select('*').single(); if (error) throw error; return data; }
+async function twilio(url, opts = {}) { if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) throw Error('Business phone service is not configured.'); const r = await fetch(url, { ...opts, headers: { Authorization: parentAuth(), ...(opts.headers || {}) } }); const text = await r.text(); let j = {}; try { j = text ? JSON.parse(text) : {}; } catch { j = { message: text }; } if (!r.ok) { const e = Error(j.message || j.detail || 'Twilio request failed'); e.status = r.status; throw e; } return j; }
+function hostedUnavailable(e) { return e?.status === 401 || e?.status === 403 || /permission|preview|not authorized|access/i.test(String(e?.message || '')); }
+async function getOrder(sid) { return twilio(`https://preview.twilio.com/HostedNumbers/HostedNumberOrders/${encodeURIComponent(sid)}`); }
+async function finalizeIfComplete(c, order) { const status = String(order?.status || '').toLowerCase(); if (status !== 'completed') return false; const numberSid = order.incoming_phone_number_sid || order.incomingPhoneNumberSid; if (numberSid) { const form = new URLSearchParams({ SmsUrl: base + '/api/webhooks/twilio', SmsMethod: 'POST', FriendlyName: `SiteRemade - ${String(c.workspace?.business_name || 'Business SMS').slice(0, 64)}` }); await twilio(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/IncomingPhoneNumbers/${numberSid}.json`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form }); await save(c.wid, { status: 'connected', external_id: numberSid, account_label: order.phone_number || order.phoneNumber || 'Business SMS', config: { phoneNumber: order.phone_number || order.phoneNumber, numberSid, hostedStatus: 'completed' } }); return true; } return false; }
+
+function requireTwilioConfigured(res, json) {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) { json(res, 503, { ok: false, message: 'Business phone service is not configured.' }); return false; }
+  return true;
+}
+
+module.exports = function registerTwilioExistingNumberRoutes(router) {
+  router.post('/api/app/integrations/twilio/existing/check', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireTwilioConfigured(res, json)) return;
+    const b = await readJson(req), phone = normalize(b.phoneNumber);
+    if (!phone) return json(res, 400, { ok: false, message: 'Enter a valid Canadian or US phone number.' });
+    const j = await twilio('https://numbers.twilio.com/v1/HostedNumber/Eligibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ friendly_name: 'SiteRemade existing business number', phone_numbers: [{ phone_number: phone }] }) });
+    const result = Array.isArray(j.results) ? j.results[0] : j;
+    const eligible = String(result?.eligibility_status || '').toLowerCase() === 'eligible';
+    await save(c.wid, { status: eligible ? 'provisioning' : 'disconnected', config: { existingPhoneNumber: phone, eligibility: result || {}, hostedStatus: eligible ? 'eligible' : 'ineligible' } });
+    return json(res, 200, { ok: true, phoneNumber: phone, eligible, status: result?.eligibility_status || '', subStatus: result?.eligibility_sub_status || '', reason: result?.ineligibility_reason || '', nextStep: result?.next_step || '', phoneType: result?.phone_number_type || '', country: result?.iso_country_code || '' });
+  });
+
+  router.post('/api/app/integrations/twilio/existing/start', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireTwilioConfigured(res, json)) return;
+    const b = await readJson(req), phone = normalize(b.phoneNumber);
+    if (!phone) return json(res, 400, { ok: false, message: 'Enter a valid Canadian or US phone number.' });
+    const current = await integration(c.wid), cfg = current?.config || {};
+    if (cfg.hostedOrderSid && cfg.existingPhoneNumber === phone) {
+      const order = await getOrder(cfg.hostedOrderSid);
+      await finalizeIfComplete(c, order);
+      return json(res, 200, { ok: true, orderSid: order.sid, status: order.status, verificationCode: order.verification_code || order.verificationCode || null, phoneNumber: phone, resumed: true });
+    }
+    try {
+      const form = new URLSearchParams({ PhoneNumber: phone, SmsCapability: 'true', FriendlyName: `SiteRemade - ${String(c.workspace?.business_name || 'Business SMS').slice(0, 64)}` });
+      const order = await twilio('https://preview.twilio.com/HostedNumbers/HostedNumberOrders', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+      await save(c.wid, { status: 'provisioning', account_label: c.workspace?.business_name || 'Business SMS', config: { existingPhoneNumber: phone, hostedOrderSid: order.sid, hostedStatus: order.status || 'twilio-processing' } });
+      return json(res, 200, { ok: true, orderSid: order.sid, status: order.status, phoneNumber: phone });
+    } catch (e) {
+      if (hostedUnavailable(e)) return json(res, 503, { ok: false, code: 'HOSTED_SMS_ACCESS_REQUIRED', message: 'Hosted SMS activation is not enabled on the SiteRemade Twilio account yet.' });
+      throw e;
+    }
+  });
+
+  router.post('/api/app/integrations/twilio/existing/verify', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireTwilioConfigured(res, json)) return;
+    const current = await integration(c.wid), sid = current?.config?.hostedOrderSid;
+    if (!sid) return json(res, 409, { ok: false, message: 'Start number setup first.' });
+    let order = await getOrder(sid);
+    const status = String(order.status || '').toLowerCase();
+    if (status === 'received') {
+      const form = new URLSearchParams({ VerificationType: 'phone-call', Status: 'pending-verification' });
+      order = await twilio(`https://preview.twilio.com/HostedNumbers/HostedNumberOrders/${encodeURIComponent(sid)}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+    }
+    await save(c.wid, { status: 'provisioning', config: { hostedStatus: order.status || status } });
+    return json(res, 200, { ok: true, orderSid: sid, status: order.status, verificationCode: order.verification_code || order.verificationCode || null, phoneNumber: order.phone_number || current.config.existingPhoneNumber });
+  });
+
+  router.post('/api/app/integrations/twilio/existing/status', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireTwilioConfigured(res, json)) return;
+    const current = await integration(c.wid), sid = current?.config?.hostedOrderSid;
+    if (!sid) return json(res, 200, { ok: true, status: current?.status === 'connected' ? 'completed' : 'none', connected: current?.status === 'connected', phoneNumber: current?.config?.phoneNumber || current?.config?.existingPhoneNumber || '' });
+    const order = await getOrder(sid);
+    const connected = await finalizeIfComplete(c, order);
+    await save(c.wid, { status: connected ? 'connected' : 'provisioning', config: { hostedStatus: order.status || '' } });
+    return json(res, 200, { ok: true, status: order.status, connected, verificationCode: order.verification_code || order.verificationCode || null, phoneNumber: order.phone_number || current.config.existingPhoneNumber || '', orderSid: sid });
+  });
+
+  router.post('/api/app/integrations/twilio/existing/authorize', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireTwilioConfigured(res, json)) return;
+    const b = await readJson(req), current = await integration(c.wid), sid = current?.config?.hostedOrderSid;
+    if (!sid) return json(res, 409, { ok: false, message: 'Verify the business number first.' });
+    const order = await getOrder(sid);
+    if (String(order.status || '').toLowerCase() !== 'verified') return json(res, 409, { ok: false, message: 'The business number must be verified before authorization.' });
+    const first = clean(b.firstName, 80), last = clean(b.lastName, 80), business = clean(b.businessName, 120) || String(c.workspace?.business_name || 'Business'), street = clean(b.street, 160), city = clean(b.city, 100), region = clean(b.region, 60), postal = clean(b.postalCode, 30), country = (clean(b.country, 2) || 'CA').toUpperCase(), email = clean(b.email, 160), contactPhone = normalize(b.contactPhone || current.config.existingPhoneNumber);
+    if (!first || !last || !street || !city || !region || !postal || !email || !contactPhone) return json(res, 400, { ok: false, message: 'Complete all authorization details.' });
+    if (!['CA', 'US'].includes(country)) return json(res, 400, { ok: false, message: 'Authorization currently supports Canada and the United States.' });
+    const addressForm = new URLSearchParams({ CustomerName: `${first} ${last}`, FriendlyName: `${business} service address`, Street: street, City: city, Region: region, PostalCode: postal, IsoCountry: country });
+    const address = await twilio(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Addresses.json`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: addressForm });
+    const authForm = new URLSearchParams();
+    authForm.append('HostedNumberOrderSids', sid);
+    authForm.set('AddressSid', address.sid);
+    authForm.set('Email', email);
+    authForm.set('ContactTitle', 'Owner');
+    authForm.set('ContactPhoneNumber', contactPhone);
+    const doc = await twilio('https://preview.twilio.com/HostedNumbers/AuthorizationDocuments', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: authForm });
+    await save(c.wid, { status: 'provisioning', config: { hostedStatus: 'pending-loa', addressSid: address.sid, authorizationDocumentSid: doc.sid, authorizationEmail: email } });
+    return json(res, 200, { ok: true, status: doc.status || 'signing', authorizationDocumentSid: doc.sid, email });
+  });
+};
