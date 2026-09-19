@@ -7,7 +7,9 @@
 const { Router } = require('../lib/router');
 
 const registerers = [
-  require('./integrations')
+  require('./integrations'),
+  require('./twilio-provisioning'),
+  require('./google-ads')
 ];
 
 function buildRouter() {

@@ -1,0 +1,65 @@
+// Migrated from v39-twilio-provisioning.js (deleted). Logic is unchanged —
+// only the http.createServer wrapper + manual path/method checks were
+// replaced by router.post() + { auth: 'user' }.
+const { db, readJsonBody: readJson } = require('../lib/context');
+
+const base = String(process.env.PUBLIC_BASE_URL || 'https://app.siteremade.com').replace(/\/$/, '');
+function twilioAuthHeader() { return 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID || ''}:${process.env.TWILIO_AUTH_TOKEN || ''}`).toString('base64'); }
+async function twilio(url, opts = {}) {
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) throw Error('Twilio is not configured.');
+  const r = await fetch(url, { ...opts, headers: { Authorization: twilioAuthHeader(), ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Error(j.message || 'Twilio request failed');
+  return j;
+}
+async function row(wid) { return (await db.from('integration_connections').select('*').eq('workspace_id', wid).eq('provider', 'twilio').maybeSingle()).data || null; }
+async function save(wid, patch) {
+  const current = await row(wid);
+  const config = { ...(current?.config || {}), ...(patch.config || {}) };
+  const next = { workspace_id: wid, provider: 'twilio', status: patch.status || current?.status || 'provisioning', external_id: patch.external_id ?? current?.external_id ?? null, account_label: patch.account_label ?? current?.account_label ?? null, config, updated_at: new Date().toISOString() };
+  const { data, error } = await db.from('integration_connections').upsert(next, { onConflict: 'workspace_id,provider' }).select('*').single();
+  if (error) throw error;
+  return data;
+}
+async function ensureSubaccount(c) {
+  let r = await row(c.wid);
+  let sid = r?.config?.subaccountSid;
+  if (sid) return { r, sid };
+  const form = new URLSearchParams({ FriendlyName: `SiteRemade - ${String(c.workspace?.business_name || c.wid).slice(0, 64)}` });
+  const account = await twilio('https://api.twilio.com/2010-04-01/Accounts.json', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+  sid = account.sid;
+  await save(c.wid, { status: 'provisioning', account_label: c.workspace?.business_name || 'SiteRemade workspace', config: { subaccountSid: sid } });
+  r = await row(c.wid);
+  return { r, sid };
+}
+function cleanCode(v, n = 40) { return String(v || '').trim().slice(0, n); }
+
+module.exports = function registerTwilioProvisioningRoutes(router) {
+  router.post('/api/app/integrations/twilio/number/search', { auth: 'user' }, async (req, res, { c, json }) => {
+    const b = await readJson(req), country = (cleanCode(b.country, 2) || 'CA').toUpperCase();
+    if (!['CA', 'US'].includes(country)) return json(res, 400, { ok: false, message: 'Business SMS number search currently supports Canada and the United States.' });
+    const { sid } = await ensureSubaccount(c);
+    const q = new URLSearchParams({ SmsEnabled: 'true', VoiceEnabled: 'true', ExcludeAllAddressRequired: 'true', PageSize: '5' });
+    const area = cleanCode(b.areaCode, 3).replace(/\D/g, ''); if (area.length === 3) q.set('AreaCode', area);
+    const region = cleanCode(b.region, 8).toUpperCase(); if (region) q.set('InRegion', region);
+    const postal = cleanCode(b.postalCode, 16); if (postal) q.set('InPostalCode', postal);
+    const locality = cleanCode(b.locality, 80); if (locality) q.set('InLocality', locality);
+    const j = await twilio(`https://api.twilio.com/2010-04-01/Accounts/${sid}/AvailablePhoneNumbers/${country}/Local.json?${q}`);
+    const numbers = (j.available_phone_numbers || []).slice(0, 5).map(n => ({ phoneNumber: n.phone_number, friendlyName: n.friendly_name || n.phone_number, locality: n.locality || '', region: n.region || '', postalCode: n.postal_code || '', capabilities: n.capabilities || {}, addressRequirements: n.address_requirements || 'none' }));
+    await save(c.wid, { status: 'provisioning', config: { subaccountSid: sid, candidateNumbers: numbers.map(x => x.phoneNumber), candidateExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), lastSearch: { country, areaCode: area, region, postalCode: postal, locality } } });
+    return json(res, 200, { ok: true, numbers });
+  });
+
+  router.post('/api/app/integrations/twilio/number/purchase', { auth: 'user' }, async (req, res, { c, json }) => {
+    const b = await readJson(req);
+    if (b.confirmPurchase !== true) return json(res, 400, { ok: false, message: 'Purchase confirmation is required.' });
+    const r = await row(c.wid), sid = r?.config?.subaccountSid, phone = cleanCode(b.phoneNumber, 30);
+    if (!sid) return json(res, 409, { ok: false, message: 'Search for a number first.' });
+    const candidates = Array.isArray(r?.config?.candidateNumbers) ? r.config.candidateNumbers : [], expires = Date.parse(r?.config?.candidateExpiresAt || 0);
+    if (!candidates.includes(phone) || !expires || expires < Date.now()) return json(res, 409, { ok: false, message: 'That number selection expired. Search again before purchasing.' });
+    const form = new URLSearchParams({ PhoneNumber: phone, SmsUrl: base + '/api/webhooks/twilio', SmsMethod: 'POST', FriendlyName: `SiteRemade - ${String(c.workspace?.business_name || 'Business SMS').slice(0, 64)}` });
+    const number = await twilio(`https://api.twilio.com/2010-04-01/Accounts/${sid}/IncomingPhoneNumbers.json`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
+    await save(c.wid, { status: 'connected', external_id: number.sid, account_label: number.friendly_name || number.phone_number, config: { subaccountSid: sid, phoneNumber: number.phone_number, numberSid: number.sid, candidateNumbers: [], candidateExpiresAt: null } });
+    return json(res, 200, { ok: true, phoneNumber: number.phone_number, numberSid: number.sid });
+  });
+};
