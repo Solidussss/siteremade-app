@@ -37,6 +37,19 @@ function mapAdFund(a){return {id:a.id,amount:Number(a.amount)||0,platform:a.plat
 function mapWebsiteAnalytics(a){return a?{domain:a.domain||'',provider:a.provider||'google_analytics',connected:!!a.connected,sessions:Number(a.sessions)||0,users:Number(a.users)||0,pageviews:Number(a.pageviews)||0,lastSync:a.last_sync||null}:{domain:'',provider:'google_analytics',connected:false,sessions:0,users:0,pageviews:0,lastSync:null};}
 function mapWebsiteUpdate(r){return {id:r.id,projectId:r.project_id||'',kind:r.kind||'update',page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
 function computeProjectPayment(projectId,invoicesForWs){const linked=(invoicesForWs||[]).filter(i=>i.project_id===projectId);if(!linked.length)return {paymentStatus:'none',invoiceCount:0,invoiceTotal:0,invoicePaid:0};const invoiceTotal=linked.reduce((s,i)=>s+Number(i.amount||0),0),invoicePaid=linked.filter(i=>i.status==='Paid').reduce((s,i)=>s+Number(i.amount||0),0),allPaid=linked.every(i=>i.status==='Paid'),anyPaid=linked.some(i=>i.status==='Paid');return {paymentStatus:allPaid?'paid':anyPaid?'partial':'unpaid',invoiceCount:linked.length,invoiceTotal,invoicePaid};}
+// Mutating website-project routes (PATCH, /brief, /review) update a single row
+// but still need to return the project with correctly computed revisions/
+// payment (mapProject derives those from the workspace's invoices and
+// website_updates, not from the row itself) — otherwise the response looks
+// like it has zero revisions/no payment right after an action that clearly
+// shouldn't reset either. This mirrors what the GET routes already fetch.
+async function projectFullMap(wid,row){
+  const [invoicesForWs,updatesForProject]=await Promise.all([
+    q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',wid)),
+    q(db.from('website_updates').select('*').eq('project_id',row.id).order('created_at',{ascending:false}))
+  ]);
+  return mapProject(row,invoicesForWs,updatesForProject);
+}
 function mapProject(row,invoicesForWs=[],updatesForWs=[]){const revisions=(updatesForWs||[]).filter(u=>u.project_id===row.id).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));return {id:row.id,workspaceId:row.workspace_id,leadId:row.lead_id||'',businessName:row.business_name||'',source:row.source||'SiteRemade',intakeText:row.intake_text||'',intake:row.intake&&typeof row.intake==='object'?row.intake:{},designDirection:row.design_direction&&typeof row.design_direction==='object'?row.design_direction:{},brief:row.brief&&typeof row.brief==='object'?row.brief:{},briefHistory:Array.isArray(row.brief_history)?row.brief_history:[],builderPrompt:row.builder_prompt||'',status:row.status||'Intake',previewUrl:row.preview_url||'',liveUrl:row.live_url||'',deliveredAt:row.delivered_at||null,clientReviewStatus:row.client_review_status||'not_submitted',clientReviewedAt:row.client_reviewed_at||null,clientReviewFeedback:row.client_review_feedback||'',aiProvider:row.ai_provider||'',aiModel:row.ai_model||'',revisionCount:revisions.length,revisions:revisions.map(mapWebsiteUpdate),payment:computeProjectPayment(row.id,invoicesForWs),createdAt:row.created_at,updatedAt:row.updated_at};}
 function extractBriefJson(text){const raw=clean(text,50000);const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i);const candidate=fenced?fenced[1]:raw;const start=candidate.indexOf('{'),end=candidate.lastIndexOf('}');if(start<0||end<=start)throw Error('AI did not return a structured website brief.');return JSON.parse(candidate.slice(start,end+1));}
 function normalizeWebsiteBrief(input={}){const style=input.styleDirection||input.style_direction||{};const content=input.content||{};const builderPrompt=clean(input.builderPrompt||input.builder_prompt,30000);return {summary:clean(input.summary,2000),businessPositioning:clean(input.businessPositioning||input.business_positioning,3000),styleDirection:{style:clean(style.style,300),visualTone:clean(style.visualTone||style.visual_tone,500),colors:Array.isArray(style.colors)?style.colors.slice(0,8).map(x=>clean(x,120)):[],typography:clean(style.typography,800),layout:clean(style.layout,1500),motion:clean(style.motion,1200)},content:{hero:content.hero&&typeof content.hero==='object'?content.hero:{},services:Array.isArray(content.services)?content.services.slice(0,12):[],trust:Array.isArray(content.trust)?content.trust.slice(0,12):[],about:clean(content.about,3000),faq:Array.isArray(content.faq)?content.faq.slice(0,12):[],quoteForm:content.quoteForm||content.quote_form||{}},buildRules:Array.isArray(input.buildRules||input.build_rules)?(input.buildRules||input.build_rules).slice(0,30).map(x=>clean(x,1000)):[],avoid:Array.isArray(input.avoid)?input.avoid.slice(0,30).map(x=>clean(x,1000)):[],builderPrompt};}
@@ -410,7 +423,7 @@ async function api(req,res,u){
     const b=await body(req),leadId=clean(b.leadId,80);if(!leadId)return json(res,400,{ok:false,message:'Choose a lead to start a website project from.'});
     const lead=(await db.from('leads').select('*').eq('id',leadId).eq('workspace_id',c.wid).maybeSingle()).data;if(!lead)return json(res,404,{ok:false,message:'Lead not found.'});
     const existing=(await db.from('website_projects').select('*').eq('workspace_id',c.wid).eq('lead_id',leadId).maybeSingle()).data;
-    if(existing)return json(res,200,{ok:true,project:mapProject(existing,[],[]),created:false});
+    if(existing)return json(res,200,{ok:true,project:await projectFullMap(c.wid,existing),created:false});
     const row=await q(db.from('website_projects').insert({workspace_id:c.wid,lead_id:leadId,business_name:lead.name,source:lead.source||'SiteRemade',status:'Intake'}).select('*').single());
     await activity(c.wid,'website','Website project started',row.business_name);
     return json(res,201,{ok:true,project:mapProject(row,[],[]),created:true});
@@ -436,7 +449,7 @@ async function api(req,res,u){
     if(b.brief!==undefined&&b.brief&&typeof b.brief==='object'){const prior=old.brief&&Object.keys(old.brief).length?old.brief:null;patch.brief=b.brief;if(prior)patch.brief_history=[{...prior,_replacedAt:now()},...(Array.isArray(old.brief_history)?old.brief_history:[])].slice(0,20);}
     const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
     if(row.status!==old.status)await activity(c.wid,'website',`Website project moved to ${row.status}`,row.business_name);
-    return json(res,200,{ok:true,project:mapProject(row,[],[])});
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row)});
   }
   x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/brief$/);if(x&&m==='POST'){
     if(!c.owner)return json(res,403,{ok:false,message:'SiteRemade owner access required.'});
@@ -453,7 +466,7 @@ async function api(req,res,u){
     if(old.status==='Intake')patch.status='Brief Ready';
     const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
     await activity(c.wid,'website',revision?'Website brief revised':'Website brief generated',`${row.business_name} · ${ai.provider}`);
-    return json(res,200,{ok:true,project:mapProject(row,[],[]),provider:ai.provider,model:ai.model});
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row),provider:ai.provider,model:ai.model});
   }
   x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/revisions$/);if(x&&m==='POST'){
     const proj=(await db.from('website_projects').select('id,workspace_id,business_name').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});
@@ -473,7 +486,7 @@ async function api(req,res,u){
     const request=feedback||(decision==='approved'?'Client approved the preview.':'Client requested changes.');
     await db.from('website_updates').insert({workspace_id:c.wid,project_id:proj.id,page:'Review',priority:decision==='changes_requested'?'Important':'Normal',request,notes:'',status:'Requested',kind:'client_feedback'});
     await activity(c.wid,'website',decision==='approved'?'Client approved website preview':'Client requested website changes',proj.business_name);
-    return json(res,200,{ok:true,project:mapProject(row,[],[])});
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row)});
   }
   x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='DELETE'){
     if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});
