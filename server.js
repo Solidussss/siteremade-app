@@ -29,17 +29,66 @@ function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.em
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
 function mapAppointment(a){return {id:a.id,leadId:a.lead_id||'',title:a.title,customer:a.customer,start:a.start_at,duration:a.duration,status:a.status,notes:a.notes};}
-function mapInvoice(i){return {id:i.id,leadId:i.lead_id||'',customer:i.customer,description:i.description,amount:Number(i.amount)||0,status:i.status,paymentUrl:i.payment_url||null,stripeSessionId:i.stripe_session_id||null,createdAt:i.created_at,paidAt:i.paid_at||null};}
+function mapInvoice(i){return {id:i.id,leadId:i.lead_id||'',projectId:i.project_id||'',customer:i.customer,description:i.description,amount:Number(i.amount)||0,status:i.status,paymentUrl:i.payment_url||null,stripeSessionId:i.stripe_session_id||null,createdAt:i.created_at,paidAt:i.paid_at||null};}
 function mapAutomation(a){return {id:a.automation_key,name:a.name,description:a.description,enabled:a.enabled};}
 function mapActivity(a){return {id:a.id,type:a.type,title:a.title,detail:a.detail,createdAt:a.created_at};}
 function mapAdSpend(a){return {id:a.id,platform:a.platform,campaign:a.campaign,spend:Number(a.spend)||0,leads:Number(a.leads)||0,source:a.source||'manual',createdAt:a.created_at};}
 function mapAdFund(a){return {id:a.id,amount:Number(a.amount)||0,platform:a.platform||'Both',status:a.status,createdAt:a.created_at,fundedAt:a.funded_at||null};}
 function mapWebsiteAnalytics(a){return a?{domain:a.domain||'',provider:a.provider||'google_analytics',connected:!!a.connected,sessions:Number(a.sessions)||0,users:Number(a.users)||0,pageviews:Number(a.pageviews)||0,lastSync:a.last_sync||null}:{domain:'',provider:'google_analytics',connected:false,sessions:0,users:0,pageviews:0,lastSync:null};}
-function mapWebsiteUpdate(r){return {id:r.id,page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
+function mapWebsiteUpdate(r){return {id:r.id,projectId:r.project_id||'',kind:r.kind||'update',page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
+function computeProjectPayment(projectId,invoicesForWs){const linked=(invoicesForWs||[]).filter(i=>i.project_id===projectId);if(!linked.length)return {paymentStatus:'none',invoiceCount:0,invoiceTotal:0,invoicePaid:0};const invoiceTotal=linked.reduce((s,i)=>s+Number(i.amount||0),0),invoicePaid=linked.filter(i=>i.status==='Paid').reduce((s,i)=>s+Number(i.amount||0),0),allPaid=linked.every(i=>i.status==='Paid'),anyPaid=linked.some(i=>i.status==='Paid');return {paymentStatus:allPaid?'paid':anyPaid?'partial':'unpaid',invoiceCount:linked.length,invoiceTotal,invoicePaid};}
+function mapProject(row,invoicesForWs=[],updatesForWs=[]){const revisions=(updatesForWs||[]).filter(u=>u.project_id===row.id).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));return {id:row.id,workspaceId:row.workspace_id,leadId:row.lead_id||'',businessName:row.business_name||'',source:row.source||'SiteRemade',intakeText:row.intake_text||'',intake:row.intake&&typeof row.intake==='object'?row.intake:{},designDirection:row.design_direction&&typeof row.design_direction==='object'?row.design_direction:{},brief:row.brief&&typeof row.brief==='object'?row.brief:{},briefHistory:Array.isArray(row.brief_history)?row.brief_history:[],builderPrompt:row.builder_prompt||'',status:row.status||'Intake',previewUrl:row.preview_url||'',liveUrl:row.live_url||'',deliveredAt:row.delivered_at||null,clientReviewStatus:row.client_review_status||'not_submitted',clientReviewedAt:row.client_reviewed_at||null,clientReviewFeedback:row.client_review_feedback||'',aiProvider:row.ai_provider||'',aiModel:row.ai_model||'',revisionCount:revisions.length,revisions:revisions.map(mapWebsiteUpdate),payment:computeProjectPayment(row.id,invoicesForWs),createdAt:row.created_at,updatedAt:row.updated_at};}
+function extractBriefJson(text){const raw=clean(text,50000);const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i);const candidate=fenced?fenced[1]:raw;const start=candidate.indexOf('{'),end=candidate.lastIndexOf('}');if(start<0||end<=start)throw Error('AI did not return a structured website brief.');return JSON.parse(candidate.slice(start,end+1));}
+function normalizeWebsiteBrief(input={}){const style=input.styleDirection||input.style_direction||{};const content=input.content||{};const builderPrompt=clean(input.builderPrompt||input.builder_prompt,30000);return {summary:clean(input.summary,2000),businessPositioning:clean(input.businessPositioning||input.business_positioning,3000),styleDirection:{style:clean(style.style,300),visualTone:clean(style.visualTone||style.visual_tone,500),colors:Array.isArray(style.colors)?style.colors.slice(0,8).map(x=>clean(x,120)):[],typography:clean(style.typography,800),layout:clean(style.layout,1500),motion:clean(style.motion,1200)},content:{hero:content.hero&&typeof content.hero==='object'?content.hero:{},services:Array.isArray(content.services)?content.services.slice(0,12):[],trust:Array.isArray(content.trust)?content.trust.slice(0,12):[],about:clean(content.about,3000),faq:Array.isArray(content.faq)?content.faq.slice(0,12):[],quoteForm:content.quoteForm||content.quote_form||{}},buildRules:Array.isArray(input.buildRules||input.build_rules)?(input.buildRules||input.build_rules).slice(0,30).map(x=>clean(x,1000)):[],avoid:Array.isArray(input.avoid)?input.avoid.slice(0,30).map(x=>clean(x,1000)):[],builderPrompt};}
+function websiteBriefPrompt({workspace,lead,project,revision}){const intake=project.intake&&Object.keys(project.intake).length?project.intake:null;const source={workspace:{businessName:workspace?.business_name||'',services:workspace?.ai_services||'',serviceArea:workspace?.ai_service_area||'',tone:workspace?.ai_tone||''},lead:lead?{name:lead.name||'',email:lead.email||'',phone:lead.phone||'',service:lead.service||'',message:lead.message||'',source:lead.source||''}:null,structuredIntake:intake,legacyIntakeText:intake?'':clean(project.intake_text,18000),existingBrief:project.brief&&Object.keys(project.brief).length?project.brief:null,revision:clean(revision,8000)};return `You are SiteRemade's senior website strategist, conversion copywriter and design director.
+
+Your job is to turn the supplied client/project information into a production-ready website brief that another coding agent can build without guessing.
+
+Important rules:
+- structuredIntake, when present, is the authoritative source of the client's choices (business identity, services, service area, desired pages, visual direction, colours, logo/assets, references). Treat every field in it as a constraint, not a suggestion, and do not override or reinterpret it.
+- Only fall back to interpreting legacyIntakeText as free-form prose if structuredIntake is empty — that field exists solely for projects created before structured intake existed.
+- Preserve the client's actual business identity. Do not invent awards, years in business, certifications, reviews, prices, team members, project counts, warranties, service areas or claims that were not supplied.
+- Make the site feel custom to this specific business rather than like a generic contractor/SaaS template.
+- Write useful real copy where the source supports it. If information is missing, use clearly marked neutral placeholders or instruct the builder to omit the claim.
+- The finished site should feel expensive, editorial and intentional: strong hierarchy, excellent spacing, restrained motion, sharp mobile behaviour, and no random gradients/glass cards unless structuredIntake's visual direction explicitly calls for them.
+- The builder prompt must be self-contained. A coding agent should be able to build the site from that prompt without needing this conversation.
+- If a revision is supplied, update the existing brief rather than starting over.
+- Return JSON only. No markdown.
+
+Return exactly this shape:
+{
+  "summary": "short project summary",
+  "businessPositioning": "how this business should be positioned",
+  "styleDirection": {
+    "style": "selected/derived style",
+    "visualTone": "specific visual feel",
+    "colors": ["specific supplied/derived colours"],
+    "typography": "font personality and hierarchy guidance",
+    "layout": "specific layout/composition guidance",
+    "motion": "restrained interaction and motion guidance"
+  },
+  "content": {
+    "hero": {"kicker":"","headline":"","subhead":"","primaryCta":"","secondaryCta":""},
+    "services": [{"name":"","description":""}],
+    "trust": ["only supported trust points"],
+    "about": "",
+    "faq": [{"question":"","answer":""}],
+    "quoteForm": {"fields":[],"intro":""}
+  },
+  "buildRules": ["specific implementation rules"],
+  "avoid": ["specific things that would make this site feel cheap or generic"],
+  "builderPrompt": "complete production prompt for the website coding agent"
+}
+
+SOURCE DATA:
+${JSON.stringify(source)}`;}
+async function generateWebsiteBriefViaAnthropic(prompt){const key=process.env.ANTHROPIC_API_KEY,model=process.env.ANTHROPIC_MODEL;if(!key||!model)return null;const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model,max_tokens:7000,temperature:0.2,messages:[{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Claude could not generate the website brief.');const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');return {provider:'anthropic',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
+async function generateWebsiteBriefViaOpenAI(prompt){const key=process.env.OPENAI_API_KEY;if(!key)return null;const model=process.env.OPENAI_MODEL||'gpt-4o-mini';const response=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:0.2,response_format:{type:'json_object'},messages:[{role:'system',content:'Return only valid JSON matching the requested schema.'},{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Fallback AI could not generate the website brief.');const text=data.choices?.[0]?.message?.content||'';return {provider:'openai',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
+async function generateWebsiteBrief(args){const prompt=websiteBriefPrompt(args);const anthropic=await generateWebsiteBriefViaAnthropic(prompt);if(anthropic)return anthropic;const fallback=await generateWebsiteBriefViaOpenAI(prompt);if(fallback)return fallback;throw Error('Website intelligence is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL in Railway, or write the brief manually.');}
 async function activity(wid,type,title,detail){await db.from('activities').insert({workspace_id:wid,type,title,detail:clean(detail,1000)});}
 async function audit(userId,wid,action,detail){await db.from('audit_logs').insert({user_id:userId,workspace_id:wid||null,action,detail:clean(detail,1000)});}
 async function workspaceSnapshot(c){
-  const [leads,convs,msgs,apps,invoices,autos,activities,adSpend,adFunds,prospectViews,websiteAnalytics,websiteUpdates] = await Promise.all([
+  const [leads,convs,msgs,apps,invoices,autos,activities,adSpend,adFunds,prospectViews,websiteAnalytics,websiteUpdates,websiteProjects] = await Promise.all([
     q(db.from('leads').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false})),
     q(db.from('conversations').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false})),
     q(db.from('messages').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true})),
@@ -51,9 +100,10 @@ async function workspaceSnapshot(c){
     q(db.from('ad_funds').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
     q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000)),
     q(db.from('website_analytics').select('*').eq('workspace_id',c.wid).maybeSingle()),
-    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200))
+    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
+    q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200))
   ]);
-  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
+  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
 }
 
 async function businessAssistant(c,message){
@@ -283,7 +333,7 @@ async function api(req,res,u){
 
   const c=await ctx(req,res,u);if(!c)return json(res,401,{ok:false,message:'Authentication required.'});
   if(m==='GET'&&p==='/api/app/bootstrap'){
-    if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[]});
+    if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[],websiteProjects:[]});
     return json(res,200,{ok:true,locked:false,...await workspaceSnapshot(c)});
   }
   if(m==='POST'&&p==='/api/app/workspaces/switch'){const b=await body(req),wid=clean(b.workspaceId,80);if(!c.workspaces.some(w=>w.id===wid))return json(res,403,{ok:false,message:'No access.'});return json(res,200,{ok:true},[`sr_workspace=${encodeURIComponent(wid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`]);}
@@ -342,6 +392,96 @@ async function api(req,res,u){
     await activity(c.wid,'website','Website update status changed',`${row.page} · ${status}`);
     return json(res,200,{ok:true,websiteUpdate:mapWebsiteUpdate(row)});
   }
+
+  // Website Projects — the website-delivery lifecycle: Start Website Project (from a
+  // lead) → Structured Intake → Build Brief → Building → Client Review → Revisions →
+  // Payment/Handoff → Delivered → Ongoing Updates. Revisions, client feedback and the
+  // pre-existing general "Website Updates" ticket flow all share the website_updates
+  // table (see V50 migration) instead of being separate systems.
+  if(m==='GET'&&p==='/api/app/website-projects'){
+    const [rows,invoicesForWs,updatesForWs]=await Promise.all([
+      q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false})),
+      q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',c.wid)),
+      q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}))
+    ]);
+    return json(res,200,{ok:true,projects:rows.map(r=>mapProject(r,invoicesForWs,updatesForWs))});
+  }
+  if(m==='POST'&&p==='/api/app/website-projects'){
+    const b=await body(req),leadId=clean(b.leadId,80);if(!leadId)return json(res,400,{ok:false,message:'Choose a lead to start a website project from.'});
+    const lead=(await db.from('leads').select('*').eq('id',leadId).eq('workspace_id',c.wid).maybeSingle()).data;if(!lead)return json(res,404,{ok:false,message:'Lead not found.'});
+    const existing=(await db.from('website_projects').select('*').eq('workspace_id',c.wid).eq('lead_id',leadId).maybeSingle()).data;
+    if(existing)return json(res,200,{ok:true,project:mapProject(existing,[],[]),created:false});
+    const row=await q(db.from('website_projects').insert({workspace_id:c.wid,lead_id:leadId,business_name:lead.name,source:lead.source||'SiteRemade',status:'Intake'}).select('*').single());
+    await activity(c.wid,'website','Website project started',row.business_name);
+    return json(res,201,{ok:true,project:mapProject(row,[],[]),created:true});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='GET'){
+    const row=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!row)return json(res,404,{ok:false,message:'Website project not found.'});
+    const [invoicesForWs,updatesForProject]=await Promise.all([
+      q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',c.wid)),
+      q(db.from('website_updates').select('*').eq('project_id',x[1]).order('created_at',{ascending:false}))
+    ]);
+    return json(res,200,{ok:true,project:mapProject(row,invoicesForWs,updatesForProject)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='PATCH'){
+    const old=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!old)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),patch={updated_at:now()};
+    if(b.businessName!==undefined)patch.business_name=clean(b.businessName,200)||old.business_name;
+    if(b.intake!==undefined&&b.intake&&typeof b.intake==='object')patch.intake=b.intake;
+    if(b.previewUrl!==undefined)patch.preview_url=clean(b.previewUrl,600);
+    if(b.liveUrl!==undefined)patch.live_url=clean(b.liveUrl,600);
+    if(b.builderPrompt!==undefined)patch.builder_prompt=clean(b.builderPrompt,30000);
+    if(b.status!==undefined){const status=clean(b.status,40);if(!['Intake','Brief Ready','Building','Review','Delivered'].includes(status))return json(res,400,{ok:false,message:'Invalid website project status.'});patch.status=status;}
+    if(b.deliveredAt!==undefined){if(b.deliveredAt===null||b.deliveredAt===''){patch.delivered_at=null;}else{const d=new Date(b.deliveredAt);if(Number.isNaN(d.getTime()))return json(res,400,{ok:false,message:'Invalid delivered date.'});patch.delivered_at=d.toISOString();}}
+    if(b.brief!==undefined&&b.brief&&typeof b.brief==='object'){const prior=old.brief&&Object.keys(old.brief).length?old.brief:null;patch.brief=b.brief;if(prior)patch.brief_history=[{...prior,_replacedAt:now()},...(Array.isArray(old.brief_history)?old.brief_history:[])].slice(0,20);}
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    if(row.status!==old.status)await activity(c.wid,'website',`Website project moved to ${row.status}`,row.business_name);
+    return json(res,200,{ok:true,project:mapProject(row,[],[])});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/brief$/);if(x&&m==='POST'){
+    if(!c.owner)return json(res,403,{ok:false,message:'SiteRemade owner access required.'});
+    const old=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!old)return json(res,404,{ok:false,message:'Website project not found.'});
+    const aiConfigured=!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL)||!!process.env.OPENAI_API_KEY;
+    if(!aiConfigured)return json(res,503,{ok:false,message:'Website brief AI is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL (or OPENAI_API_KEY) in Railway, or write the brief and builder prompt manually below.'});
+    const b=await body(req),revision=clean(b.revision,8000);
+    const hasIntake=(old.intake&&Object.keys(old.intake).length)||clean(old.intake_text,1).length;
+    if(!hasIntake)return json(res,400,{ok:false,message:'Fill in the structured intake before generating a brief.'});
+    let lead=null;if(old.lead_id)lead=(await db.from('leads').select('*').eq('id',old.lead_id).eq('workspace_id',c.wid).maybeSingle()).data;
+    const ai=await generateWebsiteBrief({workspace:c.workspace,lead,project:old,revision});
+    const prior=old.brief&&Object.keys(old.brief).length?old.brief:null;
+    const patch={brief:ai.brief,brief_history:prior?[{...prior,_replacedAt:now()},...(Array.isArray(old.brief_history)?old.brief_history:[])].slice(0,20):(Array.isArray(old.brief_history)?old.brief_history:[]),builder_prompt:ai.brief.builderPrompt||old.builder_prompt,ai_provider:ai.provider,ai_model:ai.model,updated_at:now()};
+    if(old.status==='Intake')patch.status='Brief Ready';
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    await activity(c.wid,'website',revision?'Website brief revised':'Website brief generated',`${row.business_name} · ${ai.provider}`);
+    return json(res,200,{ok:true,project:mapProject(row,[],[]),provider:ai.provider,model:ai.model});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/revisions$/);if(x&&m==='POST'){
+    const proj=(await db.from('website_projects').select('id,workspace_id,business_name').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),request=clean(b.request,4000);if(!request)return json(res,400,{ok:false,message:'Describe the change first.'});
+    const page=clean(b.page,80)||'Other',priority=['Normal','Important'].includes(clean(b.priority,30))?clean(b.priority,30):'Normal',notes=clean(b.notes,4000),kind=c.owner?'revision':'client_feedback';
+    const row=await q(db.from('website_updates').insert({workspace_id:c.wid,project_id:proj.id,page,priority,request,notes,status:'Requested',kind}).select('*').single());
+    await db.from('website_projects').update({updated_at:now()}).eq('id',proj.id);
+    await activity(c.wid,'website',kind==='client_feedback'?'Client feedback added':'Website revision requested',`${proj.business_name} · ${request.slice(0,120)}`);
+    return json(res,201,{ok:true,websiteUpdate:mapWebsiteUpdate(row)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/review$/);if(x&&m==='POST'){
+    const proj=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),decision=clean(b.decision,30);if(!['approved','changes_requested'].includes(decision))return json(res,400,{ok:false,message:'Invalid review decision.'});
+    const feedback=clean(b.feedback,4000);
+    const patch={client_review_status:decision,client_reviewed_at:now(),client_review_feedback:feedback,updated_at:now()};
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    const request=feedback||(decision==='approved'?'Client approved the preview.':'Client requested changes.');
+    await db.from('website_updates').insert({workspace_id:c.wid,project_id:proj.id,page:'Review',priority:decision==='changes_requested'?'Important':'Normal',request,notes:'',status:'Requested',kind:'client_feedback'});
+    await activity(c.wid,'website',decision==='approved'?'Client approved website preview':'Client requested website changes',proj.business_name);
+    return json(res,200,{ok:true,project:mapProject(row,[],[])});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='DELETE'){
+    if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});
+    await db.from('website_projects').delete().eq('id',x[1]).eq('workspace_id',c.wid);
+    await activity(c.wid,'delete','Website project deleted',x[1]);
+    return json(res,200,{ok:true});
+  }
+
   if(m==='POST'&&p==='/api/app/prospects/search'){const b=await body(req);if(!clean(b.businessType,120)||!clean(b.location,160))return json(res,400,{ok:false,message:'Business type and location are required.'});const viewed=await q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000));const result=await searchPlaces(b,new Set(viewed.map(x=>x.place_id)));return json(res,200,{ok:true,...result});}
   if(m==='POST'&&p==='/api/app/prospects/viewed'){const b=await body(req),placeId=clean(b.placeId,220);if(!placeId)return json(res,400,{ok:false,message:'Google Place ID required.'});await q(db.from('prospect_views').upsert({workspace_id:c.wid,place_id:placeId,name:clean(b.name,200),website:clean(b.website,1000),viewed_at:now()},{onConflict:'workspace_id,place_id'}).select('*').single());return json(res,200,{ok:true});}
   if(m==='POST'&&p==='/api/app/analytics/website'){const b=await body(req),raw=clean(b.domain,1000);let domain='';try{if(raw){const candidate=/^https?:\/\//i.test(raw)?raw:'https://'+raw;domain=new URL(candidate).hostname.replace(/^www\./,'').toLowerCase();}}catch{}if(!domain)return json(res,400,{ok:false,message:'Enter a valid website domain.'});const row=await q(db.from('website_analytics').upsert({workspace_id:c.wid,domain,provider:'google_analytics',updated_at:now()},{onConflict:'workspace_id'}).select('*').single());return json(res,200,{ok:true,websiteAnalytics:mapWebsiteAnalytics(row)});}
@@ -403,7 +543,7 @@ return json(res,201,{ok:true,lead:mapLead(l)});
     }catch(e){return json(res,400,{ok:false,message:e.message});}
   }
 
-  if(m==='POST'&&p==='/api/app/invoices'){const b=await body(req),lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data,amount=Math.max(0,Number(b.amount)||0);if(!lead||!amount)return json(res,400,{ok:false,message:'Customer and amount required.'});let inv=await q(db.from('invoices').insert({workspace_id:c.wid,lead_id:lead.id,customer:lead.name,description:clean(b.description,240)||'Invoice',amount,status:'Pending'}).select('*').single());if(process.env.STRIPE_SECRET_KEY){try{const j=await stripeRequest('checkout/sessions',{'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':inv.description,'line_items[0][price_data][unit_amount]':String(Math.round(amount*100)),'line_items[0][quantity]':'1','mode':'payment','success_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?paid=1`,'cancel_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?canceled=1`,'metadata[invoiceId]':inv.id,'metadata[workspaceId]':c.wid},c.workspace.stripe_account_id||'');inv=await q(db.from('invoices').update({payment_url:j.url||null,stripe_session_id:j.id||null}).eq('id',inv.id).select('*').single());}catch(e){console.error('Stripe invoice:',e.message)}}await activity(c.wid,'payment','Invoice created',`${inv.customer} · $${amount.toFixed(2)}`);return json(res,201,{ok:true,invoice:mapInvoice(inv)});}
+  if(m==='POST'&&p==='/api/app/invoices'){const b=await body(req),lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data,amount=Math.max(0,Number(b.amount)||0);if(!lead||!amount)return json(res,400,{ok:false,message:'Customer and amount required.'});let projectId=null;if(clean(b.projectId,80)){const proj=(await db.from('website_projects').select('id').eq('id',clean(b.projectId,80)).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});projectId=proj.id;}let inv=await q(db.from('invoices').insert({workspace_id:c.wid,lead_id:lead.id,project_id:projectId,customer:lead.name,description:clean(b.description,240)||'Invoice',amount,status:'Pending'}).select('*').single());if(process.env.STRIPE_SECRET_KEY){try{const j=await stripeRequest('checkout/sessions',{'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':inv.description,'line_items[0][price_data][unit_amount]':String(Math.round(amount*100)),'line_items[0][quantity]':'1','mode':'payment','success_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?paid=1`,'cancel_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?canceled=1`,'metadata[invoiceId]':inv.id,'metadata[workspaceId]':c.wid},c.workspace.stripe_account_id||'');inv=await q(db.from('invoices').update({payment_url:j.url||null,stripe_session_id:j.id||null}).eq('id',inv.id).select('*').single());}catch(e){console.error('Stripe invoice:',e.message)}}await activity(c.wid,'payment','Invoice created',`${inv.customer} · $${amount.toFixed(2)}`);return json(res,201,{ok:true,invoice:mapInvoice(inv)});}
   x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req);if(b.status&&!PAY.includes(b.status))return json(res,400,{ok:false,message:'Invalid status.'});const patch={};if(b.status){patch.status=b.status;if(b.status==='Paid')patch.paid_at=now();}const inv=await q(db.from('invoices').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());return json(res,200,{ok:true,invoice:mapInvoice(inv)});}
   x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='DELETE'){
     const invoiceId=x[1];
