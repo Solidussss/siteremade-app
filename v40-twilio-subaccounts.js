@@ -4,7 +4,21 @@ const crypto=require('crypto');
 const previous=http.createServer.bind(http);
 const { db, anon, cookies, sendJson: send, readJsonBody: readJson, getContext: context } = require('./lib/context');
 const base=String(process.env.PUBLIC_BASE_URL||'https://app.siteremade.com').replace(/\/$/,'');
-const readForm=req=>new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6){reject(Error('Payload too large'));req.destroy()}});req.on('end',()=>resolve(Object.fromEntries(new URLSearchParams(s))));req.on('error',reject)});
+// Confirmed pre-existing bug (found during Phase 3 route migration, not
+// introduced by it): this file's webhook() always gets first look at POST
+// /api/webhooks/twilio and reads the whole request body via readForm(). If
+// the inbound number doesn't match a subaccount-hosted number, it returns
+// null and falls through to the next handler in the chain (formerly
+// v36-twilio-stripe.js, now routes/twilio-stripe.js's inboundTwilio) for
+// the plain main-Twilio-account case — which used to call its own
+// (separate) readForm(req) on the same request a second time. A Node
+// request stream can only be consumed once, so that second read's 'end'
+// event never fires and the request hangs forever (Twilio would see a
+// timeout, never a response) for every inbound SMS to a main-account
+// number. Fixed by memoizing the parsed body on the request object so a
+// downstream handler reuses the same parse instead of re-reading an
+// already-drained stream.
+const readForm=req=>{if(req.__twilioFormBody)return req.__twilioFormBody;return req.__twilioFormBody=new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6){reject(Error('Payload too large'));req.destroy()}});req.on('end',()=>resolve(Object.fromEntries(new URLSearchParams(s))));req.on('error',reject)})};
 const normalize=v=>String(v||'').replace(/[^+\d]/g,'');
 function parentAuth(){return 'Basic '+Buffer.from(`${process.env.TWILIO_ACCOUNT_SID||''}:${process.env.TWILIO_AUTH_TOKEN||''}`).toString('base64')}
 async function twilio(url,opts={}){const r=await fetch(url,{...opts,headers:{Authorization:parentAuth(),...(opts.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.message||'Twilio request failed');return j}
