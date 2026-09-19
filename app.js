@@ -15,7 +15,7 @@ function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
   const locked=state.user?.role!=='owner'&&!!state.locked;
   lock.hidden=!locked;document.body.classList.toggle('subscription-locked',locked);
-  const cents=Number(state.billing?.monthlyCents||25000),status=String(state.billing?.status||'inactive');
+  const cents=Number(state.billing?.monthlyCents||3900),status=String(state.billing?.status||'inactive');
   if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=money(cents/100);
   if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
 }

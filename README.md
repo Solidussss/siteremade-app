@@ -158,9 +158,9 @@ Run the V8 SQL addition at the bottom of `supabase-schema.sql` once.
 
 Optional environment variable:
 ```env
-SITEREMADE_MONTHLY_PRICE_CENTS=25000
+SITEREMADE_MONTHLY_PRICE_CENTS=3900
 ```
-The default is 25000 = $250/month in the workspace currency. Change this before production if your monthly price changes.
+The default is 3900 = $39/month in the workspace currency. Change this before production if your monthly price changes. This value drives both the displayed price and the actual Stripe checkout amount — it is the only place the price should be changed (see the Phase 1 stabilization note below).
 
 For production, configure `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `PUBLIC_BASE_URL`. The existing Stripe webhook URL remains `/api/webhooks/stripe`.
 
@@ -225,3 +225,14 @@ No new SQL is required.
 - No V15 SQL migration is required.
 
 Important: email delivery still requires `RESEND_API_KEY`; SMS delivery still requires the existing Twilio environment variables. The website chat reply path itself does not require either provider.
+
+
+## Phase 1 — foundation stabilization (schema + pricing catch-up)
+
+Releases V17 through V47 (mailbox, integrations, Google Ads, ad intelligence, Website Studio, and others) shipped without corresponding entries in this README or, in several cases, without a committed SQL migration. This section starts closing that gap; it does not change any product behavior on its own.
+
+**Pricing source of truth.** `SITEREMADE_MONTHLY_PRICE_CENTS` had drifted: the server default and this README still said 25000 ($250), while a client-side script (`v47-pricing.js`) separately rewrote the *displayed* price to $39 after the fact via a DOM patch. The actual Stripe checkout session always used the server-side default, so unless the deployed environment had `SITEREMADE_MONTHLY_PRICE_CENTS` explicitly set to 3900, clients could have been shown $39 and charged $250. The default is now 3900 ($39) in both `server.js` and `.env.example`, and the display-only patch has been removed — the displayed price and the Stripe checkout price now always come from the same value. **If your production environment (e.g. Railway) has its own `SITEREMADE_MONTHLY_PRICE_CENTS` set, confirm it is 3900** (or remove the override to use the new default).
+
+**Schema catch-up migration.** `website_projects` (Website Studio), `ad_control_settings`, `ad_recommendations`, `google_ads_credentials`, and `integration_connections` were live tables with no migration file committed anywhere in this repo — some created directly in the Supabase dashboard. `V48-SCHEMA-CATCHUP-MIGRATION.sql` defines all five so the schema is reproducible from source control. It is safe to run against a database where these tables already exist (`create table if not exists` plus `add column if not exists` for every column), and safe to run on a fresh database.
+
+**Shared auth/session/workspace module.** The ~10 files implementing their own copy of cookie parsing, Supabase client setup, and workspace/session resolution now share one implementation in `lib/context.js`. Behavior is unchanged except that session auto-refresh (previously only in some routes) now works consistently everywhere that uses it.

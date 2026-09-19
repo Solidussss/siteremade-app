@@ -16,5 +16,4 @@ import('/v43-ad-control.js?v=1').catch(err=>console.error('SiteRemade ad control
 import('/v44-google-ads-client.js?v=2').catch(err=>console.error('SiteRemade Google Ads layer:',err));
 import('/v45-ad-intelligence-client.js?v=2').catch(err=>console.error('SiteRemade ad intelligence layer:',err));
 import('/v46-google-ads-account-fallback.js?v=2').catch(err=>console.error('SiteRemade Google Ads account fallback:',err));
-import('/v47-pricing.js?v=1').catch(err=>console.error('SiteRemade pricing layer:',err));
 })();
