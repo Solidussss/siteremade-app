@@ -383,3 +383,192 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
     height:28px!important;
   }
 }
+
+/* Website Projects: structured intake + brief editor (product-experience
+   pass). Reuses the existing tokens/components (panel, eyebrow, chip
+   pills, status-pill, form-grid) rather than introducing a new visual
+   language — see PHASE3-ROUTE-MAP.md for why this page needed it. */
+.project-section{
+  border-top:1px solid var(--line);
+  padding-top:18px;
+  margin-top:18px;
+}
+.project-section:first-child{
+  border-top:0;
+  padding-top:0;
+  margin-top:0;
+}
+.project-section-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin-bottom:12px;
+}
+.project-section-head h3{
+  margin:4px 0 0;
+  font-size:14px;
+  letter-spacing:-.02em;
+}
+.project-section-head p{
+  margin:0;
+  font-size:9px;
+  color:var(--muted);
+}
+.chip-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin:8px 0;
+}
+.option-chip{
+  border:1px solid var(--line);
+  background:#fff;
+  color:#50545d;
+  border-radius:999px;
+  min-height:32px;
+  padding:0 12px;
+  font-size:9px;
+  font-weight:750;
+}
+.option-chip.selected{
+  background:#111;
+  color:#fff;
+  border-color:#111;
+}
+.color-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:999px;
+  min-height:32px;
+  padding:0 6px 0 6px;
+  font-size:9px;
+  color:#50545d;
+}
+.color-chip i{
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  border:1px solid rgba(0,0,0,.1);
+  display:block;
+}
+.color-chip button{
+  border:0;
+  background:none;
+  color:#9199a5;
+  font-size:12px;
+  line-height:1;
+  padding:0 2px;
+}
+.color-picker-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+  margin:8px 0;
+}
+.color-swatch-button{
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  border:1px solid rgba(0,0,0,.12);
+  padding:0;
+}
+.color-swatch-button.selected{
+  box-shadow:0 0 0 2px #fff,0 0 0 4px #111;
+}
+.custom-color-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.custom-color-row input[type=color]{
+  width:34px;
+  height:34px;
+  padding:2px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:#fff;
+}
+.list-editor{
+  display:grid;
+  gap:8px;
+  margin:8px 0;
+}
+.list-editor-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px;
+  align-items:start;
+}
+.list-editor-row.two-field{
+  grid-template-columns:1fr 1.4fr auto;
+}
+.list-editor-row input,.list-editor-row textarea{
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:9px 11px;
+  width:100%;
+}
+.list-editor-remove{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:999px;
+  width:32px;
+  height:32px;
+  font-size:14px;
+  color:#8c919a;
+}
+.list-editor-add{
+  justify-self:start;
+}
+.brief-subhead{
+  font-size:9px;
+  letter-spacing:.1em;
+  font-weight:800;
+  color:#7a8089;
+  margin:14px 0 6px;
+  text-transform:uppercase;
+}
+.brief-subhead:first-child{margin-top:0}
+.json-toggle{
+  border:0;
+  background:none;
+  font-size:9px;
+  color:#315cff;
+  padding:0;
+  text-decoration:underline;
+}
+.brief-history-list{
+  display:grid;
+  gap:8px;
+}
+.brief-history-item{
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:13px 15px;
+  background:#fff;
+}
+.brief-history-item summary{
+  cursor:pointer;
+  list-style:none;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:baseline;
+}
+.brief-history-item summary::-webkit-details-marker{display:none}
+.brief-history-item summary strong{font-size:11px}
+.brief-history-item summary span{font-size:9px;color:var(--muted);white-space:nowrap}
+.brief-history-body{
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid var(--line);
+}
+@media(max-width:900px){
+  .list-editor-row.two-field{grid-template-columns:1fr;}
+  .list-editor-row{grid-template-columns:1fr auto}
+}
