@@ -1,4 +1,4 @@
-const state={workspace:{},workspaces:[],user:null,locked:false,integrations:{},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],billing:{},prospects:[],prospectViews:[],websiteAnalytics:{},websiteUpdates:[],filter:'all',search:'',selectedConversationId:null,selectedLeadId:null,calendarDate:new Date(),rangeDays:30};
+const state={workspace:{},workspaces:[],user:null,locked:false,integrations:{},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],billing:{},prospects:[],prospectViews:[],websiteAnalytics:{},websiteUpdates:[],websiteProjects:[],selectedProjectId:null,filter:'all',search:'',selectedConversationId:null,selectedLeadId:null,calendarDate:new Date(),rangeDays:30};
 let liveRefreshing=false,lastLiveCounts={leads:0,unread:0},toastTimer=null;
 const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
 const money=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',maximumFractionDigits:0}).format(Number(n)||0);
@@ -9,13 +9,41 @@ const dateLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric
 const dateTimeLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(iso));
 
 async function api(url,opts={}){const r=await fetch(url,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||`Request failed (${r.status})`);return data;}
-async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[]});qs('#authScreen').hidden=true;renderAll();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase'))qs('#loginStatus').textContent=e.message;console.error(e);return false;}}
+// Production-readiness/performance review: these files are dashboard
+// feature layers (mail, market finder, ads, calendar, daily workflow,
+// analytics, existing-number wizard, etc.) that only ever style or act on
+// elements inside the dashboard, hidden behind #authScreen until a session
+// exists — none of them do anything the login/signup screen needs. They
+// used to be static <link>/<script> tags in index.html, so every visitor
+// downloaded ~300KB of dashboard-only CSS/JS (plus everything several of
+// the scripts further pull in via dynamic import()), and the CSS was
+// render-blocking, just to see the login form. They still load exactly
+// once, in the same order (scripts kept in order via `script.async =
+// false`, the standard way to preserve document order for scripts inserted
+// this way), and behave identically — just from the moment the dashboard
+// actually becomes visible instead of from page load.
+let dashboardScriptsLoaded=false;
+function loadDashboardFeatureScripts(){
+  if(dashboardScriptsLoaded)return;
+  dashboardScriptsLoaded=true;
+  ['/v22.css?v=27','/v24.css?v=27','/v20.css?v=20','/v17.css?v=17','/v18.css?v=18','/v19.css?v=19'].forEach(href=>{
+    const l=document.createElement('link');
+    l.rel='stylesheet';l.href=href;
+    document.head.appendChild(l);
+  });
+  ['/v40-existing-number-client.js?v=3','/v45-ad-intelligence-client.js','/v22-client.js?v=27','/v24-umami-client.js?v=27','/v20-client.js?v=20','/v29-bootstrap.js?v=36','/v17-client.js?v=17','/v18-client.js?v=18','/v19-client.js?v=19'].forEach(src=>{
+    const s=document.createElement('script');
+    s.src=src;s.async=false;
+    document.body.appendChild(s);
+  });
+}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase'))qs('#loginStatus').textContent=e.message;console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
   const locked=state.user?.role!=='owner'&&!!state.locked;
   lock.hidden=!locked;document.body.classList.toggle('subscription-locked',locked);
-  const cents=Number(state.billing?.monthlyCents||25000),status=String(state.billing?.status||'inactive');
+  const cents=Number(state.billing?.monthlyCents||3900),status=String(state.billing?.status||'inactive');
   if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=money(cents/100);
   if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
 }
@@ -24,7 +52,7 @@ function renderAll(){
   [
     ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['dashboard',renderDashboard],
     ['leads',renderLeads],['inbox',renderInbox],['calendar',renderCalendar],['payments',renderPayments],
-    ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],
+    ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],['website-projects',renderWebsiteProjects],
     ['automations',renderAutomations],['settings',renderSettings],['notifications',renderNotifications],
     ['prospects',renderProspects],['lead-selects',fillLeadSelects],['workspace-menu',renderWorkspaceMenu],
     ['admin',()=>renderAdmin()],['badges',renderBadges]
@@ -58,7 +86,7 @@ function filteredLeads(){return state.leads.filter(l=>(state.filter==='all'||l.s
 function renderLeads(){const leads=filteredLeads();qs('#leadCountLabel').textContent=`${leads.length} lead${leads.length===1?'':'s'}`;qs('#leadTableBody').innerHTML=leads.length?leads.map(l=>`<tr class="lead-table-row" data-id="${l.id}"><td><strong>${esc(l.name)}</strong><small>${esc(l.phone||l.email||'No contact details')}</small></td><td>${esc(l.service)}</td><td>${esc(l.source)}</td><td>${dateLabel(l.createdAt)}</td><td><select class="status-select lead-status status-${esc(l.status)}" data-id="${l.id}">${['New','Contacted','Quoted','Won','Lost'].map(s=>`<option ${s===l.status?'selected':''}>${s}</option>`).join('')}</select></td><td><button class="row-menu" data-open="${l.id}">•••</button></td></tr>`).join(''):'<tr><td class="empty-row" colspan="6">No leads match this view.</td></tr>';qsa('.status-select').forEach(x=>x.onchange=e=>{e.stopPropagation();updateLead(x.dataset.id,{status:x.value})});qsa('.lead-table-row').forEach(r=>r.onclick=e=>{if(e.target.closest('select,button'))return;openLead(r.dataset.id)});qsa('[data-open]').forEach(b=>b.onclick=()=>openLead(b.dataset.open));}
 async function updateLead(id,patch){try{const d=await api(`/api/app/leads/${id}`,{method:'PATCH',body:JSON.stringify(patch)});const i=state.leads.findIndex(x=>x.id===id);if(i>=0)state.leads[i]=d.lead;await refreshLight();if(state.selectedLeadId===id)populateDrawer(d.lead);}catch(e){alert(e.message)}}
 function openLead(id){const l=state.leads.find(x=>x.id===id);if(!l)return;state.selectedLeadId=id;populateDrawer(l);qs('#leadDrawer').hidden=false;}
-function populateDrawer(l){qs('#drawerName').textContent=l.name;qs('#drawerStatus').value=l.status;qs('#drawerValue').value=l.value||'';qs('#drawerLeadName').value=l.name||'';qs('#drawerService').value=l.service||'';qs('#drawerPhone').value=l.phone||'';qs('#drawerEmail').value=l.email||'';qs('#drawerMessage').value=l.message||'';qs('#drawerNote').value='';qs('#drawerNotes').innerHTML=(l.notes||[]).map(n=>`<div class="note-item">${esc(n)}</div>`).join('')||'<div class="empty-state">No notes yet.</div>';const actions=qs('#drawerContactActions');if(actions)actions.innerHTML=`${l.phone?`<a class="contact-chip" href="tel:${esc(l.phone)}">Call ${esc(l.phone)}</a>`:''}${l.email?`<a class="contact-chip" href="mailto:${esc(l.email)}">Email ${esc(l.email)}</a>`:''}<span class="contact-source">Source: ${esc(l.source||'Manual')}</span>`;}
+function populateDrawer(l){qs('#drawerName').textContent=l.name;qs('#drawerStatus').value=l.status;qs('#drawerValue').value=l.value||'';qs('#drawerLeadName').value=l.name||'';qs('#drawerService').value=l.service||'';qs('#drawerPhone').value=l.phone||'';qs('#drawerEmail').value=l.email||'';qs('#drawerMessage').value=l.message||'';qs('#drawerNote').value='';qs('#drawerNotes').innerHTML=(l.notes||[]).map(n=>`<div class="note-item">${esc(n)}</div>`).join('')||'<div class="empty-state">No notes yet.</div>';const actions=qs('#drawerContactActions');if(actions)actions.innerHTML=`${l.phone?`<a class="contact-chip" href="tel:${esc(l.phone)}">Call ${esc(l.phone)}</a>`:''}${l.email?`<a class="contact-chip" href="mailto:${esc(l.email)}">Email ${esc(l.email)}</a>`:''}<span class="contact-source">Source: ${esc(l.source||'Manual')}</span>`;renderDrawerProject(l);}
 
 function renderInbox(){const list=qs('#conversationList');const convs=[...state.conversations].sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));if(!state.selectedConversationId&&convs[0])state.selectedConversationId=convs[0].id;list.innerHTML=convs.length?convs.map(c=>{const last=c.messages?.[c.messages.length-1];return`<button class="conversation ${c.id===state.selectedConversationId?'active':''} ${Number(c.unread)>0?'unread':''}" data-conv="${c.id}"><span class="avatar small">${initials(c.name)}</span><div><strong>${esc(c.name)}</strong><p>${esc(last?.text||'No messages yet')}</p></div><small>${relative(c.updatedAt)}</small></button>`}).join(''):'<div class="empty-state padded">No conversations yet.</div>';qsa('[data-conv]').forEach(b=>b.onclick=async()=>{state.selectedConversationId=b.dataset.conv;const c=state.conversations.find(x=>x.id===b.dataset.conv);if(c&&c.unread){try{const d=await api(`/api/app/conversations/${c.id}`,{method:'PATCH',body:JSON.stringify({read:true})});c.unread=0;if(d.conversation)Object.assign(c,d.conversation);}catch{}}renderInbox();renderNotifications();renderBadges();});renderConversationWindow();renderBadges();}
 function renderConversationWindow(){const c=state.conversations.find(x=>x.id===state.selectedConversationId);const input=qs('#messageInput'),send=qs('#messageForm button'),contact=qs('#conversationContact'),delivery=qs('#deliveryStatus');if(!c){qs('#conversationName').textContent='Select a conversation';qs('#conversationMode').textContent='No conversation selected';qs('#messageList').innerHTML='<div class="empty-state">Choose a conversation to view messages.</div>';qs('#takeoverButton').disabled=true;input.disabled=true;send.disabled=true;if(contact)contact.hidden=true;if(delivery){delivery.className='delivery-status';delivery.textContent='Select a customer to see delivery channels.';}return;}const lead=state.leads.find(l=>l.id===c.leadId);qs('#conversationName').textContent=c.name;qs('#conversationMode').textContent=c.mode==='ai'?'AI is handling this conversation':'You are handling this conversation';qs('#takeoverButton').disabled=false;qs('#takeoverButton').textContent=c.mode==='ai'?'Take over':'Return to AI';input.disabled=false;send.disabled=false;const emailLive=!!state.integrations?.resend&&!!lead?.email,smsLive=!!state.integrations?.twilio&&!!lead?.phone;input.placeholder=`Reply to ${c.name}…`;if(contact){contact.hidden=false;contact.innerHTML=`${lead?.phone?`<a class="contact-link" href="tel:${esc(lead.phone)}">Call ${esc(lead.phone)}</a>`:''}${lead?.email?`<a class="contact-link" href="mailto:${esc(lead.email)}">Email ${esc(lead.email)}</a>`:''}<span class="channel-chip live">Website chat</span><span class="channel-chip ${emailLive?'live':'off'}">Email ${emailLive?'live':'not connected'}</span><span class="channel-chip ${smsLive?'live':'off'}">SMS ${smsLive?'live':'not connected'}</span>`;}if(delivery){const active=['website chat'];if(emailLive)active.push('email');if(smsLive)active.push('SMS');delivery.className='delivery-status';delivery.textContent=`Replies deliver through ${active.join(' + ')}.${(!emailLive&&!smsLive)?' Connect Resend/Twilio for off-site delivery.':''}`;}qs('#messageList').innerHTML=(c.messages||[]).map(m=>`<div class="message ${m.from==='customer'?'inbound':m.from==='ai'?'ai':'business'}"><span>${esc(m.text)}</span><small>${relative(m.createdAt)}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>';qs('#messageList').scrollTop=qs('#messageList').scrollHeight;}
@@ -82,7 +110,7 @@ function renderAnalytics(){const closed=state.leads.filter(l=>['Won','Lost'].inc
 function renderAnalyticsBars(sel,rows){const max=Math.max(1,...rows.map(r=>r[1]));qs(sel).innerHTML=rows.map(([label,n])=>`<div class="analytics-row"><div><strong>${esc(label)}</strong><span>${n}</span></div><div class="analytics-track"><i style="width:${n/max*100}%"></i></div></div>`).join('')||'<div class="empty-state">No data yet.</div>';}
 function renderWebsiteTraffic(){const a=state.websiteAnalytics||{},domain=qs('#trafficDomain'),status=qs('#trafficConnectionStatus');if(domain)domain.value=a.domain||'';if(qs('#trafficSessions'))qs('#trafficSessions').textContent=a.connected?Number(a.sessions||0).toLocaleString('en-CA'):'—';if(qs('#trafficUsers'))qs('#trafficUsers').textContent=a.connected?Number(a.users||0).toLocaleString('en-CA'):'—';if(qs('#trafficPageviews'))qs('#trafficPageviews').textContent=a.connected?Number(a.pageviews||0).toLocaleString('en-CA'):'—';if(qs('#trafficLastSync'))qs('#trafficLastSync').textContent=a.lastSync?dateTimeLabel(a.lastSync):'Not connected';if(status){status.textContent=a.connected?'GOOGLE ANALYTICS CONNECTED':a.domain?'DOMAIN SAVED · ANALYTICS NOT CONNECTED':'ADD WEBSITE DOMAIN';status.classList.toggle('neutral',!a.connected);}}
 function renderWebsiteUpdates(){
-  const rows=state.websiteUpdates||[],list=qs('#websiteUpdateList'),count=qs('#websiteUpdateCount'),badge=qs('#websiteUpdateBadge');
+  const rows=(state.websiteUpdates||[]).filter(r=>!r.projectId),list=qs('#websiteUpdateList'),count=qs('#websiteUpdateCount'),badge=qs('#websiteUpdateBadge');
   const open=rows.filter(r=>r.status!=='Completed').length;
   if(count)count.textContent=`${rows.length} REQUEST${rows.length===1?'':'S'}`;
   if(badge){badge.textContent=open;badge.style.display=open?'grid':'none';}
@@ -90,6 +118,177 @@ function renderWebsiteUpdates(){
   list.innerHTML=rows.length?rows.map(r=>`<article class="website-update-item"><div class="website-update-top"><div><span class="website-update-page">${esc(r.page)}</span><strong>${esc(r.request)}</strong></div><span class="status-pill ${r.status==='Completed'?'':'neutral'}">${esc(r.status.toUpperCase())}</span></div><p>${esc(r.notes||'No extra notes.')}</p><div class="website-update-meta"><span>${esc(r.priority)} priority · ${dateTimeLabel(r.createdAt)}</span>${state.user?.role==='owner'?`<select class="website-update-status" data-update-status="${r.id}">${['Requested','In Progress','Completed'].map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select>`:''}</div></article>`).join(''):'<div class="empty-state">No website update requests yet.</div>';
   qsa('[data-update-status]').forEach(sel=>sel.onchange=()=>updateWebsiteRequest(sel.dataset.updateStatus,sel.value));
 }
+
+// Website Projects — Lead → Start Website Project → Structured Intake → Build Brief →
+// Building → Client Review → Revisions → Payment/Handoff → Delivered → Ongoing Updates.
+// Revisions and client feedback share the website_updates table with the legacy
+// general-request flow above (see server.js mapProject/mapWebsiteUpdate).
+const PROJECT_STATUSES=['Intake','Brief Ready','Building','Review','Delivered'];
+function findLeadWebsiteProject(leadId){return (state.websiteProjects||[]).find(p=>p.leadId===leadId);}
+function renderWebsiteProjects(){
+  const rows=[...(state.websiteProjects||[])].sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
+  const list=qs('#websiteProjectList'),count=qs('#websiteProjectCount'),badge=qs('#websiteProjectBadge');
+  if(count)count.textContent=`${rows.length} PROJECT${rows.length===1?'':'S'}`;
+  const active=rows.filter(p=>p.status!=='Delivered').length;
+  if(badge){badge.textContent=active;badge.style.display=active?'grid':'none';}
+  if(state.selectedProjectId&&!rows.find(p=>p.id===state.selectedProjectId))state.selectedProjectId=null;
+  if(!state.selectedProjectId&&rows[0])state.selectedProjectId=rows[0].id;
+  if(list){
+    list.innerHTML=rows.length?rows.map(p=>`<button type="button" class="website-update-item" data-project="${p.id}" style="text-align:left;width:100%;cursor:pointer;border:${p.id===state.selectedProjectId?'1px solid var(--accent,#4c6ef5)':'none'}"><div class="website-update-top"><div><span class="website-update-page">${esc(p.status)}</span><strong>${esc(p.businessName||'Untitled project')}</strong></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div><p>${p.revisionCount||0} revision${p.revisionCount===1?'':'s'} · ${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())}</p></button>`).join(''):'<div class="empty-state">No website projects yet. Start one from a lead.</div>';
+    qsa('[data-project]').forEach(b=>b.onclick=()=>{state.selectedProjectId=b.dataset.project;renderWebsiteProjects();});
+  }
+  renderProjectDetail();
+}
+function renderProjectDetail(){
+  const host=qs('#websiteProjectDetail'),title=qs('#websiteProjectDetailTitle');
+  if(!host)return;
+  const p=(state.websiteProjects||[]).find(x=>x.id===state.selectedProjectId);
+  if(!p){if(title)title.textContent='Select a project';host.innerHTML='<div class="empty-state">Choose a project on the left to view its intake, brief and review status.</div>';return;}
+  if(title)title.textContent=p.businessName||'Website project';
+  const lead=state.leads.find(l=>l.id===p.leadId);
+  const intake=p.intake||{},vd=intake.visualDirection||{};
+  if(state.user?.role==='owner'){
+    host.innerHTML=`
+      <div class="settings-grid" style="grid-template-columns:1fr 1fr">
+        <div class="setting-row"><div><strong>Lead</strong><span>${esc(lead?.name||'—')}</span></div></div>
+        <div class="setting-row"><div><strong>Payment</strong><span>${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())} · ${p.payment?.invoiceCount||0} invoice(s)</span></div></div>
+      </div>
+      <label>Status<select id="projectStatusSelect">${PROJECT_STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></label>
+      <form id="projectIntakeForm" class="website-update-form" style="margin-top:12px">
+        <div class="panel-head" style="padding:0 0 8px"><div><p class="eyebrow">STRUCTURED INTAKE</p></div></div>
+        <label class="wide-field">Business identity<textarea name="businessIdentity" rows="2">${esc(intake.businessIdentity||'')}</textarea></label>
+        <label class="wide-field">Services<textarea name="services" rows="2">${esc(intake.services||'')}</textarea></label>
+        <label>Service area<input name="serviceArea" value="${esc(intake.serviceArea||'')}" /></label>
+        <label>Current website (if any)<input name="currentWebsiteUrl" value="${esc(intake.currentWebsiteUrl||'')}" /></label>
+        <label class="wide-field">Customer goals<textarea name="goals" rows="2">${esc(intake.goals||'')}</textarea></label>
+        <label class="wide-field">Desired pages / sections (comma separated)<input name="desiredPages" value="${esc((intake.desiredPages||[]).join(', '))}" /></label>
+        <label>Visual style<input name="visualStyle" value="${esc(vd.style||'')}" /></label>
+        <label>Colours (comma separated)<input name="visualColors" value="${esc((vd.colors||[]).join(', '))}" /></label>
+        <label>Typography<input name="visualTypography" value="${esc(vd.typography||'')}" /></label>
+        <label class="wide-field">Visual notes<textarea name="visualNotes" rows="2">${esc(vd.notes||'')}</textarea></label>
+        <label class="wide-field">Logo / asset links (comma separated)<input name="logoAssets" value="${esc((intake.logoAssets||[]).join(', '))}" /></label>
+        <label class="wide-field">Examples / references (comma separated)<input name="references" value="${esc((intake.references||[]).join(', '))}" /></label>
+        <label class="wide-field">Notes<textarea name="notes" rows="2">${esc(intake.notes||'')}</textarea></label>
+        <button class="primary-action" type="submit">Save intake</button>
+        <p class="modal-status" id="projectIntakeStatus"></p>
+      </form>
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">BUILD BRIEF</p></div><button type="button" class="secondary-button" id="generateBriefButton">Generate with AI</button></div>
+      <textarea id="projectBriefText" rows="10" style="width:100%;font-family:monospace">${esc(JSON.stringify(p.brief&&Object.keys(p.brief).length?p.brief:{summary:''},null,2))}</textarea>
+      <label>Builder / export prompt<textarea id="projectBuilderPrompt" rows="4" style="width:100%">${esc(p.builderPrompt||'')}</textarea></label>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button type="button" class="secondary-button" id="saveBriefButton">Save brief</button>${(p.briefHistory||[]).length?`<span class="status-pill neutral">${p.briefHistory.length} PRIOR VERSION${p.briefHistory.length===1?'':'S'}</span>`:''}</div>
+      <p class="modal-status" id="projectBriefStatus"></p>
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">PREVIEW &amp; LIVE</p></div></div>
+      <div class="form-grid">
+        <label>Preview / review URL<input id="projectPreviewUrl" value="${esc(p.previewUrl||'')}" /></label>
+        <label>Live URL<input id="projectLiveUrl" value="${esc(p.liveUrl||'')}" /></label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+        <button type="button" class="secondary-button" id="saveUrlsButton">Save URLs</button>
+        <button type="button" class="primary-action" id="markDeliveredButton" ${p.status==='Delivered'?'disabled':''}>${p.status==='Delivered'?'Delivered':'Mark delivered'}</button>
+        <button type="button" class="secondary-button" id="createProjectInvoiceButton">Create invoice for this project</button>
+      </div>
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">CLIENT REVIEW</p></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div>
+      ${p.clientReviewFeedback?`<p class="helper-copy">Latest client feedback: ${esc(p.clientReviewFeedback)}</p>`:'<p class="helper-copy">No client feedback yet.</p>'}
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">ADD REVISION</p></div></div>
+      <form id="projectRevisionForm" class="website-update-form">
+        <label>Page<input name="page" placeholder="Home" /></label>
+        <label class="wide-field">What changed<textarea name="request" rows="2" required></textarea></label>
+        <button class="secondary-button" type="submit">Add revision</button>
+      </form>
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">HISTORY</p></div></div>
+      <div class="website-update-list">${(p.revisions||[]).length?p.revisions.map(r=>`<article class="website-update-item"><div class="website-update-top"><div><span class="website-update-page">${esc(r.kind)}</span><strong>${esc(r.request)}</strong></div></div><div class="website-update-meta"><span>${dateTimeLabel(r.createdAt)}</span></div></article>`).join(''):'<div class="empty-state">No revisions yet.</div>'}</div>
+    `;
+    qs('#projectStatusSelect').onchange=e=>patchProject(p.id,{status:e.target.value});
+    qs('#projectIntakeForm').onsubmit=e=>{
+      e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));
+      const intakePayload={businessIdentity:f.businessIdentity,services:f.services,serviceArea:f.serviceArea,currentWebsiteUrl:f.currentWebsiteUrl,goals:f.goals,desiredPages:(f.desiredPages||'').split(',').map(x=>x.trim()).filter(Boolean),visualDirection:{style:f.visualStyle,colors:(f.visualColors||'').split(',').map(x=>x.trim()).filter(Boolean),typography:f.visualTypography,notes:f.visualNotes},logoAssets:(f.logoAssets||'').split(',').map(x=>x.trim()).filter(Boolean),references:(f.references||'').split(',').map(x=>x.trim()).filter(Boolean),notes:f.notes};
+      qs('#projectIntakeStatus').textContent='Saving…';patchProject(p.id,{intake:intakePayload},'#projectIntakeStatus');
+    };
+    qs('#generateBriefButton').onclick=()=>generateBrief(p.id);
+    qs('#saveBriefButton').onclick=()=>{
+      let briefObj;try{briefObj=JSON.parse(qs('#projectBriefText').value||'{}');}catch{qs('#projectBriefStatus').textContent='Brief must be valid JSON.';return;}
+      const builderPrompt=qs('#projectBuilderPrompt').value;
+      patchProject(p.id,{brief:briefObj,builderPrompt},'#projectBriefStatus');
+    };
+    qs('#saveUrlsButton').onclick=()=>patchProject(p.id,{previewUrl:qs('#projectPreviewUrl').value,liveUrl:qs('#projectLiveUrl').value});
+    qs('#markDeliveredButton').onclick=()=>{if(p.status==='Delivered')return;patchProject(p.id,{status:'Delivered',deliveredAt:new Date().toISOString()});};
+    qs('#createProjectInvoiceButton').onclick=()=>{const pid=qs('#invoiceProjectId');if(pid)pid.value=p.id;const sel=qs('#invoiceLead');if(sel)sel.value=p.leadId;showModal('invoiceModal');};
+    qs('#projectRevisionForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));addRevision(p.id,f);e.currentTarget.reset();};
+  }else{
+    const canReview=!!p.previewUrl||['Review','Delivered'].includes(p.status);
+    host.innerHTML=`
+      <div class="setting-row"><div><strong>Status</strong><span>${esc(p.status)}</span></div></div>
+      ${p.previewUrl?`<div class="setting-row"><div><strong>Preview</strong><span><a href="${esc(p.previewUrl)}" target="_blank" rel="noopener">${esc(p.previewUrl)}</a></span></div></div>`:''}
+      ${p.liveUrl?`<div class="setting-row"><div><strong>Live site</strong><span><a href="${esc(p.liveUrl)}" target="_blank" rel="noopener">${esc(p.liveUrl)}</a></span></div></div>`:''}
+      <div class="setting-row"><div><strong>Payment</strong><span>${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())}</span></div></div>
+      ${canReview?`
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">REVIEW</p></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div>
+      <form id="projectReviewForm" class="website-update-form">
+        <label class="wide-field">Feedback (optional if approving)<textarea name="feedback" rows="3" placeholder="Anything you'd like changed before this goes live?"></textarea></label>
+        <div style="display:flex;gap:8px"><button class="primary-action" type="submit">Approve</button><button class="secondary-button" type="button" id="requestChangesButton">Request changes</button></div>
+        <p class="modal-status" id="projectReviewStatus"></p>
+      </form>`:'<div class="empty-state">Your website preview isn’t ready for review yet.</div>'}
+      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">HISTORY</p></div></div>
+      <div class="website-update-list">${(p.revisions||[]).length?p.revisions.map(r=>`<article class="website-update-item"><div class="website-update-top"><div><strong>${esc(r.request)}</strong></div></div><div class="website-update-meta"><span>${dateTimeLabel(r.createdAt)}</span></div></article>`).join(''):'<div class="empty-state">No history yet.</div>'}</div>
+    `;
+    if(canReview){
+      qs('#projectReviewForm').onsubmit=e=>{e.preventDefault();const feedback=new FormData(e.currentTarget).get('feedback');submitReview(p.id,'approved',feedback);};
+      qs('#requestChangesButton').onclick=()=>{const feedback=qs('#projectReviewForm [name=feedback]').value;if(!feedback.trim()){alert('Add a note about what should change before requesting changes.');return;}submitReview(p.id,'changes_requested',feedback);};
+    }
+  }
+}
+async function patchProject(id,patch,statusSel){
+  try{
+    const d=await api(`/api/app/website-projects/${id}`,{method:'PATCH',body:JSON.stringify(patch)});
+    const i=state.websiteProjects.findIndex(x=>x.id===id);if(i>=0)state.websiteProjects[i]={...state.websiteProjects[i],...d.project};
+    renderWebsiteProjects();if(state.selectedLeadId)renderDrawerProject(state.leads.find(l=>l.id===state.selectedLeadId));
+    if(statusSel&&qs(statusSel))qs(statusSel).textContent='Saved.';
+  }catch(e){if(statusSel&&qs(statusSel))qs(statusSel).textContent=e.message;else alert(e.message);}
+}
+async function generateBrief(id){
+  const btn=qs('#generateBriefButton');if(btn){btn.disabled=true;btn.textContent='Generating…';}
+  const st=qs('#projectBriefStatus');if(st)st.textContent='';
+  try{
+    const d=await api(`/api/app/website-projects/${id}/brief`,{method:'POST'});
+    const i=state.websiteProjects.findIndex(x=>x.id===id);if(i>=0)state.websiteProjects[i]=d.project;
+    renderWebsiteProjects();
+  }catch(e){if(st)st.textContent=e.message;else alert(e.message);}
+  finally{if(btn){btn.disabled=false;btn.textContent='Generate with AI';}}
+}
+async function addRevision(id,f){
+  try{
+    await api(`/api/app/website-projects/${id}/revisions`,{method:'POST',body:JSON.stringify(f)});
+    await refreshProjectsOnly();
+  }catch(e){alert(e.message)}
+}
+async function submitReview(id,decision,feedback){
+  try{
+    const d=await api(`/api/app/website-projects/${id}/review`,{method:'POST',body:JSON.stringify({decision,feedback})});
+    const i=state.websiteProjects.findIndex(x=>x.id===id);if(i>=0)state.websiteProjects[i]=d.project;
+    renderWebsiteProjects();
+  }catch(e){const st=qs('#projectReviewStatus');if(st)st.textContent=e.message;else alert(e.message)}
+}
+async function startWebsiteProject(leadId){
+  try{
+    const d=await api('/api/app/website-projects',{method:'POST',body:JSON.stringify({leadId})});
+    const i=state.websiteProjects.findIndex(x=>x.id===d.project.id);
+    if(i>=0)state.websiteProjects[i]=d.project;else state.websiteProjects.unshift(d.project);
+    state.selectedProjectId=d.project.id;
+    renderDrawerProject(state.leads.find(l=>l.id===leadId));
+    qs('#leadDrawer').hidden=true;switchView('website-projects');renderWebsiteProjects();
+  }catch(e){alert(e.message)}
+}
+async function refreshProjectsOnly(){
+  try{const d=await api('/api/app/website-projects');state.websiteProjects=d.projects||[];renderWebsiteProjects();if(state.selectedLeadId)renderDrawerProject(state.leads.find(l=>l.id===state.selectedLeadId));}catch(e){console.warn('Could not refresh website projects:',e.message)}
+}
+function renderDrawerProject(l){
+  const host=qs('#drawerWebsiteProject');if(!host||!l)return;
+  const p=findLeadWebsiteProject(l.id);
+  if(!p){host.innerHTML='<button type="button" class="secondary-button" id="startProjectButton">Start Website Project</button>';const b=qs('#startProjectButton');if(b)b.onclick=()=>startWebsiteProject(l.id);return;}
+  host.innerHTML=`<button type="button" class="secondary-button" id="openProjectButton">Open Website Project · ${esc(p.status)}</button>`;
+  const b=qs('#openProjectButton');if(b)b.onclick=()=>{state.selectedProjectId=p.id;qs('#leadDrawer').hidden=true;switchView('website-projects');renderWebsiteProjects();};
+}
+
 function renderAutomations(){qs('#automationList').innerHTML=state.automations.map(a=>`<button class="automation-card automation-toggle" data-auto="${a.id}"><span class="automation-icon">${a.id==='lead-confirmation'?'✦':a.id==='lead-alert'?'↗':'□'}</span><div><strong>${esc(a.name)}</strong><p>${esc(a.description)}</p></div><span class="toggle ${a.enabled?'on':''}"></span></button>`).join('');qsa('[data-auto]').forEach(b=>b.onclick=()=>toggleAutomation(b.dataset.auto));}
 function renderSettings(){qs('#settingsBusiness').value=state.workspace.businessName||'';qs('#settingsEmail').value=state.workspace.email||'';qs('#settingsPhone').value=state.workspace.phone||'';qs('#settingsTimezone').value=state.workspace.timezone||'';qs('#aiServices').value=state.workspace.ai?.services||'';qs('#aiServiceArea').value=state.workspace.ai?.serviceArea||'';qs('#aiTone').value=state.workspace.ai?.tone||'';const labels={supabase:'Database + Auth',openai:'AI engine',googlePlaces:'Google Places',resend:'Email',twilio:'SMS',stripe:'Stripe payments'};qs('#integrationList').innerHTML=Object.entries(labels).map(([k,l])=>`<div class="setting-row"><div><strong>${l}</strong><span>${state.integrations[k]?'Connected / configured':'Needs server credentials'}</span></div>${k==='stripe'&&state.integrations.stripe?`<button class="text-button" id="connectStripeButton">${state.workspace.stripeAccountId?'Reconnect':'Connect'}</button>`:`<span class="status-pill ${state.integrations[k]?'':'neutral'}">${state.integrations[k]?'LIVE':'OFF'}</span>`}</div>`).join('');const aiBadge=qs('#aiReceptionistBadge');if(aiBadge){const live=!!state.integrations.openai&&state.workspace.ai?.enabled!==false;aiBadge.textContent=live?'LIVE':'OFF';aiBadge.classList.toggle('neutral',!live);}const sb=qs('#connectStripeButton');if(sb)sb.onclick=async()=>{try{const d=await api('/api/app/integrations/stripe/connect',{method:'POST'});if(d.url)location.href=d.url}catch(e){alert(e.message)}};}
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
@@ -133,7 +332,7 @@ async function askAssistant(prompt){
   catch(e){out.textContent=e.message;if(pill)pill.textContent='ERROR';}
 }
 
-async function refreshLight(){const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[]});renderAll();}
+async function refreshLight(){const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});renderAll();}
 function switchView(v){qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});if(v==='leads')setTimeout(()=>{},0);}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
@@ -166,7 +365,7 @@ async function deleteAppointment(id){try{await api(`/api/app/appointments/${id}`
 if(qs('#appointmentDeleteButton'))qs('#appointmentDeleteButton').onclick=async()=>{const id=qs('#appointmentDeleteButton').dataset.id;if(!id)return;if(confirm('Delete this appointment?')){hideModal('appointmentDetailModal');await deleteAppointment(id);}};
 qs('#prevMonthButton').onclick=()=>{state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()-1,1);renderCalendar()};qs('#nextMonthButton').onclick=()=>{state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()+1,1);renderCalendar()};qs('#todayButton').onclick=()=>{state.calendarDate=new Date();renderCalendar()};
 
-qs('#newInvoiceButton').onclick=()=>showModal('invoiceModal');qs('#invoiceForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const f=Object.fromEntries(new FormData(form));const lead=state.leads.find(l=>l.id===f.leadId);f.customer=lead?.name||'';try{await api('/api/app/invoices',{method:'POST',body:JSON.stringify(f)});form.reset();hideModal('invoiceModal');await refreshLight();switchView('payments');}catch(err){qs('#invoiceStatus').textContent=err.message}};
+qs('#newInvoiceButton').onclick=()=>{const pid=qs('#invoiceProjectId');if(pid)pid.value='';showModal('invoiceModal');};qs('#invoiceForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const f=Object.fromEntries(new FormData(form));const lead=state.leads.find(l=>l.id===f.leadId);f.customer=lead?.name||'';try{await api('/api/app/invoices',{method:'POST',body:JSON.stringify(f)});form.reset();hideModal('invoiceModal');await refreshLight();switchView('payments');}catch(err){qs('#invoiceStatus').textContent=err.message}};
 async function updateInvoice(id,status){try{await api(`/api/app/invoices/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refreshLight();}catch(e){alert(e.message)}}
 async function deleteInvoice(id){
   const inv=state.invoices.find(x=>x.id===id);if(!inv)return;
@@ -217,7 +416,15 @@ if(qs('#websiteTrafficForm'))qs('#websiteTrafficForm').onsubmit=async e=>{e.prev
 if(qs('#prospectingForm'))qs('#prospectingForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#prospectingStatus');out.textContent='Searching Google Places…';try{const d=await api('/api/app/prospects/search',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});state.prospects=d.prospects||[];out.textContent=d.live?`${state.prospects.length} businesses matched your search and filters.`:'Market Finder needs a Google Places API key.';renderProspects();}catch(err){out.textContent=err.message;}};
 if(qs('#adSpendForm'))qs('#adSpendForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#adSpendStatus');out.textContent='Saving…';try{await api('/api/app/ad-spend',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});form.reset();out.textContent='Saved.';await refreshLight();}catch(err){out.textContent=err.message;}};
 
-async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
+// Performance: paired with the ETag the server now computes over the
+// bootstrap response (see server.js's GET /api/app/bootstrap). Sending it
+// back as If-None-Match lets a poll where nothing changed get a bodyless
+// 304 instead of the full payload + a full re-render of every view — same
+// 5-second cadence, same data whenever something did change (a fresh
+// fetch and a fresh ETag), nothing skipped that would have shown up
+// before.
+let lastBootstrapETag=null;
+async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
 let liveSyncStarted=false;
 function startLiveSync(){if(liveSyncStarted||!state.user)return;liveSyncStarted=true;const c=renderBadges();lastLiveCounts={leads:c.newLeads,unread:c.unread};setInterval(liveRefresh,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveRefresh();});window.addEventListener('focus',liveRefresh);}
 if('serviceWorker' in navigator){

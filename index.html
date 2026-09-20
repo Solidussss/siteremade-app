@@ -1,3 +1,18 @@
+<!--
+  Phase 3 frontend consolidation: the <link>/<script> tags below were
+  previously injected on every request by a chain of fs.readFileSync
+  monkeypatches spread across v20-assets.js, v22-assets.js,
+  v34-gmail-direct.js, v37-static-integrations.js, v40-existing-number.js,
+  v45-ad-intelligence.js, and v17-preload.js's enhancedHtml(). That chain
+  re-ran the same string replacements on every single page load for no
+  behavioral reason (the output was always identical once each vNN file
+  had shipped), so it has been collapsed into this file directly — this is
+  the byte-for-byte HTML those patches used to produce, captured from a
+  live server and pasted in once. The vNN *-client.js/*.css files
+  themselves are unchanged and still served as their own static files;
+  only the "rewrite index.html on every request" indirection is gone. See
+  PHASE3-ROUTE-MAP.md for details.
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -86,8 +101,9 @@
 
       <nav class="side-nav secondary-nav">
         <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
-        <button class="nav-item" data-view="website-updates"><span>✎</span><strong>Website Updates</strong><em id="websiteUpdateBadge">0</em></button>
+        <button class="nav-item" data-view="website-projects"><span>✎</span><strong>Website Projects</strong><em id="websiteProjectBadge">0</em></button>
         <button class="nav-item" data-view="automations"><span>✦</span><strong>Automations</strong></button>
+        <button class="nav-item" data-view="integrations"><span>⌘</span><strong>Integrations</strong><em id="integrationBadge" hidden>0</em></button>
         <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
         <button class="nav-item" data-view="admin" id="adminNav"><span>▦</span><strong>Admin</strong></button>
       </nav>
@@ -252,6 +268,10 @@
 
       <section class="view" id="view-inbox">
         <div class="page-head compact-head"><div><p class="eyebrow">CONVERSATIONS</p><h1>Inbox</h1><p>Website messages and customer conversations in one place.</p></div><button class="primary-action" id="newConversationButton">+ New conversation</button></div>
+        <section id="v29MailboxBar" class="v29-mailbar" data-static-gmail-connect>
+          <div><span class="v29-dot"></span><strong>Connect your business inbox</strong><small>Connect Gmail so customer email replies appear here inside SiteRemade.</small></div>
+          <div class="v29-mail-actions"><a class="secondary-button" href="/api/app/gmail/start">Connect Gmail</a></div>
+        </section>
         <div class="placeholder-layout">
           <div class="conversation-list" id="conversationList"></div>
           <div class="conversation-window">
@@ -336,10 +356,24 @@
           </div>
         </div>
       </section>
-      <section class="view" id="view-website-updates">
+      <section class="view" id="view-website-projects">
         <div class="page-head compact-head">
-          <div><p class="eyebrow">YOUR WEBSITE</p><h1>Website Updates</h1><p>Send SiteRemade a change request without emailing back and forth.</p></div>
+          <div><p class="eyebrow">YOUR WEBSITE</p><h1>Website Projects</h1><p>Follow a website from intake through build, review and delivery.</p></div>
           <span class="coming-badge">INCLUDED WITH SITEREMADE</span>
+        </div>
+        <div class="website-update-grid">
+          <article class="panel website-update-form-card">
+            <div class="panel-head"><div><p class="eyebrow">PROJECTS</p><h2>All website projects</h2></div><span class="coming-badge" id="websiteProjectCount">0 PROJECTS</span></div>
+            <div id="websiteProjectList" class="website-update-list"><div class="empty-state">No website projects yet. Start one from a lead.</div></div>
+          </article>
+          <article class="panel website-update-history-card">
+            <div class="panel-head"><div><p class="eyebrow">PROJECT DETAIL</p><h2 id="websiteProjectDetailTitle">Select a project</h2></div></div>
+            <div id="websiteProjectDetail"><div class="empty-state">Choose a project on the left to view its intake, brief and review status.</div></div>
+          </article>
+        </div>
+
+        <div class="page-head compact-head" style="margin-top:28px">
+          <div><p class="eyebrow">GENERAL</p><h1>Other Website Requests</h1><p>Small change requests that aren't tied to a specific project.</p></div>
         </div>
         <div class="website-update-grid">
           <article class="panel website-update-form-card">
@@ -363,7 +397,9 @@
       <section class="view" id="view-automations"><div class="page-head compact-head"><div><p class="eyebrow">AUTOMATION</p><h1>Automations</h1><p>Follow-ups and internal actions triggered automatically.</p></div><span class="coming-badge">CONFIGURABLE</span></div><div class="automation-list" id="automationList"></div></section>
       <section class="view" id="view-settings"><div class="page-head compact-head"><div><p class="eyebrow">WORKSPACE</p><h1>Settings</h1><p>Configure the business once. SiteRemade uses it everywhere.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">BUSINESS</p><form id="settingsForm"><label>Business name<input name="businessName" id="settingsBusiness" /></label><label>Lead notification email<input name="email" id="settingsEmail" type="email" /></label><label>Phone<input name="phone" id="settingsPhone" /></label><label>Timezone<input name="timezone" id="settingsTimezone" /></label><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">ACTIVE MODULES</p><div class="setting-row"><div><strong>Website</strong><span>SiteRemade website</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>Lead System</strong><span>Capture + pipeline</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>AI Receptionist</strong><span>Chat + qualification</span></div><span class="status-pill neutral" id="aiReceptionistBadge">OFF</span></div><div class="setting-row"><div><strong>Advertising</strong><span>Google + Meta</span></div><span class="status-pill neutral">OFF</span></div></div></div><div class="settings-grid settings-extra"><div class="panel settings-card"><p class="eyebrow">AI RECEPTIONIST</p><form id="aiSettingsForm"><label>Services<textarea name="services" id="aiServices" rows="3"></textarea></label><label>Service area<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label><label>Tone / instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label><div class="settings-actions"><button class="primary-action">Save AI settings</button><button class="secondary-button" id="testAiButton" type="button">Test receptionist</button></div><p class="helper-copy" id="aiSettingsStatus">The bot uses these instructions on your website chat.</p></form></div><div class="panel settings-card"><p class="eyebrow">INTEGRATIONS</p><div class="integration-list" id="integrationList"></div><p class="helper-copy">External services become live automatically when their environment keys are configured on the server.</p></div></div></section>
       <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div></section>
-    </main>
+    
+      <section class="view" id="view-integrations"><div class="page-head compact-head"><div><p class="eyebrow">CONNECTED APPS</p><h1>Integrations</h1><p>Connect the tools your business already uses and run them from SiteRemade.</p></div><span class="coming-badge" id="integrationSummary">0 connected</span></div><div class="v34-feature"><strong>One customer system.</strong><p>Email, calls, bookings, payments, ads, accounting and documents all stay connected to the same lead.</p></div><div id="v34Grid" class="v34-grid"></div></section>
+</main>
   </div>
 
   <nav class="mobile-nav" aria-label="Mobile navigation">
@@ -380,7 +416,7 @@
     <div class="mobile-more-grid">
       <button data-view="prospecting"><span>⌖</span><strong>Market Finder</strong><small>Find businesses and opportunities</small></button>
       <button data-view="analytics"><span>↗</span><strong>Analytics</strong><small>See performance and conversion</small></button>
-      <button data-view="website-updates"><span>✎</span><strong>Website Updates</strong><small>Request website changes</small></button>
+      <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
       <button data-view="automations"><span>✦</span><strong>Automations</strong><small>Manage follow-up workflows</small></button>
       <button data-view="settings"><span>⚙</span><strong>Settings</strong><small>Workspace and integrations</small></button>
       <button data-view="admin" id="mobileAdminNav"><span>▦</span><strong>Admin</strong><small>Owner controls</small></button>
@@ -400,15 +436,16 @@
 
   <div class="modal-backdrop" id="appointmentModal" hidden><form class="lead-modal" id="appointmentForm"><div class="modal-head"><div><p class="eyebrow">SCHEDULING</p><h2>New appointment</h2></div><button type="button" class="close-button" data-close="appointmentModal">×</button></div><div class="form-grid"><label>Customer<select name="leadId" id="appointmentLead"></select></label><label>Title<input name="title" required placeholder="Estimate / service call" /></label><label>Date<input name="date" type="date" required /></label><label>Time<input name="time" type="time" required /></label><label>Duration<input name="duration" type="number" min="15" step="15" value="60" /></label></div><label>Notes<textarea name="notes" rows="3"></textarea></label><div class="modal-actions"><button type="button" class="secondary-button" data-close="appointmentModal">Cancel</button><button type="submit" class="primary-action">Book appointment</button></div><p class="modal-status" id="appointmentStatus"></p></form></div>
 
-  <div class="modal-backdrop" id="invoiceModal" hidden><form class="lead-modal" id="invoiceForm"><div class="modal-head"><div><p class="eyebrow">PAYMENTS</p><h2>Create invoice</h2></div><button type="button" class="close-button" data-close="invoiceModal">×</button></div><div class="form-grid"><label>Customer<select name="leadId" id="invoiceLead"></select></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="750" /></label><label class="wide-field">Description<input name="description" required placeholder="Deposit / final invoice" /></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close="invoiceModal">Cancel</button><button type="submit" class="primary-action">Create invoice</button></div><p class="modal-status" id="invoiceStatus"></p></form></div>
+  <div class="modal-backdrop" id="invoiceModal" hidden><form class="lead-modal" id="invoiceForm"><input type="hidden" name="projectId" id="invoiceProjectId" value="" /><div class="modal-head"><div><p class="eyebrow">PAYMENTS</p><h2>Create invoice</h2></div><button type="button" class="close-button" data-close="invoiceModal">×</button></div><div class="form-grid"><label>Customer<select name="leadId" id="invoiceLead"></select></label><label>Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="750" /></label><label class="wide-field">Description<input name="description" required placeholder="Deposit / final invoice" /></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close="invoiceModal">Cancel</button><button type="submit" class="primary-action">Create invoice</button></div><p class="modal-status" id="invoiceStatus"></p></form></div>
 
   <div class="modal-backdrop" id="conversationModal" hidden><form class="lead-modal" id="conversationForm"><div class="modal-head"><div><p class="eyebrow">INBOX</p><h2>Start conversation</h2></div><button type="button" class="close-button" data-close="conversationModal">×</button></div><label>Lead<select name="leadId" id="conversationLead"></select></label><div class="modal-actions"><button type="button" class="secondary-button" data-close="conversationModal">Cancel</button><button type="submit" class="primary-action">Open conversation</button></div></form></div>
 
-  <aside class="lead-drawer" id="leadDrawer" hidden><div class="drawer-head"><div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="drawerName">Lead</h2></div><button class="close-button" id="closeDrawer">×</button></div><form id="leadDetailForm"><div class="drawer-grid"><label>Status<select name="status" id="drawerStatus"><option>New</option><option>Contacted</option><option>Quoted</option><option>Won</option><option>Lost</option></select></label><label>Value<input name="value" id="drawerValue" type="number" min="0" step="1" /></label><label>Name<input name="name" id="drawerLeadName" /></label><label>Service<input name="service" id="drawerService" /></label><label>Phone<input name="phone" id="drawerPhone" /></label><label>Email<input name="email" id="drawerEmail" type="email" /></label></div><label>Inquiry<textarea name="message" id="drawerMessage" rows="4"></textarea></label><label>Add note<textarea name="note" id="drawerNote" rows="2" placeholder="Add a note to the customer record"></textarea></label><div class="drawer-actions"><button type="button" class="danger-button" id="deleteLeadButton">Delete</button><button type="button" class="secondary-button" id="messageLeadButton">Message</button><button type="button" class="secondary-button" id="bookLeadButton">Book</button><button type="submit" class="primary-action">Save changes</button></div><div class="notes-list" id="drawerNotes"></div><p class="modal-status" id="drawerStatusText"></p></form></aside>
+  <aside class="lead-drawer" id="leadDrawer" hidden><div class="drawer-head"><div><p class="eyebrow">CUSTOMER RECORD</p><h2 id="drawerName">Lead</h2></div><button class="close-button" id="closeDrawer">×</button></div><form id="leadDetailForm"><div id="drawerWebsiteProject" style="margin-bottom:12px"></div><div class="drawer-grid"><label>Status<select name="status" id="drawerStatus"><option>New</option><option>Contacted</option><option>Quoted</option><option>Won</option><option>Lost</option></select></label><label>Value<input name="value" id="drawerValue" type="number" min="0" step="1" /></label><label>Name<input name="name" id="drawerLeadName" /></label><label>Service<input name="service" id="drawerService" /></label><label>Phone<input name="phone" id="drawerPhone" /></label><label>Email<input name="email" id="drawerEmail" type="email" /></label></div><label>Inquiry<textarea name="message" id="drawerMessage" rows="4"></textarea></label><label>Add note<textarea name="note" id="drawerNote" rows="2" placeholder="Add a note to the customer record"></textarea></label><div class="drawer-actions"><button type="button" class="danger-button" id="deleteLeadButton">Delete</button><button type="button" class="secondary-button" id="messageLeadButton">Message</button><button type="button" class="secondary-button" id="bookLeadButton">Book</button><button type="submit" class="primary-action">Save changes</button></div><div class="notes-list" id="drawerNotes"></div><p class="modal-status" id="drawerStatusText"></p></form></aside>
 
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
+  <script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
 </body>
 </html>

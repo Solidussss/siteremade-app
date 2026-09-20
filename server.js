@@ -3,20 +3,22 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const { URL } = require('url');
-const { createClient } = require('@supabase/supabase-js');
+const {
+  db, anon, configured,
+  cookies, authCookies, clearAuthCookies,
+  sendJson: json, readJsonBody: body,
+  getAuthUser: getAuth, membershipsFor, getContext: ctx
+} = require('./lib/context');
+const { buildRouter } = require('./routes');
+const router = buildRouter();
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const configured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
-const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 25000));
+const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3900));
 const ADS_FEATURE_ENABLED = false; // V13: preserve ad data/code, but block new ad actions until integrations are ready.
 const hasSiteRemadeAccess=c=>c.owner||['active','trialing'].includes(String(c.workspace?.siteremade_subscription_status||'inactive').toLowerCase());
-const anon = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-const db = configured ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
 const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
@@ -25,59 +27,84 @@ const signupAttempts=new Map();
 function signupAllowed(req){const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();const t=Date.now(),windowMs=3600000,max=5;const recent=(signupAttempts.get(ip)||[]).filter(x=>t-x<windowMs);if(recent.length>=max)return false;recent.push(t);signupAttempts.set(ip,recent);return true;}
 
 
-function json(res,status,obj,cookies=[]){
-  const body=JSON.stringify(obj);
-  const h={'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(body),'Cache-Control':'no-store'};
-  if(cookies.length) h['Set-Cookie']=cookies;
-  res.writeHead(status,h); res.end(body);
-}
-function cookies(req){return Object.fromEntries((req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x[0]).map(([k,...v])=>[k,decodeURIComponent(v.join('='))]));}
-function body(req){return new Promise((resolve,reject)=>{let s='';req.on('data',c=>{s+=c;if(s.length>1e6){reject(Error('Payload too large'));req.destroy();}});req.on('end',()=>{if(!s)return resolve({});try{resolve(JSON.parse(s))}catch{reject(Error('Invalid JSON'))}});req.on('error',reject);});}
-function authCookies(session){const secure=process.env.NODE_ENV==='production'?'; Secure':'';return [
-  `sr_access=${encodeURIComponent(session.access_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(60,session.expires_in||3600)}${secure}`,
-  `sr_refresh=${encodeURIComponent(session.refresh_token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`
-];}
-function clearAuthCookies(){return ['sr_access=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0','sr_refresh=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0','sr_workspace=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'];}
 async function q(promise){const {data,error}=await promise;if(error)throw error;return data;}
-async function getAuth(req,res){
-  if(!configured) return null;
-  const c=cookies(req); let access=c.sr_access; let user=null; let renewed=null;
-  if(access){const r=await anon.auth.getUser(access); user=r.data?.user||null;}
-  if(!user && c.sr_refresh){const r=await anon.auth.refreshSession({refresh_token:c.sr_refresh});if(!r.error&&r.data?.session){renewed=r.data.session;access=renewed.access_token;user=r.data.user;}}
-  if(!user) return null;
-  const profile=(await db.from('profiles').select('*').eq('id',user.id).maybeSingle()).data;
-  if(!profile) return null;
-  if(renewed) res.setHeader('Set-Cookie',authCookies(renewed));
-  return {user,profile,access};
-}
-async function membershipsFor(userId,owner=false){
-  if(owner) return await q(db.from('workspaces').select('*').order('created_at',{ascending:true}));
-  const memberships=await q(db.from('workspace_members').select('workspace_id,workspaces(*)').eq('user_id',userId));
-  return memberships.map(m=>m.workspaces).filter(Boolean);
-}
 function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
 function mapAppointment(a){return {id:a.id,leadId:a.lead_id||'',title:a.title,customer:a.customer,start:a.start_at,duration:a.duration,status:a.status,notes:a.notes};}
-function mapInvoice(i){return {id:i.id,leadId:i.lead_id||'',customer:i.customer,description:i.description,amount:Number(i.amount)||0,status:i.status,paymentUrl:i.payment_url||null,stripeSessionId:i.stripe_session_id||null,createdAt:i.created_at,paidAt:i.paid_at||null};}
+function mapInvoice(i){return {id:i.id,leadId:i.lead_id||'',projectId:i.project_id||'',customer:i.customer,description:i.description,amount:Number(i.amount)||0,status:i.status,paymentUrl:i.payment_url||null,stripeSessionId:i.stripe_session_id||null,createdAt:i.created_at,paidAt:i.paid_at||null};}
 function mapAutomation(a){return {id:a.automation_key,name:a.name,description:a.description,enabled:a.enabled};}
 function mapActivity(a){return {id:a.id,type:a.type,title:a.title,detail:a.detail,createdAt:a.created_at};}
 function mapAdSpend(a){return {id:a.id,platform:a.platform,campaign:a.campaign,spend:Number(a.spend)||0,leads:Number(a.leads)||0,source:a.source||'manual',createdAt:a.created_at};}
 function mapAdFund(a){return {id:a.id,amount:Number(a.amount)||0,platform:a.platform||'Both',status:a.status,createdAt:a.created_at,fundedAt:a.funded_at||null};}
 function mapWebsiteAnalytics(a){return a?{domain:a.domain||'',provider:a.provider||'google_analytics',connected:!!a.connected,sessions:Number(a.sessions)||0,users:Number(a.users)||0,pageviews:Number(a.pageviews)||0,lastSync:a.last_sync||null}:{domain:'',provider:'google_analytics',connected:false,sessions:0,users:0,pageviews:0,lastSync:null};}
-function mapWebsiteUpdate(r){return {id:r.id,page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
-async function ctx(req,res,u){
-  const a=await getAuth(req,res); if(!a)return null;
-  const owner=a.profile.role==='owner'; const workspaces=await membershipsFor(a.user.id,owner); if(!workspaces.length)return null;
-  const c=cookies(req); let wid=req.headers['x-workspace-id']||u.searchParams.get('workspaceId')||c.sr_workspace||workspaces[0].id;
-  if(!workspaces.some(w=>w.id===wid))wid=workspaces[0].id;
-  const workspace=workspaces.find(w=>w.id===wid);
-  return {...a,owner,workspaces,wid,workspace};
+function mapWebsiteUpdate(r){return {id:r.id,projectId:r.project_id||'',kind:r.kind||'update',page:r.page,priority:r.priority,request:r.request,notes:r.notes||'',status:r.status,createdAt:r.created_at,updatedAt:r.updated_at};}
+function computeProjectPayment(projectId,invoicesForWs){const linked=(invoicesForWs||[]).filter(i=>i.project_id===projectId);if(!linked.length)return {paymentStatus:'none',invoiceCount:0,invoiceTotal:0,invoicePaid:0};const invoiceTotal=linked.reduce((s,i)=>s+Number(i.amount||0),0),invoicePaid=linked.filter(i=>i.status==='Paid').reduce((s,i)=>s+Number(i.amount||0),0),allPaid=linked.every(i=>i.status==='Paid'),anyPaid=linked.some(i=>i.status==='Paid');return {paymentStatus:allPaid?'paid':anyPaid?'partial':'unpaid',invoiceCount:linked.length,invoiceTotal,invoicePaid};}
+// Mutating website-project routes (PATCH, /brief, /review) update a single row
+// but still need to return the project with correctly computed revisions/
+// payment (mapProject derives those from the workspace's invoices and
+// website_updates, not from the row itself) — otherwise the response looks
+// like it has zero revisions/no payment right after an action that clearly
+// shouldn't reset either. This mirrors what the GET routes already fetch.
+async function projectFullMap(wid,row){
+  const [invoicesForWs,updatesForProject]=await Promise.all([
+    q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',wid)),
+    q(db.from('website_updates').select('*').eq('project_id',row.id).order('created_at',{ascending:false}))
+  ]);
+  return mapProject(row,invoicesForWs,updatesForProject);
 }
+function mapProject(row,invoicesForWs=[],updatesForWs=[]){const revisions=(updatesForWs||[]).filter(u=>u.project_id===row.id).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));return {id:row.id,workspaceId:row.workspace_id,leadId:row.lead_id||'',businessName:row.business_name||'',source:row.source||'SiteRemade',intakeText:row.intake_text||'',intake:row.intake&&typeof row.intake==='object'?row.intake:{},designDirection:row.design_direction&&typeof row.design_direction==='object'?row.design_direction:{},brief:row.brief&&typeof row.brief==='object'?row.brief:{},briefHistory:Array.isArray(row.brief_history)?row.brief_history:[],builderPrompt:row.builder_prompt||'',status:row.status||'Intake',previewUrl:row.preview_url||'',liveUrl:row.live_url||'',deliveredAt:row.delivered_at||null,clientReviewStatus:row.client_review_status||'not_submitted',clientReviewedAt:row.client_reviewed_at||null,clientReviewFeedback:row.client_review_feedback||'',aiProvider:row.ai_provider||'',aiModel:row.ai_model||'',revisionCount:revisions.length,revisions:revisions.map(mapWebsiteUpdate),payment:computeProjectPayment(row.id,invoicesForWs),createdAt:row.created_at,updatedAt:row.updated_at};}
+function extractBriefJson(text){const raw=clean(text,50000);const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i);const candidate=fenced?fenced[1]:raw;const start=candidate.indexOf('{'),end=candidate.lastIndexOf('}');if(start<0||end<=start)throw Error('AI did not return a structured website brief.');return JSON.parse(candidate.slice(start,end+1));}
+function normalizeWebsiteBrief(input={}){const style=input.styleDirection||input.style_direction||{};const content=input.content||{};const builderPrompt=clean(input.builderPrompt||input.builder_prompt,30000);return {summary:clean(input.summary,2000),businessPositioning:clean(input.businessPositioning||input.business_positioning,3000),styleDirection:{style:clean(style.style,300),visualTone:clean(style.visualTone||style.visual_tone,500),colors:Array.isArray(style.colors)?style.colors.slice(0,8).map(x=>clean(x,120)):[],typography:clean(style.typography,800),layout:clean(style.layout,1500),motion:clean(style.motion,1200)},content:{hero:content.hero&&typeof content.hero==='object'?content.hero:{},services:Array.isArray(content.services)?content.services.slice(0,12):[],trust:Array.isArray(content.trust)?content.trust.slice(0,12):[],about:clean(content.about,3000),faq:Array.isArray(content.faq)?content.faq.slice(0,12):[],quoteForm:content.quoteForm||content.quote_form||{}},buildRules:Array.isArray(input.buildRules||input.build_rules)?(input.buildRules||input.build_rules).slice(0,30).map(x=>clean(x,1000)):[],avoid:Array.isArray(input.avoid)?input.avoid.slice(0,30).map(x=>clean(x,1000)):[],builderPrompt};}
+function websiteBriefPrompt({workspace,lead,project,revision}){const intake=project.intake&&Object.keys(project.intake).length?project.intake:null;const source={workspace:{businessName:workspace?.business_name||'',services:workspace?.ai_services||'',serviceArea:workspace?.ai_service_area||'',tone:workspace?.ai_tone||''},lead:lead?{name:lead.name||'',email:lead.email||'',phone:lead.phone||'',service:lead.service||'',message:lead.message||'',source:lead.source||''}:null,structuredIntake:intake,legacyIntakeText:intake?'':clean(project.intake_text,18000),existingBrief:project.brief&&Object.keys(project.brief).length?project.brief:null,revision:clean(revision,8000)};return `You are SiteRemade's senior website strategist, conversion copywriter and design director.
+
+Your job is to turn the supplied client/project information into a production-ready website brief that another coding agent can build without guessing.
+
+Important rules:
+- structuredIntake, when present, is the authoritative source of the client's choices (business identity, services, service area, desired pages, visual direction, colours, logo/assets, references). Treat every field in it as a constraint, not a suggestion, and do not override or reinterpret it.
+- Only fall back to interpreting legacyIntakeText as free-form prose if structuredIntake is empty — that field exists solely for projects created before structured intake existed.
+- Preserve the client's actual business identity. Do not invent awards, years in business, certifications, reviews, prices, team members, project counts, warranties, service areas or claims that were not supplied.
+- Make the site feel custom to this specific business rather than like a generic contractor/SaaS template.
+- Write useful real copy where the source supports it. If information is missing, use clearly marked neutral placeholders or instruct the builder to omit the claim.
+- The finished site should feel expensive, editorial and intentional: strong hierarchy, excellent spacing, restrained motion, sharp mobile behaviour, and no random gradients/glass cards unless structuredIntake's visual direction explicitly calls for them.
+- The builder prompt must be self-contained. A coding agent should be able to build the site from that prompt without needing this conversation.
+- If a revision is supplied, update the existing brief rather than starting over.
+- Return JSON only. No markdown.
+
+Return exactly this shape:
+{
+  "summary": "short project summary",
+  "businessPositioning": "how this business should be positioned",
+  "styleDirection": {
+    "style": "selected/derived style",
+    "visualTone": "specific visual feel",
+    "colors": ["specific supplied/derived colours"],
+    "typography": "font personality and hierarchy guidance",
+    "layout": "specific layout/composition guidance",
+    "motion": "restrained interaction and motion guidance"
+  },
+  "content": {
+    "hero": {"kicker":"","headline":"","subhead":"","primaryCta":"","secondaryCta":""},
+    "services": [{"name":"","description":""}],
+    "trust": ["only supported trust points"],
+    "about": "",
+    "faq": [{"question":"","answer":""}],
+    "quoteForm": {"fields":[],"intro":""}
+  },
+  "buildRules": ["specific implementation rules"],
+  "avoid": ["specific things that would make this site feel cheap or generic"],
+  "builderPrompt": "complete production prompt for the website coding agent"
+}
+
+SOURCE DATA:
+${JSON.stringify(source)}`;}
+async function generateWebsiteBriefViaAnthropic(prompt){const key=process.env.ANTHROPIC_API_KEY,model=process.env.ANTHROPIC_MODEL;if(!key||!model)return null;const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model,max_tokens:7000,temperature:0.2,messages:[{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Claude could not generate the website brief.');const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');return {provider:'anthropic',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
+async function generateWebsiteBriefViaOpenAI(prompt){const key=process.env.OPENAI_API_KEY;if(!key)return null;const model=process.env.OPENAI_MODEL||'gpt-4o-mini';const response=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:0.2,response_format:{type:'json_object'},messages:[{role:'system',content:'Return only valid JSON matching the requested schema.'},{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Fallback AI could not generate the website brief.');const text=data.choices?.[0]?.message?.content||'';return {provider:'openai',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
+async function generateWebsiteBrief(args){const prompt=websiteBriefPrompt(args);const anthropic=await generateWebsiteBriefViaAnthropic(prompt);if(anthropic)return anthropic;const fallback=await generateWebsiteBriefViaOpenAI(prompt);if(fallback)return fallback;throw Error('Website intelligence is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL in Railway, or write the brief manually.');}
 async function activity(wid,type,title,detail){await db.from('activities').insert({workspace_id:wid,type,title,detail:clean(detail,1000)});}
 async function audit(userId,wid,action,detail){await db.from('audit_logs').insert({user_id:userId,workspace_id:wid||null,action,detail:clean(detail,1000)});}
 async function workspaceSnapshot(c){
-  const [leads,convs,msgs,apps,invoices,autos,activities,adSpend,adFunds,prospectViews,websiteAnalytics,websiteUpdates] = await Promise.all([
+  const [leads,convs,msgs,apps,invoices,autos,activities,adSpend,adFunds,prospectViews,websiteAnalytics,websiteUpdates,websiteProjects] = await Promise.all([
     q(db.from('leads').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false})),
     q(db.from('conversations').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false})),
     q(db.from('messages').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true})),
@@ -89,9 +116,10 @@ async function workspaceSnapshot(c){
     q(db.from('ad_funds').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
     q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000)),
     q(db.from('website_analytics').select('*').eq('workspace_id',c.wid).maybeSingle()),
-    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200))
+    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
+    q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200))
   ]);
-  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
+  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
 }
 
 async function businessAssistant(c,message){
@@ -321,8 +349,23 @@ async function api(req,res,u){
 
   const c=await ctx(req,res,u);if(!c)return json(res,401,{ok:false,message:'Authentication required.'});
   if(m==='GET'&&p==='/api/app/bootstrap'){
-    if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[]});
-    return json(res,200,{ok:true,locked:false,...await workspaceSnapshot(c)});
+    if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[],websiteProjects:[]});
+    const snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
+    // Performance: app.js's liveRefresh() polls this exact endpoint every
+    // 5 seconds for as long as the dashboard is open, unconditionally
+    // re-fetching and re-rendering everything even when nothing changed.
+    // An ETag over the literal response body — checked against the
+    // client's If-None-Match — lets an unchanged poll get back an empty
+    // 304 instead of the full payload, at the same 5-second cadence and
+    // with identical data whenever something *did* change. This can't
+    // miss a real update the way a hand-picked "did anything change"
+    // heuristic could: it's a hash of the exact bytes that would have
+    // been sent, not a guess at which fields matter.
+    const text=JSON.stringify(snapshot);
+    const etag='"'+crypto.createHash('sha1').update(text).digest('hex')+'"';
+    if(req.headers['if-none-match']===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-store'});return res.end();}
+    res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(text),'Cache-Control':'no-store','ETag':etag});
+    return res.end(text);
   }
   if(m==='POST'&&p==='/api/app/workspaces/switch'){const b=await body(req),wid=clean(b.workspaceId,80);if(!c.workspaces.some(w=>w.id===wid))return json(res,403,{ok:false,message:'No access.'});return json(res,200,{ok:true},[`sr_workspace=${encodeURIComponent(wid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`]);}
   // V11: unpaid clients are blocked before ANY business feature route.
@@ -380,9 +423,98 @@ async function api(req,res,u){
     await activity(c.wid,'website','Website update status changed',`${row.page} · ${status}`);
     return json(res,200,{ok:true,websiteUpdate:mapWebsiteUpdate(row)});
   }
+
+  // Website Projects — the website-delivery lifecycle: Start Website Project (from a
+  // lead) → Structured Intake → Build Brief → Building → Client Review → Revisions →
+  // Payment/Handoff → Delivered → Ongoing Updates. Revisions, client feedback and the
+  // pre-existing general "Website Updates" ticket flow all share the website_updates
+  // table (see V50 migration) instead of being separate systems.
+  if(m==='GET'&&p==='/api/app/website-projects'){
+    const [rows,invoicesForWs,updatesForWs]=await Promise.all([
+      q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false})),
+      q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',c.wid)),
+      q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}))
+    ]);
+    return json(res,200,{ok:true,projects:rows.map(r=>mapProject(r,invoicesForWs,updatesForWs))});
+  }
+  if(m==='POST'&&p==='/api/app/website-projects'){
+    const b=await body(req),leadId=clean(b.leadId,80);if(!leadId)return json(res,400,{ok:false,message:'Choose a lead to start a website project from.'});
+    const lead=(await db.from('leads').select('*').eq('id',leadId).eq('workspace_id',c.wid).maybeSingle()).data;if(!lead)return json(res,404,{ok:false,message:'Lead not found.'});
+    const existing=(await db.from('website_projects').select('*').eq('workspace_id',c.wid).eq('lead_id',leadId).maybeSingle()).data;
+    if(existing)return json(res,200,{ok:true,project:await projectFullMap(c.wid,existing),created:false});
+    const row=await q(db.from('website_projects').insert({workspace_id:c.wid,lead_id:leadId,business_name:lead.name,source:lead.source||'SiteRemade',status:'Intake'}).select('*').single());
+    await activity(c.wid,'website','Website project started',row.business_name);
+    return json(res,201,{ok:true,project:mapProject(row,[],[]),created:true});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='GET'){
+    const row=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!row)return json(res,404,{ok:false,message:'Website project not found.'});
+    const [invoicesForWs,updatesForProject]=await Promise.all([
+      q(db.from('invoices').select('id,project_id,status,amount').eq('workspace_id',c.wid)),
+      q(db.from('website_updates').select('*').eq('project_id',x[1]).order('created_at',{ascending:false}))
+    ]);
+    return json(res,200,{ok:true,project:mapProject(row,invoicesForWs,updatesForProject)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='PATCH'){
+    const old=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!old)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),patch={updated_at:now()};
+    if(b.businessName!==undefined)patch.business_name=clean(b.businessName,200)||old.business_name;
+    if(b.intake!==undefined&&b.intake&&typeof b.intake==='object')patch.intake=b.intake;
+    if(b.previewUrl!==undefined)patch.preview_url=clean(b.previewUrl,600);
+    if(b.liveUrl!==undefined)patch.live_url=clean(b.liveUrl,600);
+    if(b.builderPrompt!==undefined)patch.builder_prompt=clean(b.builderPrompt,30000);
+    if(b.status!==undefined){const status=clean(b.status,40);if(!['Intake','Brief Ready','Building','Review','Delivered'].includes(status))return json(res,400,{ok:false,message:'Invalid website project status.'});patch.status=status;}
+    if(b.deliveredAt!==undefined){if(b.deliveredAt===null||b.deliveredAt===''){patch.delivered_at=null;}else{const d=new Date(b.deliveredAt);if(Number.isNaN(d.getTime()))return json(res,400,{ok:false,message:'Invalid delivered date.'});patch.delivered_at=d.toISOString();}}
+    if(b.brief!==undefined&&b.brief&&typeof b.brief==='object'){const prior=old.brief&&Object.keys(old.brief).length?old.brief:null;patch.brief=b.brief;if(prior)patch.brief_history=[{...prior,_replacedAt:now()},...(Array.isArray(old.brief_history)?old.brief_history:[])].slice(0,20);}
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    if(row.status!==old.status)await activity(c.wid,'website',`Website project moved to ${row.status}`,row.business_name);
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/brief$/);if(x&&m==='POST'){
+    if(!c.owner)return json(res,403,{ok:false,message:'SiteRemade owner access required.'});
+    const old=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!old)return json(res,404,{ok:false,message:'Website project not found.'});
+    const aiConfigured=!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL)||!!process.env.OPENAI_API_KEY;
+    if(!aiConfigured)return json(res,503,{ok:false,message:'Website brief AI is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL (or OPENAI_API_KEY) in Railway, or write the brief and builder prompt manually below.'});
+    const b=await body(req),revision=clean(b.revision,8000);
+    const hasIntake=(old.intake&&Object.keys(old.intake).length)||clean(old.intake_text,1).length;
+    if(!hasIntake)return json(res,400,{ok:false,message:'Fill in the structured intake before generating a brief.'});
+    let lead=null;if(old.lead_id)lead=(await db.from('leads').select('*').eq('id',old.lead_id).eq('workspace_id',c.wid).maybeSingle()).data;
+    const ai=await generateWebsiteBrief({workspace:c.workspace,lead,project:old,revision});
+    const prior=old.brief&&Object.keys(old.brief).length?old.brief:null;
+    const patch={brief:ai.brief,brief_history:prior?[{...prior,_replacedAt:now()},...(Array.isArray(old.brief_history)?old.brief_history:[])].slice(0,20):(Array.isArray(old.brief_history)?old.brief_history:[]),builder_prompt:ai.brief.builderPrompt||old.builder_prompt,ai_provider:ai.provider,ai_model:ai.model,updated_at:now()};
+    if(old.status==='Intake')patch.status='Brief Ready';
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    await activity(c.wid,'website',revision?'Website brief revised':'Website brief generated',`${row.business_name} · ${ai.provider}`);
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row),provider:ai.provider,model:ai.model});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/revisions$/);if(x&&m==='POST'){
+    const proj=(await db.from('website_projects').select('id,workspace_id,business_name').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),request=clean(b.request,4000);if(!request)return json(res,400,{ok:false,message:'Describe the change first.'});
+    const page=clean(b.page,80)||'Other',priority=['Normal','Important'].includes(clean(b.priority,30))?clean(b.priority,30):'Normal',notes=clean(b.notes,4000),kind=c.owner?'revision':'client_feedback';
+    const row=await q(db.from('website_updates').insert({workspace_id:c.wid,project_id:proj.id,page,priority,request,notes,status:'Requested',kind}).select('*').single());
+    await db.from('website_projects').update({updated_at:now()}).eq('id',proj.id);
+    await activity(c.wid,'website',kind==='client_feedback'?'Client feedback added':'Website revision requested',`${proj.business_name} · ${request.slice(0,120)}`);
+    return json(res,201,{ok:true,websiteUpdate:mapWebsiteUpdate(row)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)\/review$/);if(x&&m==='POST'){
+    const proj=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});
+    const b=await body(req),decision=clean(b.decision,30);if(!['approved','changes_requested'].includes(decision))return json(res,400,{ok:false,message:'Invalid review decision.'});
+    const feedback=clean(b.feedback,4000);
+    const patch={client_review_status:decision,client_reviewed_at:now(),client_review_feedback:feedback,updated_at:now()};
+    const row=await q(db.from('website_projects').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());
+    const request=feedback||(decision==='approved'?'Client approved the preview.':'Client requested changes.');
+    await db.from('website_updates').insert({workspace_id:c.wid,project_id:proj.id,page:'Review',priority:decision==='changes_requested'?'Important':'Normal',request,notes:'',status:'Requested',kind:'client_feedback'});
+    await activity(c.wid,'website',decision==='approved'?'Client approved website preview':'Client requested website changes',proj.business_name);
+    return json(res,200,{ok:true,project:await projectFullMap(c.wid,row)});
+  }
+  x=p.match(/^\/api\/app\/website-projects\/([^/]+)$/);if(x&&m==='DELETE'){
+    if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});
+    await db.from('website_projects').delete().eq('id',x[1]).eq('workspace_id',c.wid);
+    await activity(c.wid,'delete','Website project deleted',x[1]);
+    return json(res,200,{ok:true});
+  }
+
   if(m==='POST'&&p==='/api/app/prospects/search'){const b=await body(req);if(!clean(b.businessType,120)||!clean(b.location,160))return json(res,400,{ok:false,message:'Business type and location are required.'});const viewed=await q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000));const result=await searchPlaces(b,new Set(viewed.map(x=>x.place_id)));return json(res,200,{ok:true,...result});}
   if(m==='POST'&&p==='/api/app/prospects/viewed'){const b=await body(req),placeId=clean(b.placeId,220);if(!placeId)return json(res,400,{ok:false,message:'Google Place ID required.'});await q(db.from('prospect_views').upsert({workspace_id:c.wid,place_id:placeId,name:clean(b.name,200),website:clean(b.website,1000),viewed_at:now()},{onConflict:'workspace_id,place_id'}).select('*').single());return json(res,200,{ok:true});}
-  if(m==='POST'&&p==='/api/app/analytics/website'){const b=await body(req),raw=clean(b.domain,1000);let domain='';try{if(raw){const candidate=/^https?:\/\//i.test(raw)?raw:'https://'+raw;domain=new URL(candidate).hostname.replace(/^www\./,'').toLowerCase();}}catch{}if(!domain)return json(res,400,{ok:false,message:'Enter a valid website domain.'});const row=await q(db.from('website_analytics').upsert({workspace_id:c.wid,domain,provider:'google_analytics',updated_at:now()},{onConflict:'workspace_id'}).select('*').single());return json(res,200,{ok:true,websiteAnalytics:mapWebsiteAnalytics(row)});}
   if(m==='POST'&&p==='/api/app/ad-spend'){if(!ADS_FEATURE_ENABLED)return json(res,503,{ok:false,message:'Google + Meta advertising is coming soon.'});if(!c.owner)return json(res,403,{ok:false,message:'Advertising performance is managed by SiteRemade.'});const b=await body(req),spend=Math.max(0,Number(b.spend)||0),leads=Math.max(0,Math.floor(Number(b.leads)||0));if(!spend)return json(res,400,{ok:false,message:'Spend must be greater than zero.'});const row=await q(db.from('ad_spend').insert({workspace_id:c.wid,platform:clean(b.platform,40)||'Other',campaign:clean(b.campaign,160)||'Campaign',spend,leads,source:'manual'}).select('*').single());await activity(c.wid,'ads','Ad spend recorded',`${row.platform} · ${row.campaign} · $${Number(row.spend).toFixed(2)}`);return json(res,201,{ok:true,adSpend:mapAdSpend(row)});}
 
   if(m==='GET'&&p==='/api/app/leads'){const rows=await q(db.from('leads').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}));return json(res,200,{ok:true,leads:rows.map(mapLead)});}
@@ -441,8 +573,19 @@ return json(res,201,{ok:true,lead:mapLead(l)});
     }catch(e){return json(res,400,{ok:false,message:e.message});}
   }
 
-  if(m==='POST'&&p==='/api/app/invoices'){const b=await body(req),lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data,amount=Math.max(0,Number(b.amount)||0);if(!lead||!amount)return json(res,400,{ok:false,message:'Customer and amount required.'});let inv=await q(db.from('invoices').insert({workspace_id:c.wid,lead_id:lead.id,customer:lead.name,description:clean(b.description,240)||'Invoice',amount,status:'Pending'}).select('*').single());if(process.env.STRIPE_SECRET_KEY){try{const j=await stripeRequest('checkout/sessions',{'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':inv.description,'line_items[0][price_data][unit_amount]':String(Math.round(amount*100)),'line_items[0][quantity]':'1','mode':'payment','success_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?paid=1`,'cancel_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?canceled=1`,'metadata[invoiceId]':inv.id,'metadata[workspaceId]':c.wid},c.workspace.stripe_account_id||'');inv=await q(db.from('invoices').update({payment_url:j.url||null,stripe_session_id:j.id||null}).eq('id',inv.id).select('*').single());}catch(e){console.error('Stripe invoice:',e.message)}}await activity(c.wid,'payment','Invoice created',`${inv.customer} · $${amount.toFixed(2)}`);return json(res,201,{ok:true,invoice:mapInvoice(inv)});}
-  x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req);if(b.status&&!PAY.includes(b.status))return json(res,400,{ok:false,message:'Invalid status.'});const patch={};if(b.status){patch.status=b.status;if(b.status==='Paid')patch.paid_at=now();}const inv=await q(db.from('invoices').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());return json(res,200,{ok:true,invoice:mapInvoice(inv)});}
+  if(m==='POST'&&p==='/api/app/invoices'){const b=await body(req),lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data,amount=Math.max(0,Number(b.amount)||0);if(!lead||!amount)return json(res,400,{ok:false,message:'Customer and amount required.'});let projectId=null;if(clean(b.projectId,80)){const proj=(await db.from('website_projects').select('id').eq('id',clean(b.projectId,80)).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});projectId=proj.id;}let inv=await q(db.from('invoices').insert({workspace_id:c.wid,lead_id:lead.id,project_id:projectId,customer:lead.name,description:clean(b.description,240)||'Invoice',amount,status:'Pending'}).select('*').single());if(process.env.STRIPE_SECRET_KEY){try{const j=await stripeRequest('checkout/sessions',{'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':inv.description,'line_items[0][price_data][unit_amount]':String(Math.round(amount*100)),'line_items[0][quantity]':'1','mode':'payment','success_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?paid=1`,'cancel_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?canceled=1`,'metadata[invoiceId]':inv.id,'metadata[workspaceId]':c.wid},c.workspace.stripe_account_id||'');inv=await q(db.from('invoices').update({payment_url:j.url||null,stripe_session_id:j.id||null}).eq('id',inv.id).select('*').single());}catch(e){console.error('Stripe invoice:',e.message)}}await activity(c.wid,'payment','Invoice created',`${inv.customer} · $${amount.toFixed(2)}`);return json(res,201,{ok:true,invoice:mapInvoice(inv)});}
+  // Production-readiness review: marking an invoice "Paid" here used to be
+  // reachable by any signed-in workspace member with no proof of payment —
+  // the real, verified payment path is the Stripe webhook above (line 334,
+  // checks the HMAC signature), which already sets status:'Paid' the same
+  // way once a checkout session actually completes. This manual PATCH stays
+  // available for the cases that legitimately need a human override (a
+  // client paid by e-transfer/cheque, a correction), but — matching every
+  // other sensitive mutation in this file (website-updates status,
+  // website-project brief/delete) — only SiteRemade staff (c.owner) can set
+  // or unset "Paid" by hand; a workspace's own member still can't self-
+  // report their invoice as paid. Draft/Pending/Void are unaffected.
+  x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req);if(b.status&&!PAY.includes(b.status))return json(res,400,{ok:false,message:'Invalid status.'});if(b.status==='Paid'&&!c.owner)return json(res,403,{ok:false,message:'Only SiteRemade staff can mark an invoice paid by hand.'});const patch={};if(b.status){patch.status=b.status;if(b.status==='Paid')patch.paid_at=now();}const inv=await q(db.from('invoices').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());return json(res,200,{ok:true,invoice:mapInvoice(inv)});}
   x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='DELETE'){
     const invoiceId=x[1];
     const {data:inv,error:findError}=await db.from('invoices').select('*').eq('id',invoiceId).eq('workspace_id',c.wid).maybeSingle();
@@ -457,15 +600,22 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   }
   x=p.match(/^\/api\/app\/automations\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req),a=await q(db.from('automations').update({enabled:!!b.enabled}).eq('workspace_id',c.wid).eq('automation_key',x[1]).select('*').single());return json(res,200,{ok:true,automation:mapAutomation(a)});}
   if(m==='PATCH'&&p==='/api/app/settings'){const b=await body(req),patch={};for(const [js,sql,n] of [['businessName','business_name',160],['email','email',254],['phone','phone',80],['timezone','timezone',100],['currency','currency',10],['services','ai_services',2000],['serviceArea','ai_service_area',1000],['tone','ai_tone',500]])if(b[js]!==undefined)patch[sql]=clean(b[js],n);const w=await q(db.from('workspaces').update(patch).eq('id',c.wid).select('*').single());return json(res,200,{ok:true,workspace:mapWorkspace(w)});}
-  if(m==='POST'&&p==='/api/app/integrations/stripe/connect'){try{let account=c.workspace.stripe_account_id;if(!account){const acct=await stripeRequest('accounts',{type:'express',country:'CA','business_type':'company','metadata[workspaceId]':c.wid});account=acct.id;await db.from('workspaces').update({stripe_account_id:account}).eq('id',c.wid);}const base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const link=await stripeRequest('account_links',{account,refresh_url:base+'/?stripe=refresh',return_url:base+'/?stripe=return',type:'account_onboarding'});return json(res,200,{ok:true,url:link.url,accountId:account});}catch(e){return json(res,400,{ok:false,message:e.message});}}
   if(m==='GET'&&p==='/api/app/admin'){if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});const [profiles,members,auditRows,allLeads,allSpend,allFunds]=await Promise.all([q(db.from('profiles').select('*').order('created_at',{ascending:true})),q(db.from('workspace_members').select('*')),q(db.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(50)),q(db.from('leads').select('workspace_id')),q(db.from('ad_spend').select('workspace_id,spend')),q(db.from('ad_funds').select('workspace_id,amount,status'))]);const workspaces=c.workspaces.map(w=>({...mapWorkspace(w),leads:allLeads.filter(x=>x.workspace_id===w.id).length,adSpent:allSpend.filter(x=>x.workspace_id===w.id).reduce((s,x)=>s+Number(x.spend||0),0),adFunded:allFunds.filter(x=>x.workspace_id===w.id&&x.status==='Funded').reduce((s,x)=>s+Number(x.amount||0),0)}));return json(res,200,{ok:true,workspaces,users:profiles.map(p=>({id:p.id,name:p.name,role:p.role,workspaceIds:members.filter(m=>m.user_id===p.id).map(m=>m.workspace_id)})),audit:auditRows});}
   return json(res,404,{ok:false,message:'Not found.'});
 }
 
 function mime(f){return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.json':'application/json; charset=utf-8','.webmanifest':'application/manifest+json','.sql':'text/plain; charset=utf-8'}[path.extname(f)]||'application/octet-stream');}
-function serve(res,p){let rel=p==='/'?'index.html':decodeURIComponent(p.slice(1));const f=path.normalize(path.join(ROOT,rel));if(!f.startsWith(ROOT)||!fs.existsSync(f)||!fs.statSync(f).isFile())return false;res.writeHead(200,{'Content-Type':mime(f),'Cache-Control':rel==='index.html'?'no-store':'public,max-age=300'});fs.createReadStream(f).pipe(res);return true;}
+// Performance review: this codebase's ~300KB of JS/CSS was being served
+// completely uncompressed (no Content-Encoding at all). Text compresses
+// ~70-80% with gzip, so this alone materially cuts transfer time on every
+// page load, especially on mobile — a pure transport-layer optimization
+// that changes zero bytes of the actual response body once decompressed,
+// and every HTTP client (browsers, fetch/undici, Playwright) decompresses
+// gzip transparently, so nothing downstream needed to change.
+const COMPRESSIBLE = /^(text\/|application\/javascript|application\/json|application\/manifest\+json)/;
+function serve(res,p,req){let rel=p==='/'?'index.html':decodeURIComponent(p.slice(1));const f=path.normalize(path.join(ROOT,rel));if(!f.startsWith(ROOT)||!fs.existsSync(f)||!fs.statSync(f).isFile())return false;const type=mime(f),cacheControl=rel==='index.html'?'no-store':'public,max-age=300';const acceptsGzip=COMPRESSIBLE.test(type)&&/\bgzip\b/.test(req?.headers?.['accept-encoding']||'');if(acceptsGzip){res.writeHead(200,{'Content-Type':type,'Cache-Control':cacheControl,'Content-Encoding':'gzip','Vary':'Accept-Encoding'});fs.createReadStream(f).pipe(zlib.createGzip()).pipe(res);}else{res.writeHead(200,{'Content-Type':type,'Cache-Control':cacheControl});fs.createReadStream(f).pipe(res);}return true;}
 
 setInterval(processAppointmentReminders,15*60*1000).unref();
 setTimeout(processAppointmentReminders,5000).unref();
 
-http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname))return;serve(res,'/');}catch(e){console.error(e);if(!res.headersSent)json(res,500,{ok:false,message:e.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
+http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(await router.dispatch(req,res,u,json))return;if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname,req))return;serve(res,'/',req);}catch(e){console.error(e);if(!res.headersSent)json(res,500,{ok:false,message:e.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
