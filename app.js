@@ -8,7 +8,24 @@ const relative=iso=>{const d=Math.max(0,(Date.now()-new Date(iso))/1000);if(d<60
 const dateLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric'}).format(new Date(iso));
 const dateTimeLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(iso));
 
-async function api(url,opts={}){const r=await fetch(url,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||`Request failed (${r.status})`);return data;}
+async function api(url,opts={}){const r=await fetch(url,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});if(opts.onResponse)opts.onResponse(r);const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||`Request failed (${r.status})`);return data;}
+// Login/startup performance pass: three separate dashboard-feature scripts
+// (v36-connectors-client.js, v38-safe.js, v39-phone-setup-client.js) each
+// independently check Twilio's connection status on their own short timer
+// right after the dashboard loads, with no idea the other two exist — a
+// real instrumented run measured 3-4 near-simultaneous requests for the
+// exact same data on every single login. v38-safe.js's refresh() also
+// re-fetches it on every calendar/inbox/payments/integrations nav click.
+// This shares one in-flight/recent fetch across all callers instead;
+// pass force=true only where the caller just changed the connection state
+// itself and genuinely needs a non-cached answer.
+let twilioStatusPromise=null,twilioStatusAt=0;
+window.getSharedTwilioStatus=function(force){
+  if(!force&&twilioStatusPromise&&Date.now()-twilioStatusAt<3000)return twilioStatusPromise;
+  twilioStatusAt=Date.now();
+  twilioStatusPromise=api('/api/app/integrations/twilio/status').catch(e=>{twilioStatusPromise=null;throw e;});
+  return twilioStatusPromise;
+};
 // Production-readiness/performance review: these files are dashboard
 // feature layers (mail, market finder, ads, calendar, daily workflow,
 // analytics, existing-number wizard, etc.) that only ever style or act on
@@ -37,7 +54,7 @@ function loadDashboardFeatureScripts(){
     document.body.appendChild(s);
   });
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
@@ -655,6 +672,15 @@ if(qs('#adSpendForm'))qs('#adSpendForm').onsubmit=async e=>{e.preventDefault();c
 // 5-second cadence, same data whenever something did change (a fresh
 // fetch and a fresh ETag), nothing skipped that would have shown up
 // before.
+//
+// Login/startup performance pass: this was only ever being set inside
+// liveRefresh() itself, never from bootstrap()'s own fetch (the one that
+// runs on every page load and right after login) — so the FIRST 5-second
+// poll after every single login always sent no If-None-Match at all and
+// paid full backend cost even when nothing had changed since the page
+// finished loading a moment earlier. bootstrap() now captures its own
+// response's ETag too (see the api() call above), so that first poll can
+// actually 304 like every one after it already could.
 let lastBootstrapETag=null;
 async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
 let liveSyncStarted=false;

@@ -435,10 +435,29 @@ async function api(req,res,u){
     // entirely. When something *did* change, this still falls through to
     // the exact same full rebuild as before — freshness is identical,
     // only the unchanged-poll cost is different.
-    const fingerprint=await workspaceFingerprint(c.wid);
-    const etag='"'+crypto.createHash('sha1').update(JSON.stringify(fingerprint)).digest('hex')+'"';
-    if(req.headers['if-none-match']===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-store'});return res.end();}
-    const snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
+    //
+    // Login/startup performance pass: a request with no If-None-Match
+    // header can never get a 304 (there is nothing to compare against), so
+    // running the fingerprint query *before* the snapshot query — two
+    // sequential round trips — was pure added latency on exactly the
+    // requests this pass is about: the first bootstrap call after login,
+    // and after every plain page reload. When there's nothing to compare
+    // against, run both concurrently instead of gating one on the other;
+    // the fingerprint is still needed (it becomes the ETag this response
+    // hands back for the *next* poll to compare against), it just no
+    // longer adds a second sequential round trip to this one.
+    const inm=req.headers['if-none-match'];
+    let etag,snapshot;
+    if(inm){
+      const fingerprint=await workspaceFingerprint(c.wid);
+      etag='"'+crypto.createHash('sha1').update(JSON.stringify(fingerprint)).digest('hex')+'"';
+      if(inm===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-store'});return res.end();}
+      snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
+    }else{
+      const [fingerprint,snap]=await Promise.all([workspaceFingerprint(c.wid),workspaceSnapshot(c)]);
+      etag='"'+crypto.createHash('sha1').update(JSON.stringify(fingerprint)).digest('hex')+'"';
+      snapshot={ok:true,locked:false,...snap};
+    }
     const text=JSON.stringify(snapshot);
     res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(text),'Cache-Control':'no-store','ETag':etag});
     return res.end(text);

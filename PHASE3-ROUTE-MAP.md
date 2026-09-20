@@ -893,3 +893,115 @@ plausible first-pass reply — isn't reducible to a rule. Everything else
 output and real data actually land in front of the owner at the moment
 it's useful, which is a precondition for AI feeling load-bearing rather
 than decorative anywhere in the product.
+
+## Login/startup performance investigation (measured, not guessed)
+
+Scope: real login/dashboard-boot latency, not architecture. No features
+added, nothing redesigned. Method: an instrumented Playwright + Chrome
+DevTools session (`perf-audit.js`, scratchpad root) against this exact
+codebase running locally — real `server.js`, real `app.js`, a fake
+Supabase stub so the *database* has near-zero latency. That measures
+every code-controlled number precisely (request counts, transferred
+bytes, ordering, main-thread long tasks) but **cannot** measure real
+Railway/Supabase network round-trip time, since this sandbox has no
+network path to the deployed app. Two viewports (1440×900 desktop,
+390×844 mobile) — numbers were identical between them, since none of
+what's measured here depends on viewport size.
+
+Real before/after, same seeded workspace (40 leads, 15 conversations,
+12 invoices, 8 appointments), same methodology both times:
+
+| Metric | Before | After |
+|---|---|---|
+| Bytes before login form usable | 522,627 B (510.4 KB) | 399,018 B (389.7 KB) |
+| Requests before login form usable | 6 | 6 |
+| Requests in the 6s after dashboard becomes usable | 8 (4 of them duplicate Twilio-status checks + 1 wasted full bootstrap re-fetch) | 4 |
+| Time: page load → login form usable (local, no real network latency) | ~170–190ms | ~180–190ms |
+| Time: click Sign In → dashboard usable (local, no real network latency) | ~95–120ms | ~100–110ms |
+
+The local click→dashboard timings didn't move because they were never
+the bottleneck *locally* — the fake database responds instantly, so
+there's nothing to speed up in this environment. What moved, and what
+matters once this runs against real Supabase/Railway: fewer requests,
+fewer bytes, and — the more important one — the elimination of a
+guaranteed wasted round trip that happens on every single login. Three
+real, verified causes were found and fixed:
+
+1. **Every first bootstrap call after login paid for a wasted query
+   round it could never use.** `GET /api/app/bootstrap` unconditionally
+   ran `workspaceFingerprint()` (14 queries) *before* checking whether
+   the client had even sent an `If-None-Match` header — but a request
+   with no prior ETag can never match one, so that whole round was
+   guaranteed dead weight precisely on the first bootstrap call after
+   every login and every plain page reload, the single most
+   latency-sensitive request in the app. Fixed in `server.js`: when
+   there's no `If-None-Match` to compare against, the fingerprint and
+   the full snapshot now run concurrently (`Promise.all`) instead of the
+   fingerprint gating the snapshot — same two query sets, one fewer
+   sequential round trip on the request that matters most.
+2. **The first 5-second live-refresh poll after every login always paid
+   full backend cost, even with nothing changed.** The ETag-conditional
+   polling added earlier only worked from the *second* poll onward:
+   `lastBootstrapETag` was only ever set inside `liveRefresh()` itself,
+   never captured from `bootstrap()`'s own response (the call that runs
+   on every login and every page load). So the very first 5-second tick
+   always sent no `If-None-Match` and got a full rebuild — confirmed
+   directly: a real 22,073-byte full bootstrap re-fetch measured 4987ms
+   after the dashboard became usable, exactly the 5-second poll
+   interval. Fixed by having `bootstrap()` capture its own response's
+   ETag too (`app.js`); the same poll now correctly gets a 304. Verified
+   gone in the after-run.
+3. **Three separate scripts independently checked the same Twilio status
+   on every login, with no idea the other two existed.**
+   `v36-connectors-client.js`, `v38-safe.js`, and
+   `v39-phone-setup-client.js` each fire their own
+   `/api/app/integrations/twilio/status` fetch on their own ~350–500ms
+   timer after the dashboard loads — measured as 3–4 near-simultaneous
+   duplicate requests for identical data on every single login (plus
+   `v38-safe.js` re-fetching it again on every calendar/inbox/payments/
+   integrations nav click, with no cache of its own at all). Fixed by
+   adding one shared, promise-deduplicated cache (`window.
+   getSharedTwilioStatus`, `app.js`) that all three now call instead of
+   fetching independently; the two call sites that mutate the connection
+   (connect/disconnect) explicitly force a fresh check afterward.
+   Confirmed: 4 duplicate calls → 1 in the after-run.
+4. **The login screen's logo and favicon were far larger than what's
+   ever displayed.** `siteremade-logo-black.png` is shown at `width:54px`
+   in CSS but shipped as a 473×519 source file (157KB); resized to
+   220×242 (comfortable for even a 4x-density display) and losslessly
+   recompressed → 41KB, zero visible difference (verified visually — a
+   palette-quantization pass was tried first for an even bigger win but
+   produced visible gradient banding on the logo's highlight and was
+   discarded). `favicon.png`'s 512×512 dimensions are a real requirement
+   (declared in `manifest.webmanifest` as the PWA icon size) so those
+   were kept; only lossless recompression was applied (159KB → 150KB).
+
+Verified as already correct, not touched: the dashboard's own core
+render already completes (and hides the auth screen) *before* the ~15
+secondary CSS/JS resources even start downloading — confirmed by the
+timing capture, where the dashboard-usable milestone lands at the exact
+instant those requests begin, not after. The 5-second live-refresh
+polling loop already only starts once the dashboard is visible, never
+before. None of the integrations/ads/analytics/website-projects feature
+scripts block the login→dashboard path — all of it was already gated to
+load only after successful auth, from an earlier optimization pass
+(commit `3dedb00`, prior to this session).
+
+**What this pass could not measure, and why:** real Railway response
+latency and real Supabase auth-service latency only exist against the
+actually-deployed infrastructure, which this sandbox has no network path
+to reach. `getAuthUser()` → profile lookup → `membershipsFor()` in
+`lib/context.js` is inherently 3 sequential dependent calls per
+authenticated request (each needs the previous one's result), run once
+during login and again during the immediately-following bootstrap call
+— structurally unavoidable for stateless cookie-based auth without a
+larger redesign, and almost certainly the dominant real-world
+contributor to "the dashboard takes 10-20 seconds" once real network
+latency (rather than a local zero-latency stub) is in the loop. This
+wasn't touched — it's not a bug, it's the cost of verifying a session on
+every request — but it's the most likely next thing to investigate with
+real production numbers once a deploy is possible.
+
+Full test suite (smoketest, e2e, ui, live-refresh-etag,
+backend-fingerprint, mobile-review) re-run and passing after every
+change in this section — no functional regressions.
