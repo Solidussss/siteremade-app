@@ -20,7 +20,8 @@ const registerers = [
   require('./analytics-bootstrap'),
   require('./umami-analytics'),
   require('./google-calendar'),
-  require('./legacy-twilio-inbound')
+  require('./legacy-twilio-inbound'),
+  require('./daily-workflow')
 ];
 
 function buildRouter() {
