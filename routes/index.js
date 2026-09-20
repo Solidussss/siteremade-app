@@ -19,7 +19,8 @@ const registerers = [
   require('./gmail-direct'),
   require('./analytics-bootstrap'),
   require('./umami-analytics'),
-  require('./google-calendar')
+  require('./google-calendar'),
+  require('./legacy-twilio-inbound')
 ];
 
 function buildRouter() {
