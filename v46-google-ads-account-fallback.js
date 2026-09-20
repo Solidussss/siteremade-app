@@ -9,6 +9,15 @@ async function patch(){if(busy)return;const select=$('#v44GoogleAccount');if(!se
 const usable=[...select.options].filter(o=>clean(o.value)&&clean(o.value)!==manager);const sig=usable.map(o=>o.value).join('|');const note=ensureNote(select);if(!usable.length){select.value='';select.disabled=true;select.options[0].textContent='No linked client ad accounts';note.innerHTML='<strong style="display:block;color:#2b2823;margin-bottom:4px">Google Ads is connected, but the manager has no client account linked yet.</strong>Your manager account is connected successfully. Link or create a client/test ad account under manager <b>'+fmt(manager)+'</b>, then click <b>Refresh accounts</b>. Manager accounts themselves cannot run campaigns, so SiteRemade will not treat the manager as a client account.';note.hidden=false;return}
 select.disabled=false;if(select.options[0])select.options[0].textContent='Choose account…';note.hidden=true;if(!select.value&&usable.length===1&&sig!==lastSig){lastSig=sig;select.value=usable[0].value;select.dispatchEvent(new Event('change',{bubbles:true}))}
 }catch(e){console.warn('Google Ads account fallback:',e.message)}finally{busy=false}}
-function install(){setTimeout(patch,900);document.addEventListener('click',e=>{if(e.target?.id==='v44LoadAccounts'||e.target?.closest?.('[data-view="admin"]'))setTimeout(patch,1200)});new MutationObserver(()=>{if($('#v44GoogleAccount'))setTimeout(patch,80)}).observe(document.documentElement,{subtree:true,childList:true})}
+// Main-thread hygiene pass: this used to schedule a real network fetch
+// (patch() -> getAccounts()) 80ms after EVERY childList mutation anywhere
+// in the document, as long as the select element existed anywhere in the
+// DOM — meaning every 5-second live-refresh tick (or any other view's
+// render) queued another Google Ads accounts request even while looking
+// at Leads or Inbox. Not an infinite loop (patch()'s own busy flag
+// prevents re-entry, and each individual call is cheap), just constant
+// unnecessary background fetches. Gated to only act while the admin view
+// is actually open, matching the same guard pattern used elsewhere.
+function install(){setTimeout(patch,900);document.addEventListener('click',e=>{if(e.target?.id==='v44LoadAccounts'||e.target?.closest?.('[data-view="admin"]'))setTimeout(patch,1200)});new MutationObserver(()=>{if(!document.querySelector('#view-admin')?.classList.contains('active'))return;if($('#v44GoogleAccount'))setTimeout(patch,80)}).observe(document.documentElement,{subtree:true,childList:true})}
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',install):install();
 })();
