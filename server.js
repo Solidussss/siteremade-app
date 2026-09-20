@@ -158,7 +158,7 @@ async function workspaceSnapshot(c){
 //     so that column alone is the fingerprint, no extra columns needed.
 async function workspaceFingerprint(wid){
   const countLatest=(table,ts)=>qc(db.from(table).select(`id,${ts}`,{count:'exact'}).eq('workspace_id',wid).order(ts,{ascending:false}).limit(1));
-  const countOnly=(table)=>qc(db.from(table).select('id',{count:'exact',head:true}).eq('workspace_id',wid));
+  const countOnly=(table,column='id')=>qc(db.from(table).select(column,{count:'exact',head:true}).eq('workspace_id',wid));
   const latestFundedAt=qc(db.from('ad_funds').select('id,funded_at',{count:'exact'}).eq('workspace_id',wid).not('funded_at','is',null).order('funded_at',{ascending:false}).limit(1));
   const [leads,convs,msgs,apps,activities,adSpend,adFunds,fundedAt,prospectViews,websiteUpdates,websiteProjects,invoices,autos,websiteAnalytics]=await Promise.all([
     countLatest('leads','updated_at'),
@@ -169,7 +169,7 @@ async function workspaceFingerprint(wid){
     countLatest('ad_spend','created_at'),
     countLatest('ad_funds','created_at'),
     latestFundedAt,
-    countOnly('prospect_views'),
+    countOnly('prospect_views','place_id'),
     countLatest('website_updates','updated_at'),
     countLatest('website_projects','updated_at'),
     q(db.from('invoices').select('id,status,paid_at').eq('workspace_id',wid)),
