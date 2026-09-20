@@ -402,3 +402,119 @@ body .workspace-option:hover,body .workspace-option.active{background:#24262f}
 @media(max-width:900px){
   body .nav-group-label{margin:2px 12px 5px}
 }
+
+/* ---- 19. Connected customer journey: Leads -> Inbox -> Calendar -> Payments
+   The backend already links these four screens through a single leadId
+   on conversations, appointments and invoices — and a real "customer
+   workflow" surface already exists (v41-experience.js's lead-drawer
+   timeline, inbox quick-actions, and calendar agenda; v17-client.js's
+   calendar-event lead-status coloring). None of that was invented here.
+   What was missing was making it LOOK like one connected system: a
+   consistent customer-identity mark across every screen, a real
+   click-through on the one screen that had none (Payments -> lead), and
+   one shared status-color vocabulary instead of two different ones that
+   happened to both exist.
+*/
+
+/* One identity mark everywhere a customer/lead appears: Leads table,
+   Inbox conversation list, Payments transactions. Tinted instead of
+   flat gray so it reads as "this is the same kind of thing" across
+   screens, not a decoration unique to one of them. */
+body .avatar{background:var(--accent-tint);color:var(--accent-ink);font-weight:800}
+body .customer-id{display:flex;align-items:center;gap:10px;min-width:0}
+body .customer-id>div{min-width:0}
+button.customer-id{border:0;background:transparent;padding:0;text-align:left;font:inherit;cursor:pointer;color:inherit}
+body .customer-id-link{transition:opacity .12s var(--ease)}
+body .customer-id-link:hover{opacity:.68}
+body .customer-id-link strong{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px}
+body .customer-id-link:hover strong{text-decoration-color:currentColor}
+
+/* Payments: the transaction row now matches the same identity + status-
+   chip language as everywhere else, and the one row type that ISN'T a
+   customer (ad platform funding, no leadId) keeps the plain icon so it
+   doesn't falsely imply a customer relationship that doesn't exist. */
+body .transaction-list>div{align-items:center}
+body #adFundHistory .payment-icon{background:var(--accent-tint);color:var(--accent-ink)}
+
+/* Calendar: align the existing lead-status coloring (v17.css /
+   v17-client.js's applyCalendarLeadStatus) onto the SAME semantic colors
+   the rest of the app uses for the same statuses, instead of a second,
+   independently-invented 5-color mapping that put Contacted and Quoted
+   in swapped colors from the status pills everywhere else — a real
+   cross-screen inconsistency, not just a palette refresh. */
+body .calendar-event.lead-status-new{background:var(--accent-tint);border-color:#dce3ff}
+body .calendar-event.lead-status-new:before{background:var(--accent)}
+body .calendar-event.lead-status-contacted{background:var(--warning-tint);border-color:#f3e3bd}
+body .calendar-event.lead-status-contacted:before{background:var(--warning)}
+body .calendar-event.lead-status-quoted{background:#f2eeff;border-color:#e3d9fa}
+body .calendar-event.lead-status-quoted:before{background:#6a49b8}
+body .calendar-event.lead-status-won{background:var(--success-tint);border-color:#cfeede}
+body .calendar-event.lead-status-won:before{background:var(--success)}
+body .calendar-event.lead-status-lost{background:var(--danger-tint);border-color:#f3cac4}
+body .calendar-event.lead-status-lost:before{background:var(--danger)}
+
+/* Lead drawer: the customer workflow panel (conversation/booking/invoice
+   summary + merged activity timeline) becomes the flagship surface it
+   already deserved to be — this is the one place in the product that
+   already proves the "one customer journey" idea functionally; it just
+   looked like a generic gray box before. */
+body .v41-lead-workflow{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
+body .v41-head strong{font-family:var(--font-display);font-weight:560;font-size:17px}
+body .v41-state{background:var(--accent-tint);color:var(--accent-ink);font-weight:800}
+body .v41-summary article{background:var(--surface-sunken);border-color:var(--line)}
+body .v41-actions button:first-child,body .v41-agenda-head button,body .v41-inbox-actions button:first-child{background:var(--ink-900);border-color:var(--ink-900)}
+/* Timeline: a real connecting line between events (one continuous
+   journey, not a bare list) with a distinct color per event kind. */
+body .v41-timeline{position:relative}
+body .v41-event{position:relative;padding-left:4px}
+body .v41-event:not(:last-child):after{content:"";position:absolute;left:3px;top:16px;bottom:-8px;width:1px;background:var(--line)}
+body .v41-event i{width:16px;height:16px;border-radius:50%;font-style:normal;font-size:8px;display:flex;align-items:center;justify-content:center;margin-top:0;background:var(--surface-sunken);color:var(--ink-500);position:relative;z-index:1}
+body .v41-event[data-kind="lead"] i{background:var(--accent-tint);color:var(--accent-ink)}
+body .v41-event[data-kind="message"] i{background:var(--accent-tint);color:var(--accent-ink)}
+body .v41-event[data-kind="appointment"] i{background:#f2eeff;color:#6a49b8}
+body .v41-event[data-kind="invoice"] i{background:var(--success-tint);color:var(--success)}
+body .v41-event[data-kind="note"] i{background:var(--warning-tint);color:var(--warning)}
+
+/* Inbox + Calendar quick-actions (v41-inbox-actions / v41-agenda) — same
+   flagship top-hairline as the lead-drawer workflow panel, so the same
+   "customer workflow" visual language appears on all three screens. */
+body .v41-agenda{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
+body .v41-agenda-head strong{font-family:var(--font-display);font-weight:560}
+body .v41-agenda-list>button{background:var(--surface-sunken);border-color:var(--line);transition:border-color .12s var(--ease)}
+body .v41-agenda-list>button:hover{border-color:var(--line-strong)}
+body .v41-inbox-actions{border-top-color:var(--line)}
+
+@media(max-width:640px){
+  body .customer-id{gap:8px}
+}
+
+/* Payments: #transactionList rows dropped the old generic .payment-icon
+   glyph in favor of the customer avatar (the avatar now does that job,
+   more usefully) — but app.css's grid-template-columns/areas for
+   .transaction-list>div were written assuming a fixed 6-column layout
+   with a leading icon column and a bare <strong> as the row's 2nd direct
+   child. Losing that column silently shifted every subsequent cell over
+   by one, which visually overlapped the customer name with the
+   description text. #adFundHistory rows are untouched (still render the
+   original icon+strong structure) and keep app.css's layout as-is; this
+   override is scoped to #transactionList only. */
+body #transactionList>div{grid-template-columns:minmax(170px,1.2fr) minmax(140px,1.4fr) auto auto 34px}
+body #transactionList>div .customer-id strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:900px){
+  body #view-payments #transactionList>div{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) auto!important;
+    grid-template-areas:
+      "customer amount"
+      "description description"
+      "status delete";
+    gap:6px 10px!important;
+    align-items:center;
+    padding:14px 0!important;
+  }
+  body #view-payments #transactionList>div .customer-id{grid-area:customer;font-size:11px}
+  body #view-payments #transactionList>div>span{grid-area:description!important;display:block!important;font-size:9px}
+  body #view-payments #transactionList>div em{grid-area:amount;font-size:11px;justify-self:end}
+  body #view-payments #transactionList>div select{grid-area:status!important;width:max-content;max-width:150px}
+  body #view-payments #transactionList>div .transaction-delete{grid-area:delete!important;justify-self:end}
+}

@@ -273,7 +273,52 @@ changes at any step — this is the presentation layer only.
       leftover from the audit) onto a proper `.selected` class with a
       real tinted-background + left-accent-bar treatment. Both panels
       get the flagship top-hairline treatment from Step 1, extended.
-- [ ] Step 4 — Leads/Inbox/Calendar/Payments connective-journey cues
+- [x] Step 4 — Leads/Inbox/Calendar/Payments connected customer journey.
+      The backend already links these four screens through real fields
+      (`conversation.leadId`, `appointment.leadId`, `invoice.leadId`) that
+      nothing in the UI surfaced — this step makes those existing
+      relationships visible rather than inventing new ones. Four changes:
+      (1) **consistent customer identity** — Leads' table and Payments'
+      transaction rows now use the same avatar-initial + name treatment
+      Inbox already had, so the same person looks like the same person
+      wherever they appear; (2) **the one real missing link** — Payments
+      had no way back to the customer record despite `invoice.leadId`
+      existing on every customer invoice; a customer-id is now a button
+      (`data-open-invoice-lead`) that switches to Leads and opens that
+      lead's drawer, wired only where a leadId is actually present (the
+      ad-fund-history rows, which have no lead relationship, were left
+      exactly as they were — no invented link); (3) **status-color
+      realignment** — the calendar's lead-status event colors
+      (`v17-client.js`'s existing `applyCalendarLeadStatus()`) used a
+      different Contacted/Quoted color mapping than the status-pill
+      system everywhere else; both now draw from the same semantic
+      tokens, so a lead's status reads as the same color on the Leads
+      table, the lead drawer, and the calendar; (4) **a real timeline
+      instead of a generic list** — the lead drawer's customer-history
+      feed (`v41-experience.js`'s `activityForLead`/`paintLeadWorkflow`)
+      now tags each event with a `kind` (lead/message/appointment/
+      invoice/note), renders a distinct icon+color per kind, and draws a
+      connecting line down the timeline, so "conversation → booking →
+      invoice" reads as one continuous thread instead of a flat list. The
+      lead-drawer workflow panel and the calendar's agenda panel also
+      picked up the same flagship top-hairline treatment as Overview's
+      attention list and Website Projects' panels, for visual continuity
+      across the whole journey. One real regression was caught and fixed
+      during verification, not just eyeballed: removing Payments' old
+      generic `.payment-icon` glyph in favor of the customer avatar
+      silently shifted every other cell in `.transaction-list`'s
+      implicit 6-column grid over by one, overlapping the customer name
+      on top of the description text (app.css's grid — and its <900px
+      named-grid-area variant — assumed a fixed 6-child row shape with a
+      bare `<strong>` as the row's 2nd direct child). Fixed with a
+      `#transactionList`-scoped override in design-system.css for both
+      the desktop grid and the <900px card layout; `#adFundHistory`
+      (unchanged template, still has its own icon) was left untouched.
+      Verified against the full existing test suite (smoketest/e2e/ui/
+      mobile/live-refresh/fingerprint, all passing) plus visual
+      screenshot review — including the Payments→Lead click-through
+      itself — at desktop and 390px mobile, both before and after the
+      transaction-list fix.
 - [ ] Step 5 — deeper Growth / Configuration / Admin identity work beyond
       the accent-tint/quieter-type pass already applied
 - [ ] Step 6 — inline-styled JS renderer conversion (`v40-existing-number-
