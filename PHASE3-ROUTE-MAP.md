@@ -792,3 +792,104 @@ actually checks per its own file header — so the assertion now accepts
 either, rather than pinning to the stub's specific (and not
 production-representative) auth-failure path. No `server.js` or
 `fake-supabase` code changed; this was a test-assertion fix only.
+
+## Product-experience review: next highest-impact changes (report only, item 8)
+
+Per the brief, this is analysis only — nothing below was implemented.
+Goal per the brief: not "a CRM with lots of tabs" but a system that
+actively tells the owner what matters right now. A code survey of the
+dashboard, lead model, daily-workflow feature, automations, entity
+relationships, and existing AI usage grounds the following instead of
+guessing. Ranked by impact:
+
+1. **Give leads an actual priority signal, in the leads list itself.**
+   Today `leads` has no score/urgency field at all, and the leads list
+   has no sort control — it's just status-tab + text search, in
+   whatever order the backend returns. Meanwhile *two separate places*
+   (the "Ask SiteRemade" assistant and the dashboard's attention widget)
+   already independently compute "stale, no reply in N days" for their
+   own private purposes and throw it away afterward. Compute that once,
+   store it (or derive it consistently) and surface it as a badge/sort
+   in the leads list itself — where an owner actually works — not just
+   in a sidebar widget they may not open. Rule-based, not AI; highest
+   ratio of impact to effort of anything here.
+2. **Promote the "attention items" list from a bolt-on to the front
+   door.** `v42-daily-workflow.js`'s "N things worth handling" is the
+   one genuinely proactive thing in the app today, but it's a
+   monkey-patch that overrides the dashboard's render function after
+   the fact, and its follow-ups are hand-typed via a browser `prompt()`.
+   Rebuilding it as a first-class, system-owned queue (not a patch) is
+   what "operating system, not tabs" actually requires structurally —
+   everything else on this list feeds it.
+3. **Close the "paid but nothing happens" gap.** Confirmed in
+   `server.js`: a Stripe-paid invoice only flips its own `status` and
+   logs an activity entry — it never touches the linked lead or website
+   project. An owner has to remember, separately, to update the lead's
+   stage or the project's status by hand. This is the single most
+   concrete "manual handoff" in the product and the most literal reading
+   of "connecting leads → projects → payments" — a paid invoice should
+   at minimum be able to advance its linked project/lead automatically.
+4. **Close the reverse gap: delivering a project doesn't ask for
+   payment.** Marking a website project "Delivered" and creating its
+   invoice are two unrelated button clicks today, in two different
+   parts of the app, with nothing connecting them. A prompt ("This
+   project is now delivered — send the invoice?") at the moment of
+   delivery turns a step an owner can simply forget into one they're
+   asked about at the moment it matters. Still a human decision — just
+   removes the burden of remembering to ask it.
+5. **Surface the relationships the data model already has.** The lead
+   drawer shows notes and one project button, but not that lead's
+   appointments or invoices. A website project's detail shows the
+   lead's name as inert text, not a link into their conversation or
+   status. The payments list doesn't show which project an invoice is
+   for, despite `invoices.project_id` existing. None of this needs new
+   data — it's display work on relationships that are already there,
+   and it's exactly what makes leads/projects/payments/conversations
+   feel like one customer record instead of four separate screens an
+   owner has to mentally reassemble.
+6. **Turn "Ask SiteRemade" from a read-only text box into something
+   actionable.** It already computes real, useful things (which leads
+   are stale, what's due) via a real model call — but its answer is
+   plain text with no link back into the entity it's talking about. An
+   owner reading "Sarah's lead has gone quiet" still has to go find
+   Sarah themselves. Making its references clickable (open that lead's
+   drawer) is a small change that converts existing AI output from
+   decorative summary into something that actually saves a step.
+7. **AI-drafted inbox replies.** The app already has a working AI layer
+   (the receptionist model call, the business assistant, the brief
+   generator) but Inbox reply composition today is 100% manual typing —
+   the one place a busy owner spends the most real-time attention. A
+   "suggest a reply" affordance, reusing the same model-call
+   infrastructure that already exists, is a genuine case of "AI saves
+   real work" (drafting under time pressure) rather than a bolted-on
+   chat widget for its own sake.
+8. **Automation triggers beyond signup-time.** All three automations
+   (`lead-alert`, `lead-confirmation`, `appointment-reminder`) are fixed
+   at workspace creation with no way to add a rule and no cross-entity
+   triggers (invoice paid, project delivered, lead gone stale). Given
+   #3/#4 above will already need "when X happens, do/ask Y" plumbing,
+   generalizing that into a couple of new automation trigger types is a
+   natural, low-risk extension of a pattern the product already has,
+   rather than new architecture.
+9. **One combined view per customer.** Once #5 (link surfacing) exists,
+   the natural next step is a single "opportunity" or "client" view that
+   rolls up one customer's lead stage, project status, payment status,
+   and last conversation activity in one place, instead of four screens
+   an owner must click between and hold in their head. This is the
+   clearest concrete shape of "business operating system" the brief
+   describes, and it composes directly out of #3, #4 and #5 rather than
+   being a separate rebuild.
+
+**Where AI genuinely helps vs. would be decorative, explicitly:** #1
+(prioritization), #3/#4 (paid→project, delivered→invoice), and #8
+(automation triggers) are plain rule/data-flow logic and should stay
+that way — bolting a model onto "is this invoice paid" would be slower,
+less predictable, and no more correct than a status check. #6 (making
+existing AI-assistant output clickable) and #7 (drafted inbox replies)
+are the two spots where a model is already the right tool, because the
+task itself — summarizing an open-ended situation, drafting a
+plausible first-pass reply — isn't reducible to a rule. Everything else
+(#2, #5, #9) is structural/UI work that makes the existing real AI
+output and real data actually land in front of the owner at the moment
+it's useful, which is a precondition for AI feeling load-bearing rather
+than decorative anywhere in the product.
