@@ -37,7 +37,7 @@ function loadDashboardFeatureScripts(){
     document.body.appendChild(s);
   });
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase'))qs('#loginStatus').textContent=e.message;console.error(e);return false;}}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
@@ -73,7 +73,7 @@ function renderDashboard(){
   const period=qs('#leadMetricPeriod');if(period)period.textContent=`LAST ${days} DAYS`;
   const trend=qs('#leadTrend');if(trend){let label='→ 0%',cls='neutral';if(previous.length===0&&current.length>0){label='↗ NEW';cls='positive';}else if(previous.length>0){const pct=Math.round(((current.length-previous.length)/previous.length)*100);if(pct>0){label=`↗ ${pct}%`;cls='positive';}else if(pct<0){label=`↓ ${Math.abs(pct)}%`;cls='negative';}else label='→ 0%';}trend.textContent=label;trend.className=`trend ${cls}`;}
   qs('#metricAppointments').textContent=upcoming.length;qs('#appointmentMeta').textContent=upcoming.length?`Next: ${upcoming[0].title} · ${dateTimeLabel(upcoming[0].start)}`:'No upcoming appointments';
-  const convWithReplies=state.conversations.filter(c=>c.messages?.length>1);qs('#metricResponse').textContent=convWithReplies.length?`${Math.round(convWithReplies.reduce((sum,c)=>{const m=c.messages;return sum+Math.max(1,(new Date(m[1].createdAt)-new Date(m[0].createdAt))/60000)},0)/convWithReplies.length)}m`:'—';
+  const convWithReplies=state.conversations.filter(c=>c.messages?.length>1);qs('#metricResponse').textContent=convWithReplies.length?`${Math.round(convWithReplies.reduce((sum,c)=>{const m=c.messages;return sum+Math.max(1,(new Date(m[1].createdAt)-new Date(m[0].createdAt))/60000)},0)/convWithReplies.length)}m`:'—';const responseMeta=qs('#responseMeta');if(responseMeta)responseMeta.textContent=convWithReplies.length?`Across ${convWithReplies.length} repl${convWithReplies.length===1?'y':'ies'}`:'Not enough replies yet to measure';
   qs('#metricValue').textContent=money(wonValue);qs('#valueMeta').textContent=`From ${won.length} won opportunit${won.length===1?'y':'ies'}`;const newLeadCount=state.leads.filter(l=>l.status==='New').length;const leadBadge=qs('#leadBadge');if(leadBadge){leadBadge.textContent=newLeadCount;leadBadge.style.display=newLeadCount?'grid':'none';}
   renderRecent();renderPipeline();renderActivity();renderBars();
 }
@@ -124,6 +124,177 @@ function renderWebsiteUpdates(){
 // Revisions and client feedback share the website_updates table with the legacy
 // general-request flow above (see server.js mapProject/mapWebsiteUpdate).
 const PROJECT_STATUSES=['Intake','Brief Ready','Building','Review','Delivered'];
+// Website Projects structured intake/brief (product-experience pass): the
+// intake and brief data shapes stored by the backend are unchanged — these
+// are just pick-lists that make filling them in faster than typing free
+// text, with a "Custom…"/typed fallback everywhere so nothing is a closed
+// list. See PHASE3-ROUTE-MAP.md for why this page needed the rework.
+const PROJECT_STYLE_PRESETS=['Modern & minimal','Bold & editorial','Warm & approachable','Corporate & professional','Luxury & refined','Rustic & handcrafted','Playful & vibrant'];
+const PROJECT_SECTION_PRESETS=['Home','About','Services','Gallery / Portfolio','Testimonials','FAQ','Service Area','Pricing','Contact','Blog'];
+const PROJECT_COLOR_PRESETS=['#0d0e11','#315cff','#14865d','#b67716','#c54747','#7750b8','#1c1c1c','#ffffff'];
+function styleFieldHtml(idPrefix,current){
+  const isPreset=PROJECT_STYLE_PRESETS.includes(current);
+  return `<label>Style / direction<select id="${idPrefix}Select">
+    <option value="">Choose a style…</option>
+    ${PROJECT_STYLE_PRESETS.map(s=>`<option ${s===current?'selected':''}>${esc(s)}</option>`).join('')}
+    <option value="__custom__" ${current&&!isPreset?'selected':''}>Custom…</option>
+  </select></label>
+  <label class="wide-field" id="${idPrefix}CustomWrap" style="${current&&!isPreset?'':'display:none'}">Custom style description<input id="${idPrefix}CustomInput" value="${esc(!isPreset?(current||''):'')}" /></label>`;
+}
+function wireStylePicker(idPrefix){
+  const sel=qs('#'+idPrefix+'Select');if(!sel)return;
+  sel.onchange=()=>{const wrap=qs('#'+idPrefix+'CustomWrap');if(wrap)wrap.style.display=sel.value==='__custom__'?'':'none';};
+}
+function collectStyle(idPrefix){
+  const sel=qs('#'+idPrefix+'Select');if(!sel)return'';
+  return sel.value==='__custom__'?(qs('#'+idPrefix+'CustomInput')?.value||'').trim():sel.value;
+}
+function colorChipHtml(c,readOnly){return `<span class="color-chip" data-color-chip="${esc(c)}"><i style="background:${esc(c)}"></i>${esc(c)}${readOnly?'':'<button type="button" class="chip-remove" data-remove-color>×</button>'}</span>`;}
+function colorPickerHtml(idPrefix,colors=[]){
+  return `<div class="chip-row" id="${idPrefix}Chips">${colors.map(c=>colorChipHtml(c)).join('')}</div>
+    <div class="color-picker-row">
+      ${PROJECT_COLOR_PRESETS.map(c=>`<button type="button" class="color-swatch-button" style="background:${c}" data-add-color="${idPrefix}" data-color="${c}" title="${c}"></button>`).join('')}
+      <span class="custom-color-row"><input type="color" id="${idPrefix}CustomInput" value="#315cff" /><button type="button" class="secondary-button" data-add-custom-color="${idPrefix}">Add</button></span>
+    </div>`;
+}
+function wireColorRemoveButtons(idPrefix){
+  const host=qs('#'+idPrefix+'Chips');if(!host)return;
+  host.querySelectorAll('[data-remove-color]').forEach(btn=>btn.onclick=()=>btn.closest('.color-chip').remove());
+}
+function addColorChip(idPrefix,color){
+  const host=qs('#'+idPrefix+'Chips');if(!host||!color)return;
+  if([...host.querySelectorAll('[data-color-chip]')].some(c=>c.dataset.colorChip.toLowerCase()===color.toLowerCase()))return;
+  host.insertAdjacentHTML('beforeend',colorChipHtml(color));
+  wireColorRemoveButtons(idPrefix);
+}
+function wireColorPicker(idPrefix){
+  qsa(`[data-add-color="${idPrefix}"]`).forEach(btn=>btn.onclick=()=>addColorChip(idPrefix,btn.dataset.color));
+  const addCustom=qs(`[data-add-custom-color="${idPrefix}"]`);
+  if(addCustom)addCustom.onclick=()=>addColorChip(idPrefix,qs('#'+idPrefix+'CustomInput').value);
+  wireColorRemoveButtons(idPrefix);
+}
+function collectColors(idPrefix){
+  const host=qs('#'+idPrefix+'Chips');if(!host)return[];
+  return [...host.querySelectorAll('[data-color-chip]')].map(c=>c.dataset.colorChip);
+}
+function customChipHtml(attr,s){return `<span class="color-chip" data-${attr}="${esc(s)}">${esc(s)}<button type="button" class="chip-remove" data-remove-${attr}>×</button></span>`;}
+function sectionsPickerHtml(idPrefix,selected=[]){
+  const customOnes=selected.filter(s=>!PROJECT_SECTION_PRESETS.includes(s));
+  return `<div class="chip-row" id="${idPrefix}Presets">${PROJECT_SECTION_PRESETS.map(s=>`<button type="button" class="option-chip ${selected.includes(s)?'selected':''}" data-toggle-section="${idPrefix}" data-section="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <div class="chip-row" id="${idPrefix}Custom">${customOnes.map(s=>customChipHtml('custom-section',s)).join('')}</div>
+    <div style="display:flex;gap:6px;margin-top:6px"><input id="${idPrefix}CustomInput" placeholder="Add a custom section" style="flex:1;border:1px solid var(--line);border-radius:11px;padding:9px 11px" /><button type="button" class="secondary-button" data-add-custom-section="${idPrefix}">Add</button></div>`;
+}
+function wireCustomSectionRemove(idPrefix){
+  const host=qs('#'+idPrefix+'Custom');if(!host)return;
+  host.querySelectorAll('[data-remove-custom-section]').forEach(btn=>btn.onclick=()=>btn.closest('.color-chip').remove());
+}
+function wireSectionsPicker(idPrefix){
+  qsa(`[data-toggle-section="${idPrefix}"]`).forEach(btn=>btn.onclick=()=>btn.classList.toggle('selected'));
+  const addCustom=qs(`[data-add-custom-section="${idPrefix}"]`);
+  if(addCustom)addCustom.onclick=()=>{
+    const input=qs('#'+idPrefix+'CustomInput'),v=(input.value||'').trim();if(!v)return;
+    const host=qs('#'+idPrefix+'Custom');
+    if([...host.querySelectorAll('[data-custom-section]')].some(c=>c.dataset.customSection.toLowerCase()===v.toLowerCase())){input.value='';return;}
+    host.insertAdjacentHTML('beforeend',customChipHtml('custom-section',v));
+    wireCustomSectionRemove(idPrefix);input.value='';
+  };
+  wireCustomSectionRemove(idPrefix);
+}
+function collectSections(idPrefix){
+  const presets=qsa(`[data-toggle-section="${idPrefix}"].selected`).map(b=>b.dataset.section);
+  const customs=[...(qs('#'+idPrefix+'Custom')?.querySelectorAll('[data-custom-section]')||[])].map(c=>c.dataset.customSection);
+  return [...presets,...customs];
+}
+function briefListRowHtml(fields,item={}){
+  return `<div class="list-editor-row ${fields.length>1?'two-field':''}">
+    ${fields.map(f=>f.long?`<textarea data-f="${f.key}" rows="2" placeholder="${esc(f.placeholder||'')}">${esc(item[f.key]||'')}</textarea>`:`<input data-f="${f.key}" placeholder="${esc(f.placeholder||'')}" value="${esc(item[f.key]||'')}" />`).join('')}
+    <button type="button" class="list-editor-remove">×</button>
+  </div>`;
+}
+function briefListHtml(idPrefix,items,fields){
+  return `<div class="list-editor" id="${idPrefix}">${(items||[]).map(item=>briefListRowHtml(fields,item)).join('')}</div>
+    <button type="button" class="secondary-button list-editor-add" data-list="${idPrefix}">+ Add</button>`;
+}
+const BRIEF_LIST_FIELDS={
+  briefServicesList:[{key:'name',placeholder:'Service name'},{key:'description',placeholder:'Short description',long:true}],
+  briefFaqList:[{key:'question',placeholder:'Question'},{key:'answer',placeholder:'Answer',long:true}]
+};
+function wireBriefListEditors(){
+  qsa('.list-editor-remove').forEach(btn=>btn.onclick=()=>btn.closest('.list-editor-row').remove());
+  qsa('.list-editor-add').forEach(btn=>btn.onclick=()=>{
+    const fields=BRIEF_LIST_FIELDS[btn.dataset.list];if(!fields)return;
+    qs('#'+btn.dataset.list).insertAdjacentHTML('beforeend',briefListRowHtml(fields));
+    wireBriefListEditors();
+  });
+}
+function collectListItems(idPrefix){
+  const fields=BRIEF_LIST_FIELDS[idPrefix];
+  return qsa(`#${idPrefix} .list-editor-row`).map(row=>{
+    const obj={};fields.forEach(f=>{obj[f.key]=(row.querySelector(`[data-f="${f.key}"]`)?.value||'').trim();});
+    return obj;
+  }).filter(o=>Object.values(o).some(Boolean));
+}
+function linesToList(v){return String(v||'').split('\n').map(x=>x.trim()).filter(Boolean);}
+function briefEditorHtml(brief){
+  const b=brief&&Object.keys(brief).length?brief:{},sd=b.styleDirection||{},content=b.content||{},hero=content.hero||{},qform=content.quoteForm||{};
+  return `
+    <label class="wide-field">Summary<textarea id="briefSummary" rows="2" placeholder="A short summary of this website project">${esc(b.summary||'')}</textarea></label>
+    <label class="wide-field">Business positioning<textarea id="briefPositioning" rows="2" placeholder="How this business should be positioned">${esc(b.businessPositioning||'')}</textarea></label>
+    <p class="brief-subhead">Style direction</p>
+    ${styleFieldHtml('briefStyle',sd.style||'')}
+    <label>Visual tone<input id="briefVisualTone" value="${esc(sd.visualTone||'')}" placeholder="e.g. crisp, confident, calm" /></label>
+    <label>Typography<input id="briefTypography" value="${esc(sd.typography||'')}" placeholder="Font personality / hierarchy" /></label>
+    <label class="wide-field">Colors / branding${colorPickerHtml('briefColors',sd.colors||[])}</label>
+    <label class="wide-field">Layout guidance<textarea id="briefLayout" rows="2">${esc(sd.layout||'')}</textarea></label>
+    <label class="wide-field">Motion guidance<textarea id="briefMotion" rows="2">${esc(sd.motion||'')}</textarea></label>
+    <p class="brief-subhead">Hero section</p>
+    <label>Kicker<input id="briefHeroKicker" value="${esc(hero.kicker||'')}" /></label>
+    <label>Headline<input id="briefHeroHeadline" value="${esc(hero.headline||'')}" /></label>
+    <label class="wide-field">Subhead<textarea id="briefHeroSubhead" rows="2">${esc(hero.subhead||'')}</textarea></label>
+    <label>Primary CTA<input id="briefHeroPrimaryCta" value="${esc(hero.primaryCta||'')}" /></label>
+    <label>Secondary CTA<input id="briefHeroSecondaryCta" value="${esc(hero.secondaryCta||'')}" /></label>
+    <p class="brief-subhead">Services</p>
+    <label class="wide-field">${briefListHtml('briefServicesList',content.services||[],BRIEF_LIST_FIELDS.briefServicesList)}</label>
+    <p class="brief-subhead">Trust points (one per line)</p>
+    <label class="wide-field"><textarea id="briefTrust" rows="3" placeholder="Only points supported by the client's actual information">${esc((content.trust||[]).join('\n'))}</textarea></label>
+    <p class="brief-subhead">About</p>
+    <label class="wide-field"><textarea id="briefAbout" rows="3">${esc(content.about||'')}</textarea></label>
+    <p class="brief-subhead">FAQ</p>
+    <label class="wide-field">${briefListHtml('briefFaqList',content.faq||[],BRIEF_LIST_FIELDS.briefFaqList)}</label>
+    <p class="brief-subhead">Quote / contact form</p>
+    <label>Fields to collect (comma separated)<input id="briefQuoteFields" value="${esc((qform.fields||[]).join(', '))}" /></label>
+    <label class="wide-field">Intro copy<input id="briefQuoteIntro" value="${esc(qform.intro||'')}" /></label>
+    <p class="brief-subhead">Build rules (one per line)</p>
+    <label class="wide-field"><textarea id="briefBuildRules" rows="3">${esc((b.buildRules||[]).join('\n'))}</textarea></label>
+    <p class="brief-subhead">Avoid (one per line)</p>
+    <label class="wide-field"><textarea id="briefAvoid" rows="3" placeholder="Things that would make this feel cheap or generic">${esc((b.avoid||[]).join('\n'))}</textarea></label>
+  `;
+}
+function wireBriefEditor(){wireStylePicker('briefStyle');wireColorPicker('briefColors');wireBriefListEditors();}
+function collectBriefFromEditor(){
+  return {
+    summary:qs('#briefSummary').value.trim(),
+    businessPositioning:qs('#briefPositioning').value.trim(),
+    styleDirection:{style:collectStyle('briefStyle'),visualTone:qs('#briefVisualTone').value.trim(),colors:collectColors('briefColors'),typography:qs('#briefTypography').value.trim(),layout:qs('#briefLayout').value.trim(),motion:qs('#briefMotion').value.trim()},
+    content:{hero:{kicker:qs('#briefHeroKicker').value.trim(),headline:qs('#briefHeroHeadline').value.trim(),subhead:qs('#briefHeroSubhead').value.trim(),primaryCta:qs('#briefHeroPrimaryCta').value.trim(),secondaryCta:qs('#briefHeroSecondaryCta').value.trim()},services:collectListItems('briefServicesList'),trust:linesToList(qs('#briefTrust').value),about:qs('#briefAbout').value.trim(),faq:collectListItems('briefFaqList'),quoteForm:{fields:(qs('#briefQuoteFields').value||'').split(',').map(x=>x.trim()).filter(Boolean),intro:qs('#briefQuoteIntro').value.trim()}},
+    buildRules:linesToList(qs('#briefBuildRules').value),
+    avoid:linesToList(qs('#briefAvoid').value),
+    builderPrompt:qs('#projectBuilderPrompt')?.value||''
+  };
+}
+function briefSummaryReadOnlyHtml(brief){
+  const b=brief||{},sd=b.styleDirection||{},content=b.content||{},hero=content.hero||{};
+  const row=(label,val)=>val?`<div class="setting-row"><div><strong>${esc(label)}</strong><span>${esc(val)}</span></div></div>`:'';
+  return `
+    ${row('Summary',b.summary)}
+    ${row('Positioning',b.businessPositioning)}
+    ${row('Style',sd.style)}
+    ${(sd.colors||[]).length?`<div class="chip-row">${sd.colors.map(c=>colorChipHtml(c,true)).join('')}</div>`:''}
+    ${row('Headline',hero.headline)}
+    ${(content.services||[]).length?`<div class="setting-row"><div><strong>Services</strong><span>${esc(content.services.map(s=>s.name).filter(Boolean).join(', '))}</span></div></div>`:''}
+    ${(b.avoid||[]).length?`<div class="setting-row"><div><strong>Avoid</strong><span>${esc(b.avoid.join('; '))}</span></div></div>`:''}
+  `;
+}
 function findLeadWebsiteProject(leadId){return (state.websiteProjects||[]).find(p=>p.leadId===leadId);}
 function renderWebsiteProjects(){
   const rows=[...(state.websiteProjects||[])].sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));
@@ -149,64 +320,125 @@ function renderProjectDetail(){
   const intake=p.intake||{},vd=intake.visualDirection||{};
   if(state.user?.role==='owner'){
     host.innerHTML=`
-      <div class="settings-grid" style="grid-template-columns:1fr 1fr">
-        <div class="setting-row"><div><strong>Lead</strong><span>${esc(lead?.name||'—')}</span></div></div>
-        <div class="setting-row"><div><strong>Payment</strong><span>${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())} · ${p.payment?.invoiceCount||0} invoice(s)</span></div></div>
+      <div class="project-section">
+        <div class="settings-grid" style="grid-template-columns:1fr 1fr">
+          <div class="setting-row"><div><strong>Lead</strong><span>${esc(lead?.name||'—')}</span></div></div>
+          <div class="setting-row"><div><strong>Payment</strong><span>${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())} · ${p.payment?.invoiceCount||0} invoice(s)</span></div></div>
+        </div>
+        <label>Status<select id="projectStatusSelect">${PROJECT_STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></label>
       </div>
-      <label>Status<select id="projectStatusSelect">${PROJECT_STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></label>
-      <form id="projectIntakeForm" class="website-update-form" style="margin-top:12px">
-        <div class="panel-head" style="padding:0 0 8px"><div><p class="eyebrow">STRUCTURED INTAKE</p></div></div>
-        <label class="wide-field">Business identity<textarea name="businessIdentity" rows="2">${esc(intake.businessIdentity||'')}</textarea></label>
-        <label class="wide-field">Services<textarea name="services" rows="2">${esc(intake.services||'')}</textarea></label>
-        <label>Service area<input name="serviceArea" value="${esc(intake.serviceArea||'')}" /></label>
-        <label>Current website (if any)<input name="currentWebsiteUrl" value="${esc(intake.currentWebsiteUrl||'')}" /></label>
-        <label class="wide-field">Customer goals<textarea name="goals" rows="2">${esc(intake.goals||'')}</textarea></label>
-        <label class="wide-field">Desired pages / sections (comma separated)<input name="desiredPages" value="${esc((intake.desiredPages||[]).join(', '))}" /></label>
-        <label>Visual style<input name="visualStyle" value="${esc(vd.style||'')}" /></label>
-        <label>Colours (comma separated)<input name="visualColors" value="${esc((vd.colors||[]).join(', '))}" /></label>
-        <label>Typography<input name="visualTypography" value="${esc(vd.typography||'')}" /></label>
-        <label class="wide-field">Visual notes<textarea name="visualNotes" rows="2">${esc(vd.notes||'')}</textarea></label>
-        <label class="wide-field">Logo / asset links (comma separated)<input name="logoAssets" value="${esc((intake.logoAssets||[]).join(', '))}" /></label>
-        <label class="wide-field">Examples / references (comma separated)<input name="references" value="${esc((intake.references||[]).join(', '))}" /></label>
-        <label class="wide-field">Notes<textarea name="notes" rows="2">${esc(intake.notes||'')}</textarea></label>
-        <button class="primary-action" type="submit">Save intake</button>
-        <p class="modal-status" id="projectIntakeStatus"></p>
+      <form id="projectIntakeForm">
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">BUSINESS &amp; PROJECT</p><h3>What the site is for</h3></div></div>
+          <div class="website-update-form">
+            <label class="wide-field">Business identity<textarea name="businessIdentity" rows="2" placeholder="What this business does, who it's for">${esc(intake.businessIdentity||'')}</textarea></label>
+            <label>Current website (if any)<input name="currentWebsiteUrl" value="${esc(intake.currentWebsiteUrl||'')}" placeholder="https://…" /></label>
+            <label class="wide-field">Website goals<textarea name="goals" rows="2" placeholder="What should this site accomplish for the business?">${esc(intake.goals||'')}</textarea></label>
+          </div>
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">STYLE &amp; DIRECTION</p><h3>Look and feel</h3></div></div>
+          <div class="website-update-form">
+            ${styleFieldHtml('intakeStyle',vd.style||'')}
+            <label>Typography<input name="visualTypography" value="${esc(vd.typography||'')}" placeholder="e.g. clean sans-serif, editorial serif" /></label>
+            <label class="wide-field">Visual notes<textarea name="visualNotes" rows="2" placeholder="Anything else about the look and feel">${esc(vd.notes||'')}</textarea></label>
+          </div>
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">COLORS &amp; BRANDING</p><h3>Palette and logo</h3></div></div>
+          ${colorPickerHtml('intakeColors',vd.colors||[])}
+          <div class="website-update-form" style="margin-top:10px">
+            <label class="wide-field">Logo / asset links (comma separated)<input name="logoAssets" value="${esc((intake.logoAssets||[]).join(', '))}" placeholder="Links to logo files, brand guide, etc." /></label>
+          </div>
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">DESIRED SECTIONS</p><h3>Pages this site needs</h3></div></div>
+          ${sectionsPickerHtml('intakeSections',intake.desiredPages||[])}
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">SERVICES &amp; SERVICE AREA</p><h3>What they offer, and where</h3></div></div>
+          <div class="website-update-form">
+            <label class="wide-field">Services<textarea name="services" rows="2" placeholder="Services to feature on the site">${esc(intake.services||'')}</textarea></label>
+            <label>Service area<input name="serviceArea" value="${esc(intake.serviceArea||'')}" placeholder="Cities / region served" /></label>
+          </div>
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">ASSETS &amp; CONTENT</p><h3>What the client supplied</h3></div></div>
+          <div class="website-update-form">
+            <label class="wide-field">Examples / references (comma separated)<textarea name="references" rows="2" placeholder="Sites they like, for style reference">${esc((intake.references||[]).join(', '))}</textarea></label>
+          </div>
+        </div>
+        <div class="project-section">
+          <div class="project-section-head"><div><p class="eyebrow">ADDITIONAL INSTRUCTIONS</p></div></div>
+          <div class="website-update-form">
+            <label class="wide-field">Anything else the builder should know<textarea name="notes" rows="2">${esc(intake.notes||'')}</textarea></label>
+            <button class="primary-action" type="submit">Save intake</button>
+            <p class="modal-status" id="projectIntakeStatus"></p>
+          </div>
+        </div>
       </form>
-      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">BUILD BRIEF</p></div><button type="button" class="secondary-button" id="generateBriefButton">Generate with AI</button></div>
-      <textarea id="projectBriefText" rows="10" style="width:100%;font-family:monospace">${esc(JSON.stringify(p.brief&&Object.keys(p.brief).length?p.brief:{summary:''},null,2))}</textarea>
-      <label>Builder / export prompt<textarea id="projectBuilderPrompt" rows="4" style="width:100%">${esc(p.builderPrompt||'')}</textarea></label>
-      <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button type="button" class="secondary-button" id="saveBriefButton">Save brief</button>${(p.briefHistory||[]).length?`<span class="status-pill neutral">${p.briefHistory.length} PRIOR VERSION${p.briefHistory.length===1?'':'S'}</span>`:''}</div>
-      <p class="modal-status" id="projectBriefStatus"></p>
-      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">PREVIEW &amp; LIVE</p></div></div>
-      <div class="form-grid">
-        <label>Preview / review URL<input id="projectPreviewUrl" value="${esc(p.previewUrl||'')}" /></label>
-        <label>Live URL<input id="projectLiveUrl" value="${esc(p.liveUrl||'')}" /></label>
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">GENERATED BRIEF</p><h3>What the builder will work from</h3></div><button type="button" class="secondary-button" id="generateBriefButton">Generate with AI</button></div>
+        <div class="website-update-form" id="briefEditorHost">${briefEditorHtml(p.brief)}</div>
+        <label class="wide-field" style="margin-top:8px">Builder / export prompt<textarea id="projectBuilderPrompt" rows="4">${esc(p.builderPrompt||'')}</textarea></label>
+        <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+          <button type="button" class="secondary-button" id="saveBriefButton">Save brief</button>
+          <button type="button" class="json-toggle" id="briefJsonToggle">View/edit as raw JSON</button>
+        </div>
+        <textarea id="projectBriefText" rows="12" hidden style="width:100%;font-family:monospace">${esc(JSON.stringify(p.brief&&Object.keys(p.brief).length?p.brief:{summary:''},null,2))}</textarea>
+        <p class="modal-status" id="projectBriefStatus"></p>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
-        <button type="button" class="secondary-button" id="saveUrlsButton">Save URLs</button>
-        <button type="button" class="primary-action" id="markDeliveredButton" ${p.status==='Delivered'?'disabled':''}>${p.status==='Delivered'?'Delivered':'Mark delivered'}</button>
-        <button type="button" class="secondary-button" id="createProjectInvoiceButton">Create invoice for this project</button>
+      ${(p.briefHistory||[]).length?`
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">BRIEF HISTORY</p><h3>${p.briefHistory.length} prior version${p.briefHistory.length===1?'':'s'}</h3></div></div>
+        <div class="brief-history-list">${p.briefHistory.map(h=>`<details class="brief-history-item"><summary><strong>${esc(h.summary||'Untitled version')}</strong><span>Replaced ${dateTimeLabel(h._replacedAt)}</span></summary><div class="brief-history-body">${briefSummaryReadOnlyHtml(h)||'<p class="helper-copy">No details recorded for this version.</p>'}</div></details>`).join('')}</div>
+      </div>`:''}
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">PREVIEW &amp; LIVE URL</p></div></div>
+        <div class="form-grid">
+          <label>Preview / review URL<input id="projectPreviewUrl" value="${esc(p.previewUrl||'')}" /></label>
+          <label>Live URL<input id="projectLiveUrl" value="${esc(p.liveUrl||'')}" /></label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+          <button type="button" class="secondary-button" id="saveUrlsButton">Save URLs</button>
+          <button type="button" class="primary-action" id="markDeliveredButton" ${p.status==='Delivered'?'disabled':''}>${p.status==='Delivered'?'Delivered':'Mark delivered'}</button>
+          <button type="button" class="secondary-button" id="createProjectInvoiceButton">Create invoice for this project</button>
+        </div>
       </div>
-      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">CLIENT REVIEW</p></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div>
-      ${p.clientReviewFeedback?`<p class="helper-copy">Latest client feedback: ${esc(p.clientReviewFeedback)}</p>`:'<p class="helper-copy">No client feedback yet.</p>'}
-      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">ADD REVISION</p></div></div>
-      <form id="projectRevisionForm" class="website-update-form">
-        <label>Page<input name="page" placeholder="Home" /></label>
-        <label class="wide-field">What changed<textarea name="request" rows="2" required></textarea></label>
-        <button class="secondary-button" type="submit">Add revision</button>
-      </form>
-      <div class="panel-head" style="padding:16px 0 8px"><div><p class="eyebrow">HISTORY</p></div></div>
-      <div class="website-update-list">${(p.revisions||[]).length?p.revisions.map(r=>`<article class="website-update-item"><div class="website-update-top"><div><span class="website-update-page">${esc(r.kind)}</span><strong>${esc(r.request)}</strong></div></div><div class="website-update-meta"><span>${dateTimeLabel(r.createdAt)}</span></div></article>`).join(''):'<div class="empty-state">No revisions yet.</div>'}</div>
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">CLIENT REVIEW &amp; PROJECT STATUS</p></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div>
+        ${p.clientReviewFeedback?`<p class="helper-copy">Latest client feedback: ${esc(p.clientReviewFeedback)}</p>`:'<p class="helper-copy">No client feedback yet.</p>'}
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">ADD REVISION</p></div></div>
+        <form id="projectRevisionForm" class="website-update-form">
+          <label>Page<input name="page" placeholder="Home" /></label>
+          <label class="wide-field">What changed<textarea name="request" rows="2" required></textarea></label>
+          <button class="secondary-button" type="submit">Add revision</button>
+        </form>
+      </div>
+      <div class="project-section">
+        <div class="project-section-head"><div><p class="eyebrow">REVISIONS &amp; FEEDBACK</p></div></div>
+        <div class="website-update-list">${(p.revisions||[]).length?p.revisions.map(r=>`<article class="website-update-item"><div class="website-update-top"><div><span class="website-update-page">${esc(r.kind)}</span><strong>${esc(r.request)}</strong></div></div><div class="website-update-meta"><span>${dateTimeLabel(r.createdAt)}</span></div></article>`).join(''):'<div class="empty-state">No revisions yet.</div>'}</div>
+      </div>
     `;
+    wireStylePicker('intakeStyle');wireColorPicker('intakeColors');wireSectionsPicker('intakeSections');wireBriefEditor();
     qs('#projectStatusSelect').onchange=e=>patchProject(p.id,{status:e.target.value});
     qs('#projectIntakeForm').onsubmit=e=>{
       e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));
-      const intakePayload={businessIdentity:f.businessIdentity,services:f.services,serviceArea:f.serviceArea,currentWebsiteUrl:f.currentWebsiteUrl,goals:f.goals,desiredPages:(f.desiredPages||'').split(',').map(x=>x.trim()).filter(Boolean),visualDirection:{style:f.visualStyle,colors:(f.visualColors||'').split(',').map(x=>x.trim()).filter(Boolean),typography:f.visualTypography,notes:f.visualNotes},logoAssets:(f.logoAssets||'').split(',').map(x=>x.trim()).filter(Boolean),references:(f.references||'').split(',').map(x=>x.trim()).filter(Boolean),notes:f.notes};
+      const intakePayload={businessIdentity:f.businessIdentity,services:f.services,serviceArea:f.serviceArea,currentWebsiteUrl:f.currentWebsiteUrl,goals:f.goals,desiredPages:collectSections('intakeSections'),visualDirection:{style:collectStyle('intakeStyle'),colors:collectColors('intakeColors'),typography:f.visualTypography,notes:f.visualNotes},logoAssets:(f.logoAssets||'').split(',').map(x=>x.trim()).filter(Boolean),references:(f.references||'').split(',').map(x=>x.trim()).filter(Boolean),notes:f.notes};
       qs('#projectIntakeStatus').textContent='Saving…';patchProject(p.id,{intake:intakePayload},'#projectIntakeStatus');
     };
     qs('#generateBriefButton').onclick=()=>generateBrief(p.id);
+    qs('#briefJsonToggle').onclick=()=>{
+      const structured=qs('#briefEditorHost'),raw=qs('#projectBriefText');
+      if(raw.hidden){try{raw.value=JSON.stringify(collectBriefFromEditor(),null,2);}catch{}structured.hidden=true;raw.hidden=false;qs('#briefJsonToggle').textContent='Back to structured view';}
+      else{try{const parsed=JSON.parse(raw.value||'{}');structured.innerHTML=briefEditorHtml(parsed);wireBriefEditor();}catch{qs('#projectBriefStatus').textContent='That JSON could not be parsed — fix it or switch back without saving.';return;}structured.hidden=false;raw.hidden=true;qs('#briefJsonToggle').textContent='View/edit as raw JSON';}
+    };
     qs('#saveBriefButton').onclick=()=>{
-      let briefObj;try{briefObj=JSON.parse(qs('#projectBriefText').value||'{}');}catch{qs('#projectBriefStatus').textContent='Brief must be valid JSON.';return;}
+      let briefObj;
+      if(!qs('#projectBriefText').hidden){try{briefObj=JSON.parse(qs('#projectBriefText').value||'{}');}catch{qs('#projectBriefStatus').textContent='Brief must be valid JSON.';return;}}
+      else{briefObj=collectBriefFromEditor();}
       const builderPrompt=qs('#projectBuilderPrompt').value;
       patchProject(p.id,{brief:briefObj,builderPrompt},'#projectBriefStatus');
     };
@@ -394,7 +626,7 @@ qsa('[data-close]').forEach(b=>b.onclick=()=>hideModal(b.dataset.close));qsa('.m
 
 function renderWorkspaceMenu(){const menu=qs('#workspaceMenu');if(!menu)return;menu.innerHTML=(state.workspaces||[]).map(w=>`<button data-workspace="${w.id}" class="workspace-option ${w.id===state.workspace.id?'active':''}"><span>${esc(w.businessName)}</span><small>${esc(w.plan||'Client')}</small></button>`).join('');qsa('[data-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.workspace})});menu.hidden=true;await refreshLight();});}
 async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><span class="status-pill ${['active','trialing'].includes(w.siteRemadeSubscriptionStatus)?'':'neutral'}">${esc((w.siteRemadeSubscriptionStatus||'inactive').toUpperCase())}</span><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('home');});}catch{}}
-qs('#loginForm').onsubmit=async e=>{e.preventDefault();const out=qs('#loginStatus');out.textContent='Signing in…';try{await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});out.textContent='';if(await bootstrap())startLiveSync();}catch(err){out.textContent=err.message}};
+qs('#loginForm').onsubmit=async e=>{e.preventDefault();const out=qs('#loginStatus');out.style.color='';out.textContent='Signing in…';try{await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});out.textContent='';if(await bootstrap())startLiveSync();}catch(err){out.style.color='#c54747';out.textContent=err.message}};
 function setAuthMode(mode){const login=qs('#loginForm'),signup=qs('#signupForm'),a=qs('#showLogin'),b=qs('#showSignup');const isSignup=mode==='signup';login.hidden=isSignup;signup.hidden=!isSignup;a.classList.toggle('active',!isSignup);b.classList.toggle('active',isSignup);a.setAttribute('aria-selected',String(!isSignup));b.setAttribute('aria-selected',String(isSignup));}
 qs('#showLogin').onclick=()=>setAuthMode('login');
 qs('#showSignup').onclick=()=>setAuthMode('signup');
@@ -460,8 +692,8 @@ function installMetaAdsSetup(){
       <div style="display:grid;gap:10px">
         <p class="helper-copy" style="margin:0">Connect Facebook and Instagram advertising so SiteRemade can report spend, leads, cost per lead and attributed revenue beside Google Ads.</p>
         <div class="settings-grid" style="grid-template-columns:1fr 1fr">
-          <div class="setting-row"><div><strong>Meta App ID</strong><span>${meta.configured?'Configured in Railway':'Missing META_APP_ID'}</span></div></div>
-          <div class="setting-row"><div><strong>Meta App Secret</strong><span>${meta.configured?'Configured in Railway':'Missing META_APP_SECRET'}</span></div></div>
+          <div class="setting-row"><div><strong>Meta App ID</strong><span>${meta.configured?'Configured':'Not provided yet'}</span></div></div>
+          <div class="setting-row"><div><strong>Meta App Secret</strong><span>${meta.configured?'Configured':'Not provided yet'}</span></div></div>
         </div>
         <div class="setting-row">
           <div><strong>OAuth callback</strong><span>https://app.siteremade.com/api/app/meta-ads/callback</span></div>
@@ -473,7 +705,7 @@ function installMetaAdsSetup(){
           <button type="button" class="primary-action" ${meta.configured?'':'disabled'} id="metaAdsConnectButton">${meta.configured?'Connect Meta Ads':'Add Meta credentials first'}</button>
           <button type="button" class="secondary-button" id="metaAdsRefreshButton">Refresh status</button>
         </div>
-        <p class="modal-status" id="metaAdsSetupStatus">${meta.configured?'Meta app credentials detected. OAuth/account connection can be enabled next.':'Railway is missing META_APP_ID and META_APP_SECRET, so Meta cannot authorize yet.'}</p>
+        <p class="modal-status" id="metaAdsSetupStatus">${meta.configured?'Meta app credentials detected. OAuth/account connection can be enabled next.':'Meta advertising credentials haven’t been added yet, so this can’t connect until they are.'}</p>
       </div>`;
     qs('#metaAdsRefreshButton')?.addEventListener('click',paintMetaSetup);
     qs('#metaAdsConnectButton')?.addEventListener('click',()=>{

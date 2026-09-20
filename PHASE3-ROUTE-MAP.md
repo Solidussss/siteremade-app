@@ -441,6 +441,99 @@ longer throws" isn't the same as "it makes sense once it's live":
 `ui-test.js`'s error allowlist for this specific "wait is not defined"
 message has been removed now that the fix means it can't occur.
 
+## Live-refresh backend cost (product-experience pass)
+
+The previous pass put an ETag on `GET /api/app/bootstrap` so an unchanged
+5-second poll returns an empty 304 instead of the full payload — a real
+win for network and re-render cost, but it was explicitly flagged as
+**not** touching backend cost, because computing that ETag still required
+running the full `workspaceSnapshot()` — 13 Supabase queries, six of them
+unbounded or capped at 200-5000 rows — before the server could even tell
+whether anything had changed. Every 5-second poll paid that cost, changed
+or not.
+
+`workspaceFingerprint(wid)` (`server.js`) now answers "did anything
+change" first, using a cheap, targeted signal per table instead of
+fetching every row:
+
+- **leads, conversations, website_updates, website_projects** — each has
+  a real `updated_at` column that every `update()` call against it in
+  this codebase already sets (checked every call site, not assumed), and
+  insert/delete change the row count. Row count + the single most-recent
+  `updated_at` can't miss a change.
+- **messages, appointments, activities, ad_spend** — insert/delete only;
+  no update touches a field the client ever sees (an appointment's
+  `reminder_sent_at` isn't in `mapAppointment`). Row count + most-recent
+  `created_at` is enough.
+- **ad_funds** — same idea, plus a second cheap check on the most recent
+  non-null `funded_at`, because a fund request can flip Pending → Funded
+  long after a newer request was created, which wouldn't move the count
+  or the created_at watermark on its own.
+- **prospect_views** — insert-only and already projected down to just
+  `place_id` in the real snapshot; a bare row count needs no data at all.
+- **invoices, automations** — the two exceptions. Neither table has an
+  `updated_at` column, and both can change in place without moving any
+  timestamp: the Payments screen lets an owner set an invoice to *any*
+  status by hand (not just Paid — Draft/Pending/Void are all one dropdown
+  away), and toggling an automation just flips a boolean with no
+  timestamp column to bump at all. Rather than add a schema column and
+  depend on a migration nobody can verify against real production data
+  yet (the same caution V48 already got), these two are read in full on
+  every poll — but projected to just the 2-3 columns that are actually
+  mutable, not every column. Both tables are small and bounded in
+  practice (automations is a fixed handful of rows; invoices scale with
+  real business volume, not with polling), so this wasn't the cost
+  problem to begin with.
+- **website_analytics** — a single row per workspace whose one write path
+  (`routes/umami-analytics.js`) always bumps its own `updated_at`, so
+  that column alone is the whole check.
+
+When the fingerprint hash matches the client's `If-None-Match`, the
+handler returns 304 **without ever calling `workspaceSnapshot()`**. When
+it doesn't, it falls through to the exact same full rebuild as before —
+freshness on a real change is identical to today; only the cost of an
+*unchanged* poll is different.
+
+**Correctness risk and how it was tested:** the whole point of a
+fingerprint is that it must never go stale, or another open tab/device
+silently stops seeing real changes. `backend-fingerprint-test.js` proves
+the three specific gaps this design had to close, each verified against
+the real route logic (not a reimplementation):
+- toggling an automation (no timestamp column, no count change) still
+  invalidates the fingerprint;
+- editing an invoice to **Void** — not Paid, so `paid_at` never moves —
+  still invalidates it;
+- marking the **older** of two ad-fund requests as Funded (no new row,
+  count and latest-`created_at` both unchanged) still invalidates it.
+
+All three would have been silently missed by a naive count-only or
+count+`updated_at`-only design, which is why invoices and automations get
+the narrower full-column read instead of being folded into the same
+count/timestamp pattern as everything else.
+
+**Before/after, measured** by that same test against a seeded workspace
+(50 leads, 12 invoices, 3 automations, 30 activities, 2 ad-fund requests):
+
+| | queries | rows returned | bytes on the wire |
+|---|---|---|---|
+| Every poll, old behavior (= any poll with a real change, still today) | 29 | 117 | 24,549 |
+| Unchanged poll, new behavior | 16 | 20 | 0 (304) |
+
+Rows returned on an unchanged poll dropped ~83%, and the large/unbounded
+tables (leads, activities, and anything with real message/note text)
+contribute zero rows instead of all of them. Query *count* drops too in
+this run (16 vs 29) but that's a secondary effect of skipping
+`workspaceSnapshot()` entirely, not the primary goal — a genuinely
+different signal per table still means one lightweight round trip per
+table either way. A single-round-trip check (one Postgres function call
+instead of ~13) is possible but would need a new schema object deployed
+and verified against real production data first, which is exactly the
+kind of unverified-migration risk this pass is deliberately avoiding.
+
+No client-side change was needed — `app.js`'s `liveRefresh()` already
+sends `If-None-Match` and already handles a 304 from the previous pass;
+this fix is entirely inside the bootstrap route.
+
 ## App experience review (real-user walkthrough, no redesign)
 
 Walked the app as a first-time owner would, using a realistically seeded
@@ -520,3 +613,283 @@ Other findings, roughly in order of how visible they are:
 
 None of the above were fixed in this pass — per the brief, this is a
 report of what a real user would notice, not a redesign.
+
+## Integrations: retiring the 6 dead-end cards (product-experience pass)
+
+Confirmed by grep across the whole repo, not assumed: QuickBooks, Xero,
+Slack, Microsoft Teams, DocuSign and PandaDoc have no OAuth flow, no
+callback route and no client-library call anywhere in the codebase —
+unlike Gmail/Google Calendar/Twilio/Stripe/Google Ads/Meta Ads, which do.
+`routes/integrations.js`'s `configured` flag for these six only checks
+whether an env var pair *exists*; setting one wouldn't actually connect
+anything, because there's nothing on the other end to connect to. That's
+what made `v34-integrations.js`'s generic click handler pop a raw
+`alert()` for them — the card had no real "next step" to send the owner
+to.
+
+Fix: `v34-integrations.js` now hard-codes these six ids into an
+`UNAVAILABLE` set, independent of whatever the status endpoint reports.
+For those cards only: the state pill always reads "Coming later" (not
+"Setup required"), the button is a real disabled `<button>` (not just
+styled to look inactive — clicking it does nothing, fires no handler, no
+`alert()`), and the card itself is slightly dimmed (`.v34-unavailable`,
+`opacity:.72`) to read as backgrounded at a glance. No visual language
+was introduced — same card, pill and button components every other
+integration uses, just their existing `:disabled` state. The real
+integrations (Gmail, Twilio, Stripe, Google Ads, Meta Ads, Zapier, etc.)
+are untouched.
+
+This is deliberately a "not yet" treatment, not a removal — the cards
+stay visible so the roadmap breadth is still legible — per the brief's
+"present professionally as unavailable/coming later... do not fabricate
+functionality." Verified with a Playwright check that the QuickBooks
+button is disabled and that force-clicking it raises no dialog, alongside
+the existing full UI-test run.
+
+## Small polish fixes (product-experience pass)
+
+Four defects named directly in the app-experience review, fixed without
+touching anything else on their pages:
+
+- **Duplicated dashboard stat row.** `v19-client.js`'s `renderFocus()`
+  (ACTIVE LEADS / WAITING REPLIES / FOLLOW UPS / TODAY'S BOOKINGS /
+  OUTSTANDING, a bare strip at the very top of Overview) and
+  `v22-client.js`'s `renderHomeHero()` ("Know exactly what to do next",
+  with the same active-leads/waiting-replies/outstanding numbers as
+  clickable, framed stat buttons) had ended up showing nearly the same
+  numbers twice, stacked directly on top of each other — `v22.css` had
+  even already been tuning the older strip's spacing rather than hiding
+  it, so this wasn't a leftover so much as two iterations that never got
+  reconciled. Rather than delete either widget outright: the "Follow-ups
+  due" number (active leads untouched 2+ days) is the one real stat the
+  older strip had that the newer hero didn't, so it was folded into the
+  hero's stat row (now 5 stats instead of 4), and the older strip is
+  retired the same way `v28-market.css` already retired `.v19-fit` —
+  `.v19-focus-strip{display:none!important}` in `v22.css` — rather than
+  touched in `v19-client.js`, since that file still uses the same
+  numbers elsewhere (the pipeline board).
+- **Unexplained empty "RESPONSE TIME AVG" metric.** The metric itself was
+  never broken — `app.js` already computed a real average reply time from
+  conversations with 2+ messages — but its caption (`#responseMeta`)
+  was static placeholder text ("Conversation activity") that never
+  updated, unlike its sibling metrics' captions (`#appointmentMeta`,
+  `#valueMeta`), which do. So a workspace with no multi-message
+  conversations yet showed a bare "—" with a caption that explained
+  nothing. Now reads "Not enough replies yet to measure" (or "Across N
+  replies" once there's data) — same computation, just an honest caption.
+- **Idle login text rendered error-red.** `#loginStatus{color:#c54747}`
+  in `app.css` made the login screen's small print red *by default*,
+  including the idle "Supabase-secured account" text and the transient
+  "Signing in…" text — not just real errors. Its sibling `#signupStatus`
+  already does this correctly (neutral by default, `.error`/`.success`
+  color applied only when relevant); `#loginStatus` just never got the
+  same treatment. Fixed the base color to neutral and confirmed the two
+  `app.js` call sites that relied on the red default for genuine errors
+  (Supabase misconfigured; login rejected) now set red explicitly, so
+  real errors still show red — verified visually, not just by absence of
+  the old rule.
+- **"Railway" / raw env var names in user-facing copy.** Found in three
+  places, not just the one the review screenshotted: the Admin page's
+  Meta Ads panel ("Railway is missing META_APP_ID and META_APP_SECRET"),
+  and the same pattern in the Website Projects brief-generation error
+  (`server.js`, both the actual 503 response and its otherwise-unreachable
+  fallback throw) — the exact message a business owner sees if they try
+  "Generate with AI" before it's configured. All three now describe the
+  situation in plain product language with no hosting-provider name or
+  raw env var names. Confirmed by loading the Admin page and asserting
+  neither string appears anywhere in the rendered page.
+
+All four verified against the full e2e/UI/backend-fingerprint suite plus
+a direct screenshot/text check of each fix.
+
+## Mobile pass (product-experience pass, item 7)
+
+A real 390×844 phone-viewport Playwright walkthrough (not a narrowed
+desktop window) covering login, create account, Overview, Leads + lead
+drawer, Inbox, Calendar, Website Projects (list and detail), Payments,
+and Integrations, checking both `document.documentElement.scrollWidth`
+overflow and, for anything screenshot-only looked suspicious, direct DOM
+measurements (not just the picture) before calling it a bug — a full-page
+Playwright screenshot can make a `position:fixed` element (the bottom nav,
+a modal-style sheet) appear "frozen" at one spot in the stitched image
+even though it renders and scrolls correctly on a real device, and this
+pass repeatedly cross-checked against that before reporting a finding.
+
+Two real, verified defects were found and fixed:
+
+- **Leads table forced the page wider than the phone screen.** `.lead-table`
+  had `min-width:520px` (from the existing `@media(max-width:700px)`
+  block, tuned for tablet-size screens where letting the table scroll
+  sideways is a reasonable call) with no narrower override for actual
+  phones, so on a ~390px screen the table — and the whole page — was
+  forced ~130px wider than the viewport just to keep showing a Service
+  column that's already visible elsewhere (Overview's Recent leads).
+  Fixed by adding a `@media(max-width:480px)` rule that drops the
+  min-width, hides the Service column, and shrinks the row-menu button.
+  This has to appear *after* the 700px block in `app.css`, not merely in
+  a "narrower" media query — CSS gives a later same-specificity rule
+  priority regardless of which range is logically narrower, and an
+  earlier attempt placed before that block was silently overridden by it.
+  Verified with `document.documentElement.scrollWidth` before/after
+  (520px-wide forced page → fits the 390px viewport) and a real (non-
+  full-page) screenshot.
+- **Integrations, opened from the mobile "More" menu, left the "More"
+  sheet stuck open on top of it.** Root cause: `v34-integrations.js`
+  predates Integrations being a first-class static nav view, and still
+  installs a capturing `document` click listener that matches *any*
+  `[data-view="integrations"]` element and calls
+  `e.stopImmediatePropagation()` — which fires before, and prevents,
+  the button's own `switchView()` handler in `app.js` (the one that
+  normally closes the mobile sheet on every navigation) from ever
+  running. Its own `openIntegrations()` correctly swaps the active view
+  but never touched the sheet. Confirmed by direct DOM state
+  (`#mobileMoreSheet`'s `hidden` attribute and computed `display`, not
+  just a screenshot, since a stuck-open fixed-position sheet can look
+  ambiguous in a stitched full-page image) before and after. Fixed by
+  adding the same two sheet-closing lines `switchView()` already uses
+  into `openIntegrations()`, rather than removing the legacy listener
+  (out of scope for a narrow fix) or touching `switchView()` itself.
+  Also added the missing "Integrations" entry to the mobile "More" grid
+  itself (`index.html`) — before this pass, Integrations had no route
+  into it at all from a phone, since it only lived in the desktop
+  sidebar and the Settings-page-adjacent admin flow.
+
+Also reviewed and ruled out as *not* real bugs, each confirmed by direct
+DOM measurement or a real (non-full-page) screenshot rather than the
+full-page screenshot alone:
+- The Payments page's "Coming soon — Google + Meta advertising" overlay
+  appeared to have a blank gap in the full-page screenshot. Measured
+  directly: overlay height (425px) matches the card height (427px), and
+  the overlay's text sits fully inside it (829–866px within a 611–1036px
+  overlay). A real, non-full-page screenshot scrolled to the card
+  confirms clean rendering — the fourth confirmed instance of the
+  full-page/fixed-nav screenshot artifact in this pass, not a new bug.
+- Calendar's 7-column month grid scrolls horizontally on a phone; this is
+  a deliberate, already mobile-considered layout (sticky header, explicit
+  scroll affordance), not an overflow bug.
+- Website Projects' list and detail views render as one long combined
+  page (a compact project list followed immediately by the selected
+  project's full detail below it) rather than two separate screens —
+  this is the intended single-pane master/detail layout carried over
+  from the structured-intake rebuild, not a mobile-specific issue; the
+  page is long because the feature area is genuinely large, not because
+  it's cramped.
+
+`mobile-review.js` (the walkthrough script) now includes a permanent
+regression check for the "More" sheet not closing, asserting the sheet's
+`hidden` attribute and computed `display` directly rather than trusting
+a screenshot.
+
+One unrelated, pre-existing test-harness quirk was found and fixed
+while re-running the full suite after these changes: `smoketest.sh`
+expected a bad-credentials login to return 401, but the stubbed
+Supabase auth client used for local testing has no real password
+verification (by design, so the Playwright suites can log in as any
+seeded user), so an unrecognized login falls through to `server.js`'s
+"no SiteRemade profile for this account" branch (403) instead. Both
+codes prove the endpoint fails closed, which is what this smoke test
+actually checks per its own file header — so the assertion now accepts
+either, rather than pinning to the stub's specific (and not
+production-representative) auth-failure path. No `server.js` or
+`fake-supabase` code changed; this was a test-assertion fix only.
+
+## Product-experience review: next highest-impact changes (report only, item 8)
+
+Per the brief, this is analysis only — nothing below was implemented.
+Goal per the brief: not "a CRM with lots of tabs" but a system that
+actively tells the owner what matters right now. A code survey of the
+dashboard, lead model, daily-workflow feature, automations, entity
+relationships, and existing AI usage grounds the following instead of
+guessing. Ranked by impact:
+
+1. **Give leads an actual priority signal, in the leads list itself.**
+   Today `leads` has no score/urgency field at all, and the leads list
+   has no sort control — it's just status-tab + text search, in
+   whatever order the backend returns. Meanwhile *two separate places*
+   (the "Ask SiteRemade" assistant and the dashboard's attention widget)
+   already independently compute "stale, no reply in N days" for their
+   own private purposes and throw it away afterward. Compute that once,
+   store it (or derive it consistently) and surface it as a badge/sort
+   in the leads list itself — where an owner actually works — not just
+   in a sidebar widget they may not open. Rule-based, not AI; highest
+   ratio of impact to effort of anything here.
+2. **Promote the "attention items" list from a bolt-on to the front
+   door.** `v42-daily-workflow.js`'s "N things worth handling" is the
+   one genuinely proactive thing in the app today, but it's a
+   monkey-patch that overrides the dashboard's render function after
+   the fact, and its follow-ups are hand-typed via a browser `prompt()`.
+   Rebuilding it as a first-class, system-owned queue (not a patch) is
+   what "operating system, not tabs" actually requires structurally —
+   everything else on this list feeds it.
+3. **Close the "paid but nothing happens" gap.** Confirmed in
+   `server.js`: a Stripe-paid invoice only flips its own `status` and
+   logs an activity entry — it never touches the linked lead or website
+   project. An owner has to remember, separately, to update the lead's
+   stage or the project's status by hand. This is the single most
+   concrete "manual handoff" in the product and the most literal reading
+   of "connecting leads → projects → payments" — a paid invoice should
+   at minimum be able to advance its linked project/lead automatically.
+4. **Close the reverse gap: delivering a project doesn't ask for
+   payment.** Marking a website project "Delivered" and creating its
+   invoice are two unrelated button clicks today, in two different
+   parts of the app, with nothing connecting them. A prompt ("This
+   project is now delivered — send the invoice?") at the moment of
+   delivery turns a step an owner can simply forget into one they're
+   asked about at the moment it matters. Still a human decision — just
+   removes the burden of remembering to ask it.
+5. **Surface the relationships the data model already has.** The lead
+   drawer shows notes and one project button, but not that lead's
+   appointments or invoices. A website project's detail shows the
+   lead's name as inert text, not a link into their conversation or
+   status. The payments list doesn't show which project an invoice is
+   for, despite `invoices.project_id` existing. None of this needs new
+   data — it's display work on relationships that are already there,
+   and it's exactly what makes leads/projects/payments/conversations
+   feel like one customer record instead of four separate screens an
+   owner has to mentally reassemble.
+6. **Turn "Ask SiteRemade" from a read-only text box into something
+   actionable.** It already computes real, useful things (which leads
+   are stale, what's due) via a real model call — but its answer is
+   plain text with no link back into the entity it's talking about. An
+   owner reading "Sarah's lead has gone quiet" still has to go find
+   Sarah themselves. Making its references clickable (open that lead's
+   drawer) is a small change that converts existing AI output from
+   decorative summary into something that actually saves a step.
+7. **AI-drafted inbox replies.** The app already has a working AI layer
+   (the receptionist model call, the business assistant, the brief
+   generator) but Inbox reply composition today is 100% manual typing —
+   the one place a busy owner spends the most real-time attention. A
+   "suggest a reply" affordance, reusing the same model-call
+   infrastructure that already exists, is a genuine case of "AI saves
+   real work" (drafting under time pressure) rather than a bolted-on
+   chat widget for its own sake.
+8. **Automation triggers beyond signup-time.** All three automations
+   (`lead-alert`, `lead-confirmation`, `appointment-reminder`) are fixed
+   at workspace creation with no way to add a rule and no cross-entity
+   triggers (invoice paid, project delivered, lead gone stale). Given
+   #3/#4 above will already need "when X happens, do/ask Y" plumbing,
+   generalizing that into a couple of new automation trigger types is a
+   natural, low-risk extension of a pattern the product already has,
+   rather than new architecture.
+9. **One combined view per customer.** Once #5 (link surfacing) exists,
+   the natural next step is a single "opportunity" or "client" view that
+   rolls up one customer's lead stage, project status, payment status,
+   and last conversation activity in one place, instead of four screens
+   an owner must click between and hold in their head. This is the
+   clearest concrete shape of "business operating system" the brief
+   describes, and it composes directly out of #3, #4 and #5 rather than
+   being a separate rebuild.
+
+**Where AI genuinely helps vs. would be decorative, explicitly:** #1
+(prioritization), #3/#4 (paid→project, delivered→invoice), and #8
+(automation triggers) are plain rule/data-flow logic and should stay
+that way — bolting a model onto "is this invoice paid" would be slower,
+less predictable, and no more correct than a status check. #6 (making
+existing AI-assistant output clickable) and #7 (drafted inbox replies)
+are the two spots where a model is already the right tool, because the
+task itself — summarizing an open-ended situation, drafting a
+plausible first-pass reply — isn't reducible to a rule. Everything else
+(#2, #5, #9) is structural/UI work that makes the existing real AI
+output and real data actually land in front of the owner at the moment
+it's useful, which is a precondition for AI feeling load-bearing rather
+than decorative anywhere in the product.

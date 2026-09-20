@@ -22,7 +22,7 @@
   <meta name="description" content="SiteRemade client dashboard for leads, conversations, scheduling and payments." />
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="apple-touch-icon" href="favicon.png" />
-  <link rel="stylesheet" href="app.css?v=20" />
+  <link rel="stylesheet" href="app.css?v=23" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0d0e11" />
 </head>
@@ -418,6 +418,7 @@
       <button data-view="analytics"><span>↗</span><strong>Analytics</strong><small>See performance and conversion</small></button>
       <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
       <button data-view="automations"><span>✦</span><strong>Automations</strong><small>Manage follow-up workflows</small></button>
+      <button data-view="integrations"><span>⌘</span><strong>Integrations</strong><small>Connect the tools you already use</small></button>
       <button data-view="settings"><span>⚙</span><strong>Settings</strong><small>Workspace and integrations</small></button>
       <button data-view="admin" id="mobileAdminNav"><span>▦</span><strong>Admin</strong><small>Owner controls</small></button>
     </div>
@@ -445,7 +446,7 @@
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=23"></script>
   <script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
 </body>
 </html>

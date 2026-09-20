@@ -28,6 +28,7 @@ function signupAllowed(req){const ip=String(req.headers['x-forwarded-for']||req.
 
 
 async function q(promise){const {data,error}=await promise;if(error)throw error;return data;}
+async function qc(promise){const {data,error,count}=await promise;if(error)throw error;return {data,count};}
 function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
@@ -100,7 +101,7 @@ SOURCE DATA:
 ${JSON.stringify(source)}`;}
 async function generateWebsiteBriefViaAnthropic(prompt){const key=process.env.ANTHROPIC_API_KEY,model=process.env.ANTHROPIC_MODEL;if(!key||!model)return null;const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model,max_tokens:7000,temperature:0.2,messages:[{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Claude could not generate the website brief.');const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');return {provider:'anthropic',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
 async function generateWebsiteBriefViaOpenAI(prompt){const key=process.env.OPENAI_API_KEY;if(!key)return null;const model=process.env.OPENAI_MODEL||'gpt-4o-mini';const response=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model,temperature:0.2,response_format:{type:'json_object'},messages:[{role:'system',content:'Return only valid JSON matching the requested schema.'},{role:'user',content:prompt}]})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data?.error?.message||'Fallback AI could not generate the website brief.');const text=data.choices?.[0]?.message?.content||'';return {provider:'openai',model,brief:normalizeWebsiteBrief(extractBriefJson(text))};}
-async function generateWebsiteBrief(args){const prompt=websiteBriefPrompt(args);const anthropic=await generateWebsiteBriefViaAnthropic(prompt);if(anthropic)return anthropic;const fallback=await generateWebsiteBriefViaOpenAI(prompt);if(fallback)return fallback;throw Error('Website intelligence is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL in Railway, or write the brief manually.');}
+async function generateWebsiteBrief(args){const prompt=websiteBriefPrompt(args);const anthropic=await generateWebsiteBriefViaAnthropic(prompt);if(anthropic)return anthropic;const fallback=await generateWebsiteBriefViaOpenAI(prompt);if(fallback)return fallback;throw Error('AI brief generation isn’t turned on for this workspace yet — write the brief manually.');}
 async function activity(wid,type,title,detail){await db.from('activities').insert({workspace_id:wid,type,title,detail:clean(detail,1000)});}
 async function audit(userId,wid,action,detail){await db.from('audit_logs').insert({user_id:userId,workspace_id:wid||null,action,detail:clean(detail,1000)});}
 async function workspaceSnapshot(c){
@@ -120,6 +121,78 @@ async function workspaceSnapshot(c){
     q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200))
   ]);
   return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
+}
+
+// Live-refresh backend cost: the ETag added for the bootstrap poll (below)
+// still had to run the full workspaceSnapshot() above — 13 queries, six of
+// them unbounded or capped at 200-5000 rows — before it could even compute
+// the "did anything change" hash, on every single 5-second tick. This
+// function answers that question directly, without ever fetching the full
+// rows, so an unchanged poll can skip workspaceSnapshot() entirely.
+//
+// The signal per table is chosen to match how that table is actually
+// mutated in this file (verified against every insert/update/delete call
+// site, not assumed):
+//   - leads, conversations, website_updates, website_projects: each has
+//     a real `updated_at` column that every update() call in this file
+//     already sets, and inserts/deletes change the row count — so
+//     count + latest(updated_at) can't miss a change.
+//   - messages, appointments, activities, ad_spend: insert/delete only
+//     (no update() call touches a field the client ever sees — appointment
+//     reminder_sent_at isn't in mapAppointment) — count + latest(created_at)
+//     is enough.
+//   - ad_funds: insert-only for count, plus a separate latest(funded_at)
+//     check, because a fund request can flip Pending -> Funded long after
+//     a newer request was created, which wouldn't otherwise move the
+//     count or the created_at watermark.
+//   - prospect_views: insert-only and already projected to just place_id
+//     in workspaceSnapshot; count alone is sufficient and needs no row data.
+//   - invoices, automations: NEITHER table has an updated_at column, and
+//     both can change in place without any timestamp moving (an invoice's
+//     status can be hand-edited to any value via the Payments dropdown,
+//     not just to Paid; an automation toggle only flips a boolean) — so
+//     for just these two, this reads every row but only the handful of
+//     columns that are actually mutable, instead of every column.
+//   - website_analytics: a single row per workspace, and its one write
+//     path (routes/umami-analytics.js) always bumps its own `updated_at` —
+//     so that column alone is the fingerprint, no extra columns needed.
+async function workspaceFingerprint(wid){
+  const countLatest=(table,ts)=>qc(db.from(table).select(`id,${ts}`,{count:'exact'}).eq('workspace_id',wid).order(ts,{ascending:false}).limit(1));
+  const countOnly=(table)=>qc(db.from(table).select('id',{count:'exact',head:true}).eq('workspace_id',wid));
+  const latestFundedAt=qc(db.from('ad_funds').select('id,funded_at',{count:'exact'}).eq('workspace_id',wid).not('funded_at','is',null).order('funded_at',{ascending:false}).limit(1));
+  const [leads,convs,msgs,apps,activities,adSpend,adFunds,fundedAt,prospectViews,websiteUpdates,websiteProjects,invoices,autos,websiteAnalytics]=await Promise.all([
+    countLatest('leads','updated_at'),
+    countLatest('conversations','updated_at'),
+    countLatest('messages','created_at'),
+    countLatest('appointments','created_at'),
+    countLatest('activities','created_at'),
+    countLatest('ad_spend','created_at'),
+    countLatest('ad_funds','created_at'),
+    latestFundedAt,
+    countOnly('prospect_views'),
+    countLatest('website_updates','updated_at'),
+    countLatest('website_projects','updated_at'),
+    q(db.from('invoices').select('id,status,paid_at').eq('workspace_id',wid)),
+    q(db.from('automations').select('automation_key,enabled').eq('workspace_id',wid)),
+    q(db.from('website_analytics').select('updated_at').eq('workspace_id',wid).maybeSingle())
+  ]);
+  const sortedInvoices=[...invoices].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  const sortedAutos=[...autos].sort((a,b)=>a.automation_key<b.automation_key?-1:a.automation_key>b.automation_key?1:0);
+  return {
+    leads:{n:leads.count,t:leads.data[0]?.updated_at||''},
+    conversations:{n:convs.count,t:convs.data[0]?.updated_at||''},
+    messages:{n:msgs.count,t:msgs.data[0]?.created_at||''},
+    appointments:{n:apps.count,t:apps.data[0]?.created_at||''},
+    activities:{n:activities.count,t:activities.data[0]?.created_at||''},
+    adSpend:{n:adSpend.count,t:adSpend.data[0]?.created_at||''},
+    adFunds:{n:adFunds.count,t:adFunds.data[0]?.created_at||'',f:fundedAt.data[0]?.funded_at||''},
+    prospectViews:prospectViews.count,
+    websiteUpdates:{n:websiteUpdates.count,t:websiteUpdates.data[0]?.updated_at||''},
+    websiteProjects:{n:websiteProjects.count,t:websiteProjects.data[0]?.updated_at||''},
+    invoices:sortedInvoices.map(i=>[i.id,i.status,i.paid_at||'']),
+    automations:sortedAutos.map(a=>[a.automation_key,a.enabled]),
+    websiteAnalytics:websiteAnalytics?.updated_at||''
+  };
 }
 
 async function businessAssistant(c,message){
@@ -350,20 +423,23 @@ async function api(req,res,u){
   const c=await ctx(req,res,u);if(!c)return json(res,401,{ok:false,message:'Authentication required.'});
   if(m==='GET'&&p==='/api/app/bootstrap'){
     if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[],websiteProjects:[]});
-    const snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
     // Performance: app.js's liveRefresh() polls this exact endpoint every
-    // 5 seconds for as long as the dashboard is open, unconditionally
-    // re-fetching and re-rendering everything even when nothing changed.
-    // An ETag over the literal response body — checked against the
-    // client's If-None-Match — lets an unchanged poll get back an empty
-    // 304 instead of the full payload, at the same 5-second cadence and
-    // with identical data whenever something *did* change. This can't
-    // miss a real update the way a hand-picked "did anything change"
-    // heuristic could: it's a hash of the exact bytes that would have
-    // been sent, not a guess at which fields matter.
-    const text=JSON.stringify(snapshot);
-    const etag='"'+crypto.createHash('sha1').update(text).digest('hex')+'"';
+    // 5 seconds for as long as the dashboard is open. The first pass at
+    // this (ETag over the full response) still had to run workspaceSnapshot
+    // — 13 queries, several unbounded — before it could even tell whether
+    // anything had changed, so an unchanged poll paid the full backend
+    // cost every single time even though the network/render cost dropped.
+    // workspaceFingerprint() answers "did anything change" using cheap,
+    // targeted signals (see its own comment for exactly why each one is
+    // safe) instead, so an unchanged poll can skip workspaceSnapshot()
+    // entirely. When something *did* change, this still falls through to
+    // the exact same full rebuild as before — freshness is identical,
+    // only the unchanged-poll cost is different.
+    const fingerprint=await workspaceFingerprint(c.wid);
+    const etag='"'+crypto.createHash('sha1').update(JSON.stringify(fingerprint)).digest('hex')+'"';
     if(req.headers['if-none-match']===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-store'});return res.end();}
+    const snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
+    const text=JSON.stringify(snapshot);
     res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(text),'Cache-Control':'no-store','ETag':etag});
     return res.end(text);
   }
@@ -473,7 +549,7 @@ async function api(req,res,u){
     if(!c.owner)return json(res,403,{ok:false,message:'SiteRemade owner access required.'});
     const old=(await db.from('website_projects').select('*').eq('id',x[1]).eq('workspace_id',c.wid).maybeSingle()).data;if(!old)return json(res,404,{ok:false,message:'Website project not found.'});
     const aiConfigured=!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL)||!!process.env.OPENAI_API_KEY;
-    if(!aiConfigured)return json(res,503,{ok:false,message:'Website brief AI is not configured. Add ANTHROPIC_API_KEY and ANTHROPIC_MODEL (or OPENAI_API_KEY) in Railway, or write the brief and builder prompt manually below.'});
+    if(!aiConfigured)return json(res,503,{ok:false,message:'AI brief generation isn’t turned on for this workspace yet — write the brief and builder prompt manually below.'});
     const b=await body(req),revision=clean(b.revision,8000);
     const hasIntake=(old.intake&&Object.keys(old.intake).length)||clean(old.intake_text,1).length;
     if(!hasIntake)return json(res,400,{ok:false,message:'Fill in the structured intake before generating a brief.'});
