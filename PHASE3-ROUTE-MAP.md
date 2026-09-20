@@ -1005,3 +1005,124 @@ real production numbers once a deploy is possible.
 Full test suite (smoketest, e2e, ui, live-refresh-etag,
 backend-fingerprint, mobile-review) re-run and passing after every
 change in this section — no functional regressions.
+
+## Pre-auth "Page Unresponsive" investigation (negative result, reported honestly)
+
+Escalation: Chrome reported "Page Unresponsive" while sitting on the
+login screen, *before* authentication. That rules out the authenticated
+Supabase/`membershipsFor()` call chain discussed above as the explanation
+on its own — `fetch()` never blocks the main thread while it's waiting,
+so a slow or hanging backend cannot by itself freeze the tab. Something
+else — a loop, a feedback cycle in an observer, synchronous work — would
+have to be responsible. This section covers the audit for that, a
+from-scratch reproduction attempt, what was found and hardened, and —
+important — what was **not** found.
+
+**Audit of everything that runs before authentication.** Traced exactly
+what loads on the login screen: `index.html`, `app.css`, `app.js`, and
+one small inline script — nothing else. Every dashboard feature script
+(`v1`–`v46`, all polling `setInterval`s, both document-wide
+`MutationObserver`s) is dynamically imported only from inside
+`bootstrap()`'s success branch (`loadDashboardFeatureScripts()` and
+`v29-bootstrap.js`), which only ever runs after a successful login. So
+the pre-auth JS surface is small and, on inspection, contains no
+unconditional loop, timer, or observer of its own — nothing in that
+surface should be capable of pinning the main thread regardless of
+backend state.
+
+**Reproducing the exact reported condition.** Built a harness
+(`hang-repro.js`, scratchpad-only) that starts the real app server behind
+a raw HTTP proxy which intercepts `/api/app/bootstrap` and
+`/api/auth/login` and never responds to them — connection accepted, no
+timeout, no error, exactly what a wedged Railway instance or a
+Supabase call with no timeout looks like from the browser's side (a
+"connection refused" backend-fully-down mode was also tried and produces
+a completely different, more obvious failure: the page itself never
+loads). Against the hanging-backend mode, four independent checks were
+run while sitting on the login screen for 15 seconds and then actually
+interacting with it:
+
+- A `PerformanceObserver({type:'longtask'})` capturing any main-thread
+  task ≥50ms, for the entire session.
+- A free-running `setTimeout(tick, 50)` counter, whose actual-vs-scheduled
+  drift reveals blocking shorter than the 50ms long-task floor.
+- Five `page.evaluate()` round-trips spaced through the 15-second idle
+  window (a blocked main thread delays these).
+- Live interaction mid-hang: typing into the email field, filling the
+  password, clicking **Sign In** (whose POST to `/api/auth/login` never
+  resolves), waiting 4 more seconds, then clicking the "Create account"
+  tab — all while that request sits permanently pending.
+
+**Result: no hang reproduced.** Every interaction succeeded immediately
+(typing, clicking Sign In, switching tabs while the login POST was still
+pending). `#loginStatus` correctly showed the stuck "Signing in…" state
+rather than the UI freezing. Only one long task was recorded in the
+entire run — a single 65–83ms task at initial page parse, well below
+anything that would trigger Chrome's unresponsiveness warning (which
+looks for the renderer failing to service input for several seconds).
+Timer drift stayed within normal single-digit milliseconds throughout.
+In short: under the precise condition described — backend/Railway/
+Supabase completely unavailable, sitting on the login screen — the
+current code in this repo does not hang.
+
+**I am not calling this fixed.** The instruction was explicit not to
+claim that on the strength of a clean test run, and this is a clean test
+run against code that has not been deployed. It rules out the pre-auth
+JS in *this* repo as the cause under *this* specific condition; it does
+not explain the browser-observed symptom.
+
+**Hardened anyway, as defense-in-depth, not as the fix.** While auditing
+every `MutationObserver` in the codebase for feedback-loop risk (an
+observer whose own callback triggers another mutation is the classic way
+to actually pin a main thread), two real inefficiencies turned up —
+lower severity than a hang, but worth closing:
+
+- `v45-ad-intelligence-client.js`'s admin-panel observer ran
+  `hydrateForm()` (and conditionally scheduled a `sync()`) on *every*
+  childList mutation anywhere in the document, all the time — including
+  every 5-second live-refresh tick on completely unrelated views like
+  Leads or Inbox.
+- `v46-google-ads-account-fallback.js`'s observer did the same, and its
+  follow-up (`patch()` → `getAccounts()`) is a real network fetch — so
+  this one was queuing an extra API call on every DOM mutation anywhere
+  in the app, regardless of which view was open.
+
+Neither is a self-triggering loop: v45's callback only ever sets `.value`
+properties (not `childList`-observable), and v46's `patch()` is guarded
+by a `busy` flag against re-entry. So these were wasteful background
+work, not the reported hang. Both are now gated to only act while
+`#view-admin` is the active view, matching the existing active-view-guard
+pattern already used elsewhere in this codebase (`v39`/`v40`/`v41`).
+Committed as `12d4fa9`. Full regression suite (smoketest, e2e, ui,
+live-refresh-etag, backend-fingerprint, mobile-review) re-run and passing
+— no functional regressions.
+
+**What remains unexplained, and the real constraint behind that:**
+`git push origin main` has been blocked since the previous performance
+pass by a repository-authorization error from this session's git proxy
+(`Solidussss/siteremade-app is not in this session's authorized
+repository set`) — nothing from this investigation, or the prior
+performance pass, has reached Railway. `app.siteremade.com` is still
+serving whatever was deployed before either pass. That matters here
+specifically: this sandbox has no way to open the live site in a real
+browser (no browser-automation or remote-device tooling is available in
+this session, and this sandbox's own network egress cannot reach
+`app.siteremade.com` at all — confirmed directly), so there's no way to
+inspect the bundle actually running in production or capture a real
+DevTools trace during an actual occurrence of the warning. The most
+likely explanations for the gap between "clean locally" and "hangs in
+production" are: production is running older code that predates these
+optimizations (or contains a bug since removed) — most probable, since a
+deploy has not happened; or the cause is something this sandbox cannot
+reproduce at all — a browser extension, or a stale service worker from
+an older deploy (the codebase's own service-worker-unregister cleanup
+code implies one existed previously).
+
+**Recommended next step:** get `main` deployed (resolving the git-proxy
+authorization is the blocker — either authorize this session's access to
+the repo, or push from a machine that already has access), then, if the
+warning still occurs, capture a Chrome DevTools Performance recording
+during an actual live occurrence of it on `app.siteremade.com`. That
+recording's call stack is the only way to identify the exact function
+responsible if the cause is something outside what this sandbox can
+reproduce.
