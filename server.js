@@ -558,7 +558,18 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   }
 
   if(m==='POST'&&p==='/api/app/invoices'){const b=await body(req),lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',c.wid).maybeSingle()).data,amount=Math.max(0,Number(b.amount)||0);if(!lead||!amount)return json(res,400,{ok:false,message:'Customer and amount required.'});let projectId=null;if(clean(b.projectId,80)){const proj=(await db.from('website_projects').select('id').eq('id',clean(b.projectId,80)).eq('workspace_id',c.wid).maybeSingle()).data;if(!proj)return json(res,404,{ok:false,message:'Website project not found.'});projectId=proj.id;}let inv=await q(db.from('invoices').insert({workspace_id:c.wid,lead_id:lead.id,project_id:projectId,customer:lead.name,description:clean(b.description,240)||'Invoice',amount,status:'Pending'}).select('*').single());if(process.env.STRIPE_SECRET_KEY){try{const j=await stripeRequest('checkout/sessions',{'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':inv.description,'line_items[0][price_data][unit_amount]':String(Math.round(amount*100)),'line_items[0][quantity]':'1','mode':'payment','success_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?paid=1`,'cancel_url':`${process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT}/?canceled=1`,'metadata[invoiceId]':inv.id,'metadata[workspaceId]':c.wid},c.workspace.stripe_account_id||'');inv=await q(db.from('invoices').update({payment_url:j.url||null,stripe_session_id:j.id||null}).eq('id',inv.id).select('*').single());}catch(e){console.error('Stripe invoice:',e.message)}}await activity(c.wid,'payment','Invoice created',`${inv.customer} · $${amount.toFixed(2)}`);return json(res,201,{ok:true,invoice:mapInvoice(inv)});}
-  x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req);if(b.status&&!PAY.includes(b.status))return json(res,400,{ok:false,message:'Invalid status.'});const patch={};if(b.status){patch.status=b.status;if(b.status==='Paid')patch.paid_at=now();}const inv=await q(db.from('invoices').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());return json(res,200,{ok:true,invoice:mapInvoice(inv)});}
+  // Production-readiness review: marking an invoice "Paid" here used to be
+  // reachable by any signed-in workspace member with no proof of payment —
+  // the real, verified payment path is the Stripe webhook above (line 334,
+  // checks the HMAC signature), which already sets status:'Paid' the same
+  // way once a checkout session actually completes. This manual PATCH stays
+  // available for the cases that legitimately need a human override (a
+  // client paid by e-transfer/cheque, a correction), but — matching every
+  // other sensitive mutation in this file (website-updates status,
+  // website-project brief/delete) — only SiteRemade staff (c.owner) can set
+  // or unset "Paid" by hand; a workspace's own member still can't self-
+  // report their invoice as paid. Draft/Pending/Void are unaffected.
+  x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req);if(b.status&&!PAY.includes(b.status))return json(res,400,{ok:false,message:'Invalid status.'});if(b.status==='Paid'&&!c.owner)return json(res,403,{ok:false,message:'Only SiteRemade staff can mark an invoice paid by hand.'});const patch={};if(b.status){patch.status=b.status;if(b.status==='Paid')patch.paid_at=now();}const inv=await q(db.from('invoices').update(patch).eq('id',x[1]).eq('workspace_id',c.wid).select('*').single());return json(res,200,{ok:true,invoice:mapInvoice(inv)});}
   x=p.match(/^\/api\/app\/invoices\/([^/]+)$/);if(x&&m==='DELETE'){
     const invoiceId=x[1];
     const {data:inv,error:findError}=await db.from('invoices').select('*').eq('id',invoiceId).eq('workspace_id',c.wid).maybeSingle();

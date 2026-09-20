@@ -86,6 +86,19 @@ do $$ declare t text; begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- Grants — every other table in this schema (see V48) explicitly grants the
+-- service role access after creating it; these two were missed when this
+-- file was first written. Without this, routes/daily-workflow.js (which
+-- queries both tables exclusively via the service-role client) would fail
+-- every request with "permission denied for table lead_followups" /
+-- "...prospect_stages" against a real Supabase project, even though RLS
+-- and everything else above is correct — the service role still needs its
+-- own table-level grant; RLS policies don't substitute for one.
+-- ---------------------------------------------------------------------------
+grant select, insert, update, delete on public.lead_followups to service_role;
+grant select, insert, update, delete on public.prospect_stages to service_role;
+
+-- ---------------------------------------------------------------------------
 -- No backfill: this state never existed anywhere but each browser's
 -- localStorage, which the server cannot read. Existing follow-ups and
 -- prospect stages set before this migration are NOT carried over

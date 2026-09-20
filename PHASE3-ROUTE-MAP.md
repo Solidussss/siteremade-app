@@ -67,6 +67,13 @@ require chain.
 | daily-workflow.js | DELETE /api/app/workflow/followups/:leadId | user |
 | daily-workflow.js | PUT /api/app/workflow/prospect-stages | user |
 
+Not part of this migration but worth tracking here since it's just as
+security-relevant: `POST /api/webhooks/stripe`, still in `server.js`'s
+legacy `api()` dispatcher. It validates the `Stripe-Signature` header
+(HMAC-SHA256 against `STRIPE_WEBHOOK_SECRET`, timing-safe compare) before
+trusting the payload and is the one place `invoices.status` should
+normally become `'Paid'` — see the production-readiness review below.
+
 ## What's still on the old monkeypatch chain, and why
 
 `v17-server.js`'s require chain (in order — earliest-required file's
@@ -160,3 +167,93 @@ not injection patches, and merging them into `app.js` is a much larger,
 higher-risk undertaking (global function patching, execution-order
 dependencies, `setTimeout`-based install polling) that belongs in the
 folder/module reorganization phase, not this one.
+
+## Production-readiness review (before merging phase3/architecture-cleanup)
+
+Context that shapes every finding below: `lib/context.js`'s `db` client is
+built with the Supabase **service-role key**, which bypasses RLS entirely.
+So the RLS policies in V48/V50/V51 are not what protect tenant isolation for
+any request the app itself makes — they're a defense-in-depth backstop only
+relevant if a key leaks or something ever queries via the `anon` role
+directly (confirmed: `anon` is only ever used for `auth.getUser`/
+`auth.refreshSession`, never a data query, and no Supabase client is ever
+constructed in the browser). In their absence, tenant isolation depends
+entirely on every route filtering by `workspace_id` itself.
+
+**Fixed** (all covered by new/updated regression tests, see e2e-test.js):
+
+- `server.js`'s `PATCH /api/app/invoices/:id` let any signed-in workspace
+  member set `status:'Paid'` with no proof of payment — no `c.owner` check,
+  unlike every other sensitive mutation in the same file. The verified
+  payment path (`POST /api/webhooks/stripe`, HMAC-checked) already sets the
+  same field the same way; the manual PATCH is now owner-gated (SiteRemade
+  staff only) specifically for the `'Paid'` transition, so a workspace
+  member can no longer self-report their own invoice as paid. Draft/
+  Pending/Void are unaffected.
+- `V51-DAILY-WORKFLOW-MIGRATION.sql` was missing the
+  `grant ... to service_role` statements every other table in this schema
+  has (see V48) — without them, `routes/daily-workflow.js`'s queries would
+  fail with "permission denied" against a real Supabase project even though
+  RLS and everything else in the file was correct. Added, matching V48's
+  exact grant pattern.
+- `lib/router.js`'s `add()` now throws on a duplicate method+pattern
+  registration instead of silently letting the earlier-registered route win
+  forever (no current route collides; this only guards against a future
+  one reintroducing the exact "which file wins" ambiguity this router
+  replaced).
+
+**Found, needs a product/ops decision before merge — not changed:**
+
+1. **Cross-tenant lead lookup in the legacy single-tenant Twilio webhook.**
+   `routes/legacy-twilio-inbound.js`'s `findLeadByPhone()` scans `leads`
+   across **every workspace** (no `workspace_id` filter) and attaches the
+   inbound SMS to whichever matching lead was updated most recently,
+   globally. `POST /api/public/twilio/inbound` only checks the destination
+   number against one global `TWILIO_FROM` env var — it never resolves
+   which workspace that number belongs to. If two different tenants each
+   have a contact with the same phone number, one business's customer
+   conversation can land in a different tenant's CRM. This predates this
+   migration (the logic was copied verbatim from `v17-preload.js` to
+   preserve behavior) and a safe fix requires knowing which workspace
+   `TWILIO_FROM` is actually meant to represent today — is this endpoint
+   still live for a real tenant, and if so which one? Left unchanged
+   pending that answer.
+2. **`auth:'user'` (not `'owner'`) on workspace-wide Stripe/Twilio identity
+   changes.** `POST /api/app/integrations/stripe/connect`, `.../twilio/
+   connect`, and `.../twilio/existing/authorize` (a real Twilio LOA/porting
+   submission) are reachable by any workspace member, not just an owner.
+   On reflection this is consistent with the platform's actual ownership
+   model — `role:'owner'` means SiteRemade *staff* (it's the role that sees
+   every workspace, per `membershipsFor`), and a business's own Stripe/
+   Twilio accounts are properly the business's own workspace members'
+   responsibility to connect, not SiteRemade staff's. Recorded here in case
+   that reading is wrong, but no fix applied.
+3. **V48 migration risk against real production data** (pre-dates this
+   session, flagged for completeness before this branch merges): line 37's
+   `alter table integration_connections add column if not exists
+   workspace_id ...` (and `provider`) omit the `not null` that the
+   fresh-`create table` path has, so if that table was hand-created without
+   these columns, existing rows would get a silent `NULL workspace_id` —
+   permanently invisible to `is_workspace_member()` and excluded from the
+   new unique index at line 44 (NULLs are distinct). Separately, lines 44
+   and 147's `create unique index` statements aren't guarded the way the
+   CHECK constraints below them are — if either table already has duplicate
+   `(workspace_id, provider[, ...])` rows, the index creation throws and
+   rolls back the *entire* migration script (one Supabase SQL Editor run is
+   one transaction). **Before running V48 against production**: confirm
+   `integration_connections` has no pre-existing rows (or that they already
+   have `workspace_id`/`provider` populated), and query for duplicate
+   `(workspace_id, provider)` / `(workspace_id, provider, customer_id,
+   recommendation_key)` tuples on `integration_connections` and
+   `ad_recommendations` first.
+
+**Confirmed secure, no action needed:** all three Twilio webhook entry
+points (main-account, subaccount, and the legacy single-tenant one)
+validate `X-Twilio-Signature` before touching the database, with the
+subaccount path correctly fetching and checking against the *subaccount's
+own* auth token rather than the main account's. OAuth callbacks
+(mailbox/Gmail/Outlook, Google Ads, Google Calendar) all HMAC-sign a
+`{workspace, user, timestamp}` state server-side with a timing-safe compare
+and a 10-minute TTL, so a callback can't be replayed against a different
+workspace. No route was found echoing an OAuth token, API secret, or the
+service-role key back to the browser.
