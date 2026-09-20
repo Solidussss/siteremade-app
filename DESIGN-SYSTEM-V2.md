@@ -223,13 +223,40 @@ changes at any step — this is the presentation layer only.
 
 ## Implementation status
 
-- [ ] Step 1 — foundation
-- [ ] Step 2 — Overview
-- [ ] Step 3 — Website Projects
-- [ ] Step 4 — Leads/Inbox/Calendar/Payments journey
-- [ ] Step 5 — Growth / Configuration / Admin identities
-- [ ] Step 6 — inline-styled JS renderer conversion
-- [ ] Step 7 — final full regression + mobile pass
+- [x] Step 1 — foundation. Landed as `design-system.css` (loaded after
+      app.css, using a `body `-prefixed specificity bump so it keeps
+      winning against per-version CSS injected later at runtime — see the
+      file's own header comment for why). Covers: consolidated tokens
+      (redeclares the same custom-property names app.css already used, so
+      existing `var(--x)` references retheme automatically), typography
+      (system-serif page titles/hero numbers post-login only — no webfont
+      dependency added, deliberately, given this app's own prior
+      pre-auth-performance work), one button/input/card/chip/table/modal
+      system, a new `.skeleton` loading component, and the v43-ad-control
+      warm-beige outlier fixed to the cool-neutral palette. Also landed as
+      part of this step: the 5-group labeled sidebar IA (§3) in
+      `index.html` (desktop sidebar + mobile "More" sheet), with owner-only
+      Admin-section gating extended to the new divider/label wrapper in
+      `app.js`'s `renderWorkspace()`. A real regression was caught and
+      fixed here: the taller 5-group nav could push lower items past
+      100vh with nothing scrollable to reach them (confirmed via a broken
+      Playwright click target, not just eyeballing) — fixed with
+      `overflow-y:auto` on `.sidebar`. Verified against the full existing
+      test suite (smoketest/e2e/ui/mobile/live-refresh/fingerprint, all
+      passing) plus visual screenshot review at desktop and 390px mobile.
+- [ ] Step 2 — Overview: deeper command-center pass (current state has the
+      new type/card treatment; the "what needs attention" surface and
+      metric hierarchy can go further)
+- [ ] Step 3 — Website Projects: flagship workspace layout beyond the
+      `.panel-flagship` treatment already applied
+- [ ] Step 4 — Leads/Inbox/Calendar/Payments connective-journey cues
+- [ ] Step 5 — deeper Growth / Configuration / Admin identity work beyond
+      the accent-tint/quieter-type pass already applied
+- [ ] Step 6 — inline-styled JS renderer conversion (`v40-existing-number-
+      client.js`, `v44-google-ads-client.js` campaign rows/AI cards) — a
+      CSS-only pass cannot reach these; still on the old visual skin
+- [ ] Step 7 — final full regression + mobile pass (a full pass already
+      ran clean after Step 1; repeats after each further step)
 
 (This checklist is updated in place as each step lands, and each step is
 committed separately so the work stays reviewable and revertible.)

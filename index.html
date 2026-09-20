@@ -23,6 +23,14 @@
   <link rel="icon" type="image/png" href="favicon.png?v=2" />
   <link rel="apple-touch-icon" href="favicon.png?v=2" />
   <link rel="stylesheet" href="app.css?v=23" />
+  <!-- V2 visual redesign: one consolidated token/typography/component
+       system loaded after app.css so it authoritatively overrides the
+       three drifted token systems and six-way card/button/chip
+       reinventions documented in DESIGN-SYSTEM-V2.md. It uses a "body "
+       specificity bump (see the file's own header comment) so it keeps
+       winning even against the per-version CSS files that get injected
+       later, after login, without needing to touch that injection order. -->
+  <link rel="stylesheet" href="design-system.css?v=1" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0d0e11" />
 </head>
@@ -88,23 +96,49 @@
       </div>
       <div class="workspace-menu" id="workspaceMenu" hidden></div>
 
+      <!-- V2 redesign: sidebar regrouped into 5 labeled sections matching
+           the product's real structure (see DESIGN-SYSTEM-V2.md §3), in
+           place of the previous two unlabeled groups. data-view wiring is
+           unchanged (switchView() matches by attribute, not position/
+           order), so this is a pure IA/markup change — no JS behavior
+           differs. -->
       <nav class="side-nav" aria-label="App navigation">
-        <button class="nav-item active" data-view="home"><span>⌂</span><strong>Home</strong></button>
+        <button class="nav-item active" data-view="home"><span>⌂</span><strong>Overview</strong></button>
+      </nav>
+
+      <div class="side-divider"></div>
+      <p class="nav-group-label">Operations</p>
+      <nav class="side-nav">
         <button class="nav-item" data-view="leads"><span>◎</span><strong>Leads</strong><em id="leadBadge">0</em></button>
-        <button class="nav-item" data-view="prospecting"><span>⌖</span><strong>Market Finder</strong></button>
         <button class="nav-item" data-view="inbox"><span>◌</span><strong>Inbox</strong><em id="inboxBadge">0</em></button>
         <button class="nav-item" data-view="calendar"><span>□</span><strong>Calendar</strong></button>
         <button class="nav-item" data-view="payments"><span>◇</span><strong>Payments</strong></button>
       </nav>
 
       <div class="side-divider"></div>
-
-      <nav class="side-nav secondary-nav">
-        <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
+      <p class="nav-group-label">Delivery</p>
+      <nav class="side-nav">
         <button class="nav-item" data-view="website-projects"><span>✎</span><strong>Website Projects</strong><em id="websiteProjectBadge">0</em></button>
+      </nav>
+
+      <div class="side-divider"></div>
+      <p class="nav-group-label">Growth</p>
+      <nav class="side-nav">
+        <button class="nav-item" data-view="prospecting"><span>⌖</span><strong>Market Finder</strong></button>
+        <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
+      </nav>
+
+      <div class="side-divider"></div>
+      <p class="nav-group-label">Configuration</p>
+      <nav class="side-nav secondary-nav">
         <button class="nav-item" data-view="automations"><span>✦</span><strong>Automations</strong></button>
         <button class="nav-item" data-view="integrations"><span>⌘</span><strong>Integrations</strong><em id="integrationBadge" hidden>0</em></button>
         <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
+      </nav>
+
+      <div class="side-divider admin-divider" id="adminDivider"></div>
+      <p class="nav-group-label admin-label" id="adminLabel">Admin</p>
+      <nav class="side-nav admin-nav">
         <button class="nav-item" data-view="admin" id="adminNav"><span>▦</span><strong>Admin</strong></button>
       </nav>
 
@@ -413,13 +447,27 @@
 
   <div class="mobile-more-sheet" id="mobileMoreSheet" hidden>
     <div class="mobile-more-head"><div><p class="eyebrow">SITEREMADE</p><strong>More tools</strong></div><button type="button" id="mobileMoreClose" aria-label="Close menu">×</button></div>
+    <!-- V2 redesign: regrouped into the same 5 labeled sections as the
+         desktop sidebar (DESIGN-SYSTEM-V2.md §3), instead of one flat
+         grid. Same buttons/data-view values, so switchView() wiring is
+         unaffected. -->
+    <p class="nav-group-label mobile-group-label">Delivery</p>
+    <div class="mobile-more-grid">
+      <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
+    </div>
+    <p class="nav-group-label mobile-group-label">Growth</p>
     <div class="mobile-more-grid">
       <button data-view="prospecting"><span>⌖</span><strong>Market Finder</strong><small>Find businesses and opportunities</small></button>
       <button data-view="analytics"><span>↗</span><strong>Analytics</strong><small>See performance and conversion</small></button>
-      <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
+    </div>
+    <p class="nav-group-label mobile-group-label">Configuration</p>
+    <div class="mobile-more-grid">
       <button data-view="automations"><span>✦</span><strong>Automations</strong><small>Manage follow-up workflows</small></button>
       <button data-view="integrations"><span>⌘</span><strong>Integrations</strong><small>Connect the tools you already use</small></button>
       <button data-view="settings"><span>⚙</span><strong>Settings</strong><small>Workspace and integrations</small></button>
+    </div>
+    <p class="nav-group-label mobile-group-label admin-label" id="mobileAdminLabel">Admin</p>
+    <div class="mobile-more-grid" id="mobileAdminGroup">
       <button data-view="admin" id="mobileAdminNav"><span>▦</span><strong>Admin</strong><small>Owner controls</small></button>
     </div>
   </div>
@@ -446,7 +494,7 @@
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
   <script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
 </body>
 </html>

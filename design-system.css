@@ -1,0 +1,314 @@
+/* ==========================================================================
+   SiteRemade V2 visual system
+   ==========================================================================
+   See DESIGN-SYSTEM-V2.md for the full audit/rationale. This file is the
+   single authoritative source for color, type, spacing, and every shared
+   component (buttons, inputs, cards, chips, tables, modals, nav) that used
+   to be reinvented independently across app.css's own internal V2/V6/V8/
+   ...V19 passes and the 12 per-version stylesheets (v17.css...v43-ad-
+   control.css).
+
+   Load order / cascade strategy: this file is linked in index.html right
+   after app.css, but several older per-version stylesheets are injected
+   into <head> LATER, dynamically, after login (app.js's
+   loadDashboardFeatureScripts()) — deliberately, for the pre-auth
+   performance work done earlier in this project. Because they load later
+   in the DOM, a same-specificity rule there would normally win over a rule
+   here. Rather than reordering that injection (touching a load-order
+   contract this codebase intentionally built for performance reasons),
+   every override below is written as `body .selector` instead of plain
+   `.selector` — one extra element-selector bump in specificity (0,1,1
+   instead of 0,1,0) that reliably wins regardless of DOM/load order,
+   without needing `!important` anywhere in this file.
+
+   Scope note: this stylesheet can only reach markup that is styled via
+   CSS classes. Two feature areas — v40-existing-number-client.js (phone
+   verification) and v44-google-ads-client.js (campaign rows / AI
+   recommendation cards) — build their UI with hardcoded inline
+   `style="..."` strings that no stylesheet can override. Converting those
+   to the shared component classes below is tracked as its own step in
+   DESIGN-SYSTEM-V2.md and lands separately.
+   ========================================================================== */
+
+/* ---- 1. Tokens ----------------------------------------------------------
+   Redeclares the SAME custom-property names app.css already defines
+   (--bg,--text,--muted,--line,--soft,--accent,--green,--red,--amber,
+   --radius,--sidebar) so every existing `var(--x)` reference across
+   app.css and the per-version files inherits the new palette automatically
+   — most of the drift documented in the audit disappears just from this
+   block, with zero risk of missing a call site. New tokens are added
+   alongside for the parts of the system that need more range than the six
+   original names gave (elevation, a second/third neutral, semantic tints).
+*/
+:root{
+  --font-ui:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  /* Editorial contrast for page titles/hero numbers comes from a curated
+     SYSTEM serif stack, not a webfont — deliberately: this app already
+     had a whole investigation into eliminating unnecessary pre-auth
+     network dependencies, and a webfont request is exactly the kind of
+     thing that can fail, get blocked by a restrictive workplace network/
+     ad-blocker, or add latency for no functional benefit. 'Iowan Old
+     Style' (macOS/iOS) and Palatino (Windows) both read as a considered,
+     editorial serif; Georgia is the universal fallback. Zero network
+     requests, zero failure modes, same visual effect. */
+  --font-display:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+
+  --bg:#f6f6f9;         --canvas:#f6f6f9;
+  --surface:#fff;
+  --text:#15161b;       --ink-900:#15161b; --ink-700:#3c3f47;
+  --muted:#6c707a;      --ink-500:#6c707a; --ink-300:#9aa0aa;
+  --line:#e6e8ec;       --line-strong:#d7dae0;
+  --soft:#f1f2f5;       --surface-sunken:#f1f2f5;
+  --accent:#315cff;     --accent-tint:#eef2ff; --accent-ink:#1c3ebf;
+  --green:#147d58;      --success:#147d58; --success-tint:#e8f6ee;
+  --red:#b3261e;        --danger:#b3261e; --danger-tint:#fdecea;
+  --amber:#9a6a13;      --warning:#9a6a13; --warning-tint:#fdf3df;
+
+  --radius:22px;        --radius-sm:11px; --radius-md:16px; --radius-lg:22px;
+  --sidebar:264px;
+
+  --shadow-sm:0 1px 2px rgba(21,22,27,.05),0 1px 1px rgba(21,22,27,.03);
+  --shadow-md:0 10px 28px rgba(21,22,27,.08);
+  --shadow-lg:0 28px 72px rgba(21,22,27,.16);
+
+  --ease:cubic-bezier(.22,.68,.26,1);
+}
+@media (prefers-reduced-motion: reduce){
+  body *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;}
+}
+
+/* ---- 2. Base type --------------------------------------------------------
+   Tabular numerals everywhere a number is displayed — the "financial
+   grade" detail the audit flagged as entirely missing (metric values,
+   currency, budgets, counts all currently use whatever the browser's
+   default proportional digit widths happen to be, so a column of numbers
+   visibly jitters instead of aligning).
+*/
+body{font-family:var(--font-ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body .metric-value strong,body .metric-value,body .billing-price strong,body .ad-metrics strong,
+body .ai-stats strong,body .pipeline-column strong,body .traffic-metrics strong,body .v43-grid strong,
+body .v43-budget-stats b,body .lead-table td,body .transaction-list em{font-variant-numeric:tabular-nums}
+body .page-head h1,body .drawer-head h2,body .modal-head h2,body .future-card h2{
+  font-family:var(--font-display);font-weight:560;letter-spacing:-.02em;
+}
+
+/* ---- 3. Sidebar / navigation ---------------------------------------------
+   Refined ink (was pure-black #0d0e11/#0a0b0d depending on which cascade
+   layer won); new labeled group structure (DESIGN-SYSTEM-V2.md §3) gets
+   an eyebrow-style header matching the micro-label treatment already used
+   well elsewhere in the product (.eyebrow), instead of a bare unlabeled
+   divider.
+*/
+/* The 5-group nav (DESIGN-SYSTEM-V2.md §3) adds 4 extra divider/label rows
+   versus the old 2-group layout, so total sidebar content can exceed
+   100vh on shorter laptop screens. The old layout relied on
+   `.secondary-nav{margin-bottom:auto}` to pin the plan/user cards to the
+   bottom, which silently pushed overflow content below the fold with no
+   way to reach it (confirmed by a real click-target regression in
+   testing: the lower nav groups became un-clickable because they rendered
+   past the viewport with nothing scrollable to bring them into view).
+   Making the sidebar itself independently scrollable is the direct fix.
+*/
+body .sidebar{background:#111217;border-right:1px solid #1d1f26;padding:24px 16px 16px;overflow-y:auto;scrollbar-width:thin}
+body .app-brand{height:44px}
+body .workspace-card{background:#1a1c22;border-color:#282b33;border-radius:var(--radius-md)}
+body .workspace-mark{background:var(--accent);border-radius:12px}
+body .nav-group-label{margin:2px 14px 6px;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#666c7a}
+body .side-divider{background:#1f2129;margin:14px 10px 4px}
+body .nav-item{color:#9aa0ac;border-radius:12px;transition:background .15s var(--ease),color .15s var(--ease)}
+body .nav-item:hover{background:#191b21;color:#fff}
+body .nav-item.active{background:#fff;color:var(--ink-900)}
+body .nav-item.active em{background:var(--ink-900);color:#fff}
+body .plan-card{background:linear-gradient(160deg,#1b1e26,#111318);border-color:#262a33}
+body .admin-nav .nav-item{color:#a9b3ff}
+body .admin-nav .nav-item.active{background:#fff;color:var(--ink-900)}
+body .admin-nav .nav-item:hover{background:#1c1e2e}
+body .nav-group-label.admin-label{color:#7c86f0}
+
+/* Mobile "More" sheet — same group-label treatment, light surface */
+body .mobile-group-label{margin:14px 4px 8px;color:var(--ink-500)}
+body .mobile-group-label:first-of-type{margin-top:2px}
+
+/* ---- 4. Topbar ------------------------------------------------------------ */
+body .topbar{background:rgba(246,246,249,.86)}
+body .icon-button{border-radius:var(--radius-sm);transition:border-color .15s var(--ease),background .15s var(--ease)}
+body .icon-button:hover{background:var(--surface-sunken)}
+
+/* ---- 5. Buttons — one system --------------------------------------------
+   Consolidates .primary-action/.secondary-button/.light-button/
+   .danger-button (previously three near-duplicate pill implementations
+   plus a standalone fourth) onto one token-driven treatment. v17.css's
+   locally reinvented pill (`.v17-lead-actions a,button`) is folded in here
+   too so it stops drifting from the shared system.
+*/
+body .primary-action,body .secondary-button,body .light-button,body .danger-button,
+body .v17-lead-actions a,body .v17-lead-actions button{
+  border-radius:999px;font-weight:700;letter-spacing:.01em;
+  transition:transform .12s var(--ease),filter .12s var(--ease),background .12s var(--ease);
+}
+body .primary-action{background:var(--ink-900);color:#fff}
+body .primary-action:hover{filter:brightness(1.12)}
+body .primary-action:active{transform:scale(.97)}
+body .secondary-button{background:var(--surface-sunken);color:var(--ink-900);border:1px solid transparent}
+body .secondary-button:hover{background:#e7e8ec}
+body .light-button{background:#fff;color:var(--ink-900);border:1px solid var(--line)}
+body .danger-button{background:var(--danger-tint);color:var(--danger)}
+body .danger-button:hover{filter:brightness(.97)}
+body .v17-lead-actions a,body .v17-lead-actions button{border:1px solid var(--line);background:#fff;color:var(--ink-900)}
+body .transaction-delete{color:var(--danger)}
+body .transaction-delete:hover{background:var(--danger-tint);border-color:#f3c9c4}
+
+/* ---- 6. Inputs — one system ----------------------------------------------
+   A consistent focus ring is new: nothing in the current system has one at
+   all outside a couple of one-off `:focus` rules with slightly different
+   colors each time.
+*/
+body input,body select,body textarea{border-radius:var(--radius-sm);border-color:var(--line);transition:border-color .12s var(--ease),box-shadow .12s var(--ease)}
+body input:focus,body select:focus,body textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-tint)}
+body .settings-card label,body .auth-card label,body .lead-drawer label,body .lead-modal label,
+body .prospecting-controls label,body .compact-form label,body .fund-form label,body .website-update-form label{
+  font-size:10.5px;font-weight:700;letter-spacing:.02em;color:var(--ink-500);
+}
+
+/* ---- 7. Cards / panels — two intentional variants -------------------------
+   .panel stays the workhorse. .panel-flagship is new: a denser, quieter
+   hairline-top treatment (used by Website Projects and the Overview
+   command surface) instead of a full border, so those screens read as a
+   considered "workspace" rather than another stack of boxed cards.
+*/
+body .panel,body .metric-card,body .lead-table-wrap,body .calendar-shell,body .placeholder-layout,
+body .prospect-card,body .automation-card,body .v34-card,body .website-update-item{
+  border-color:var(--line);border-radius:var(--radius-md);
+}
+body .panel{box-shadow:none;transition:box-shadow .18s var(--ease)}
+body .panel-flagship{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm);background:var(--surface)}
+body .metric-card.hero-metric,body .ai-panel,body .billing-primary{background:var(--ink-900);border-color:var(--ink-900)}
+body .billing-primary{background:linear-gradient(160deg,#1a1c22,#111318)}
+body .future-card{background:var(--ink-900);border-radius:var(--radius-lg)}
+
+/* ---- 8. Status chips — one system -----------------------------------------
+   .status-pill / .status-{Name} / .v34-state / .channel-chip /
+   .invoice-status / .v28-score / .coming-badge all map onto the same four
+   semantic pairs now — no JS/markup changes needed, only the color/weight
+   rules these class names already resolve to.
+*/
+body .status-pill,body .coming-badge,body .viewed-badge,body .prospect-purpose-badge{
+  background:var(--surface-sunken);color:var(--ink-500);font-weight:800;
+}
+body .status-pill.neutral,body .coming-badge{background:var(--surface-sunken);color:var(--ink-500)}
+body .status-New,body .channel-chip.live,body .v34-state.live,body .v34-state.ready,body .prospect-card .prospect-meta .market-purpose{
+  background:var(--accent-tint);color:var(--accent-ink);
+}
+body .status-Contacted,body .invoice-status.pending,body .v28-score.fair{background:var(--warning-tint);color:var(--warning)}
+body .status-Quoted{background:#f2eeff;color:#6a49b8}
+body .status-Won,body .invoice-status.paid,body .trend.positive,body .ai-live-pill,body .v28-score.hot,body .v28-score.good{
+  background:var(--success-tint);color:var(--success);
+}
+body .status-Lost,body .invoice-status.void,body .trend.negative,body .v28-score.weak{background:var(--danger-tint);color:var(--danger)}
+body .channel-chip.off,body .v34-state.off,body .v34-state{background:var(--surface-sunken);color:var(--ink-500)}
+body .hero-metric .trend.positive{background:rgba(20,125,88,.22);color:#8fe6bb}
+body .live-dot,body .v21-live-dot,body .ai-live-pill:before{background:var(--success)}
+
+/* ---- 9. Table -------------------------------------------------------------
+   .lead-table was already the one consistent component in the audit — only
+   the header micro-label treatment is refined to match .eyebrow elsewhere,
+   plus a real row-hover instead of the previous flat one.
+*/
+body .lead-table th{color:var(--ink-500);letter-spacing:.1em;font-weight:800;background:var(--surface-sunken)}
+body .lead-table-row:hover td,body .lead-row.clickable-lead:hover{background:var(--canvas)}
+
+/* ---- 10. Modals ------------------------------------------------------------ */
+body .lead-modal,body .widget-card{border-radius:var(--radius-lg);box-shadow:var(--shadow-lg)}
+body .modal-backdrop{background:rgba(15,16,20,.5)}
+body .close-button{background:var(--surface-sunken);transition:background .12s var(--ease)}
+body .close-button:hover{background:#e7e8ec}
+
+/* ---- 11. Empty + loading states --------------------------------------------
+   .v29-empty (an accidental duplicate of .empty-state, per the audit) is
+   folded onto the same treatment. .skeleton is new — nothing in the
+   current system has any loading affordance beyond swapping in plain
+   text, so every async wait currently reads as stalled rather than
+   working.
+*/
+body .empty-state,body .v29-empty{color:var(--ink-500)}
+body .skeleton{position:relative;overflow:hidden;background:var(--surface-sunken);border-radius:var(--radius-sm);color:transparent!important}
+body .skeleton::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);animation:sr-shimmer 1.3s infinite}
+@keyframes sr-shimmer{100%{transform:translateX(100%)}}
+@media (prefers-reduced-motion: reduce){body .skeleton::after{animation:none;display:none}}
+
+/* ---- 12. Screen identity: Overview / command center ------------------------
+   Editorial hero treatment: serif page title (via §2's h1 rule), and the
+   "what needs attention" surface reads as the dominant element rather than
+   one card among equals.
+*/
+body #view-home .page-head h1{font-size:clamp(30px,3.4vw,44px)}
+body #view-home .leads-panel{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
+
+/* ---- 13. Screen identity: Website Projects (flagship delivery workspace) --- */
+body #view-website-projects .panel{box-shadow:var(--shadow-sm)}
+body #view-website-projects .website-update-history-card,body #view-website-projects .website-update-form-card{
+  border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);
+}
+body #view-website-projects .website-update-item{transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+body #view-website-projects .website-update-item:hover{border-color:var(--line-strong);box-shadow:var(--shadow-sm)}
+
+/* ---- 14. Screen identity: Growth (Market Finder, Analytics) ---------------
+   Distinct from Operations via a data-forward accent instead of the
+   default neutral card treatment — chart tracks and metric tiles get the
+   accent tint rather than pure gray.
+*/
+body #view-prospecting .ad-metrics>div,body #view-analytics .ad-metrics>div,body #view-analytics .analytics-track,
+body #view-prospecting .prospecting-tip{background:var(--accent-tint)}
+body #view-analytics .analytics-track i{background:var(--accent)}
+body #view-prospecting .prospecting-tip strong,body #view-prospecting .prospecting-tip span{color:var(--accent-ink)}
+
+/* ---- 15. Screen identity: Configuration (Automations/Integrations/Settings)
+   Deliberately quieter: smaller headline, list density instead of hero
+   cards — this is configuration, not a workspace.
+*/
+body #view-automations .page-head h1,body #view-integrations .page-head h1,body #view-settings .page-head h1{
+  font-family:var(--font-ui);font-weight:750;font-size:26px;letter-spacing:-.03em;
+}
+body #view-automations .automation-card,body #view-integrations .v34-card,body #view-settings .settings-card{box-shadow:none}
+
+/* ---- 16. Screen identity: Admin (owner/operator control layer) -----------
+   Distinguishes Admin from every other screen with a graphite/indigo
+   accent instead of the accidental warm-beige palette v43-ad-control.css
+   introduced (the audit's single most visible outlier — those beige tones
+   don't appear anywhere else in the product and weren't a deliberate
+   choice). The lock/blur pattern already used for unfinished features
+   (.feature-block-overlay) is the one existing pattern worth carrying
+   forward here as-is.
+*/
+body #view-admin .page-head h1{font-family:var(--font-ui);font-weight:750}
+body .v43-ad-control{border-color:var(--line);background:var(--surface)}
+body .v43-admin-head span,body .v43-client-card span,body .v43-recommend span,
+body .v43-grid span,body .v43-results span,body .v43-connections span,body .v43-ad-health span,
+body .v43-form label{color:var(--ink-500)}
+body .v43-admin-head small,body .v43-client-card small,body .v43-recommend small,body .v43-ad-health small{color:var(--ink-500)}
+body .v43-grid article,body .v43-results article{background:var(--surface-sunken);border-color:var(--line)}
+body .v43-connections>div{background:var(--surface-sunken)}
+body .v43-form{border-color:var(--line)}
+body .v43-form input,body .v43-form select{border-color:var(--line)}
+body .v43-lock{background:var(--accent-tint);color:var(--accent-ink)!important}
+body .v43-client-card{border-color:var(--line);background:var(--surface)}
+body .v43-ad-health{border-color:var(--line);background:var(--surface)}
+body .v43-recommend{background:var(--ink-900)}
+body #view-admin .admin-panel{border-top:3px solid #4b3ff5;border-radius:14px 14px var(--radius-lg) var(--radius-lg);border-left:0;border-right:0;border-bottom:1px solid var(--line)}
+
+/* ---- 17. Auth / subscription-lock polish -----------------------------------
+   Token/radius consolidation only — deliberately NOT switched to
+   --font-display (see §1): the login path stays on system fonts only, so
+   it never waits on a webfont request.
+*/
+body .auth-screen,body .subscription-lock{background:var(--ink-900)}
+body .auth-card,body .subscription-lock-card{border-radius:var(--radius-lg);box-shadow:var(--shadow-lg)}
+body .auth-tab.active{background:var(--ink-900)}
+body .workspace-menu{background:#1a1c22;border-color:#282b33}
+body .workspace-option:hover,body .workspace-option.active{background:#24262f}
+
+/* ---- 18. Responsive: nav group labels on mobile/tablet sidebars ----------- */
+@media(max-width:900px){
+  body .nav-group-label{margin:2px 12px 5px}
+}

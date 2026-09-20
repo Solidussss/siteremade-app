@@ -77,7 +77,15 @@ function renderAll(){
 }
 function renderBadges(){const newLeads=state.leads.filter(l=>l.status==='New').length,unread=state.conversations.reduce((s,c)=>s+Math.max(0,Number(c.unread)||0),0),total=newLeads+unread;const lb=qs('#leadBadge'),ib=qs('#inboxBadge'),nc=qs('#notificationCount'),dot=qs('#notificationDot');if(lb){lb.textContent=newLeads;lb.style.display=newLeads?'grid':'none';}if(ib){ib.textContent=unread;ib.style.display=unread?'grid':'none';}if(nc){nc.textContent=total>99?'99+':String(total);nc.hidden=!total;}if(dot)dot.style.display=total?'block':'none';return{newLeads,unread,total};}
 function showToast(title,detail=''){let t=qs('#appToast');if(!t){t=document.createElement('div');t.id='appToast';t.className='app-toast';document.body.appendChild(t);}t.innerHTML=`<strong>${esc(title)}</strong><span>${esc(detail)}</span>`;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3600);}
-function renderWorkspace(){const n=state.workspace.businessName||'Your business';qs('#workspaceName').textContent=n;qs('#homeGreeting').textContent=`${n.split(/\s+/)[0]} overview`;qs('.workspace-mark').textContent=(n[0]||'S').toUpperCase();qs('#todayLabel').textContent=new Intl.DateTimeFormat('en-CA',{weekday:'long',month:'long',day:'numeric'}).format(new Date()).toUpperCase();const uc=qs('.user-card strong');if(uc&&state.user)uc.textContent=state.user.name;const us=qs('.user-card small');if(us&&state.user)us.textContent=state.user.role==='owner'?'SiteRemade owner':'Administrator';qs('#adminNav').style.display=state.user?.role==='owner'?'grid':'none';const man=qs('#mobileAdminNav');if(man)man.style.display=state.user?.role==='owner'?'block':'none';}
+function renderWorkspace(){const n=state.workspace.businessName||'Your business';qs('#workspaceName').textContent=n;qs('#homeGreeting').textContent=`${n.split(/\s+/)[0]} overview`;qs('.workspace-mark').textContent=(n[0]||'S').toUpperCase();qs('#todayLabel').textContent=new Intl.DateTimeFormat('en-CA',{weekday:'long',month:'long',day:'numeric'}).format(new Date()).toUpperCase();const uc=qs('.user-card strong');if(uc&&state.user)uc.textContent=state.user.name;const us=qs('.user-card small');if(us&&state.user)us.textContent=state.user.role==='owner'?'SiteRemade owner':'Administrator';const isOwner=state.user?.role==='owner';qs('#adminNav').style.display=isOwner?'grid':'none';
+// V2 redesign: the sidebar's Admin group is now its own labeled section
+// (divider + eyebrow label) wrapping the single Admin nav button, instead
+// of the button living unlabeled at the end of a shared list. Owner-gating
+// used to only need to hide the button itself; now the wrapper has to be
+// hidden too, or a non-owner sees an empty "Admin" section heading with
+// nothing under it.
+const adminDivider=qs('#adminDivider'),adminLabel=qs('#adminLabel');if(adminDivider)adminDivider.style.display=isOwner?'block':'none';if(adminLabel)adminLabel.style.display=isOwner?'block':'none';
+const man=qs('#mobileAdminNav');if(man)man.style.display=isOwner?'block':'none';const mal=qs('#mobileAdminLabel');if(mal)mal.style.display=isOwner?'block':'none';}
 function greeting(){const h=new Date().getHours();return h<12?'morning':h<18?'afternoon':'evening';}
 function inRange(iso){return Date.now()-new Date(iso).getTime()<=state.rangeDays*86400000;}
 function renderDashboard(){
