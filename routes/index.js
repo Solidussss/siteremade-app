@@ -18,7 +18,8 @@ const registerers = [
   require('./google-signin'),
   require('./gmail-direct'),
   require('./analytics-bootstrap'),
-  require('./umami-analytics')
+  require('./umami-analytics'),
+  require('./google-calendar')
 ];
 
 function buildRouter() {
