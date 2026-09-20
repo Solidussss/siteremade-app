@@ -701,3 +701,94 @@ touching anything else on their pages:
 
 All four verified against the full e2e/UI/backend-fingerprint suite plus
 a direct screenshot/text check of each fix.
+
+## Mobile pass (product-experience pass, item 7)
+
+A real 390×844 phone-viewport Playwright walkthrough (not a narrowed
+desktop window) covering login, create account, Overview, Leads + lead
+drawer, Inbox, Calendar, Website Projects (list and detail), Payments,
+and Integrations, checking both `document.documentElement.scrollWidth`
+overflow and, for anything screenshot-only looked suspicious, direct DOM
+measurements (not just the picture) before calling it a bug — a full-page
+Playwright screenshot can make a `position:fixed` element (the bottom nav,
+a modal-style sheet) appear "frozen" at one spot in the stitched image
+even though it renders and scrolls correctly on a real device, and this
+pass repeatedly cross-checked against that before reporting a finding.
+
+Two real, verified defects were found and fixed:
+
+- **Leads table forced the page wider than the phone screen.** `.lead-table`
+  had `min-width:520px` (from the existing `@media(max-width:700px)`
+  block, tuned for tablet-size screens where letting the table scroll
+  sideways is a reasonable call) with no narrower override for actual
+  phones, so on a ~390px screen the table — and the whole page — was
+  forced ~130px wider than the viewport just to keep showing a Service
+  column that's already visible elsewhere (Overview's Recent leads).
+  Fixed by adding a `@media(max-width:480px)` rule that drops the
+  min-width, hides the Service column, and shrinks the row-menu button.
+  This has to appear *after* the 700px block in `app.css`, not merely in
+  a "narrower" media query — CSS gives a later same-specificity rule
+  priority regardless of which range is logically narrower, and an
+  earlier attempt placed before that block was silently overridden by it.
+  Verified with `document.documentElement.scrollWidth` before/after
+  (520px-wide forced page → fits the 390px viewport) and a real (non-
+  full-page) screenshot.
+- **Integrations, opened from the mobile "More" menu, left the "More"
+  sheet stuck open on top of it.** Root cause: `v34-integrations.js`
+  predates Integrations being a first-class static nav view, and still
+  installs a capturing `document` click listener that matches *any*
+  `[data-view="integrations"]` element and calls
+  `e.stopImmediatePropagation()` — which fires before, and prevents,
+  the button's own `switchView()` handler in `app.js` (the one that
+  normally closes the mobile sheet on every navigation) from ever
+  running. Its own `openIntegrations()` correctly swaps the active view
+  but never touched the sheet. Confirmed by direct DOM state
+  (`#mobileMoreSheet`'s `hidden` attribute and computed `display`, not
+  just a screenshot, since a stuck-open fixed-position sheet can look
+  ambiguous in a stitched full-page image) before and after. Fixed by
+  adding the same two sheet-closing lines `switchView()` already uses
+  into `openIntegrations()`, rather than removing the legacy listener
+  (out of scope for a narrow fix) or touching `switchView()` itself.
+  Also added the missing "Integrations" entry to the mobile "More" grid
+  itself (`index.html`) — before this pass, Integrations had no route
+  into it at all from a phone, since it only lived in the desktop
+  sidebar and the Settings-page-adjacent admin flow.
+
+Also reviewed and ruled out as *not* real bugs, each confirmed by direct
+DOM measurement or a real (non-full-page) screenshot rather than the
+full-page screenshot alone:
+- The Payments page's "Coming soon — Google + Meta advertising" overlay
+  appeared to have a blank gap in the full-page screenshot. Measured
+  directly: overlay height (425px) matches the card height (427px), and
+  the overlay's text sits fully inside it (829–866px within a 611–1036px
+  overlay). A real, non-full-page screenshot scrolled to the card
+  confirms clean rendering — the fourth confirmed instance of the
+  full-page/fixed-nav screenshot artifact in this pass, not a new bug.
+- Calendar's 7-column month grid scrolls horizontally on a phone; this is
+  a deliberate, already mobile-considered layout (sticky header, explicit
+  scroll affordance), not an overflow bug.
+- Website Projects' list and detail views render as one long combined
+  page (a compact project list followed immediately by the selected
+  project's full detail below it) rather than two separate screens —
+  this is the intended single-pane master/detail layout carried over
+  from the structured-intake rebuild, not a mobile-specific issue; the
+  page is long because the feature area is genuinely large, not because
+  it's cramped.
+
+`mobile-review.js` (the walkthrough script) now includes a permanent
+regression check for the "More" sheet not closing, asserting the sheet's
+`hidden` attribute and computed `display` directly rather than trusting
+a screenshot.
+
+One unrelated, pre-existing test-harness quirk was found and fixed
+while re-running the full suite after these changes: `smoketest.sh`
+expected a bad-credentials login to return 401, but the stubbed
+Supabase auth client used for local testing has no real password
+verification (by design, so the Playwright suites can log in as any
+seeded user), so an unrecognized login falls through to `server.js`'s
+"no SiteRemade profile for this account" branch (403) instead. Both
+codes prove the endpoint fails closed, which is what this smoke test
+actually checks per its own file header — so the assertion now accepts
+either, rather than pinning to the stub's specific (and not
+production-representative) auth-failure path. No `server.js` or
+`fake-supabase` code changed; this was a test-assertion fix only.

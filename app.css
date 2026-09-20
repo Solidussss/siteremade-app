@@ -169,6 +169,19 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   .drawer-contact-actions{align-items:flex-start}
   .contact-source{width:100%;margin-left:0}
 }
+/* Real phones (found in a real-device mobile walkthrough, not just a
+   narrow desktop window): the 700px block above deliberately keeps the
+   leads table at a scrollable min-width:520px for tablet-size screens —
+   a reasonable "let it scroll sideways" call when there's still ~520px
+   of room either way. But on an actual ~360-390px phone that min-width
+   forces the whole table wider than the screen just to show a Status
+   value that's really only ~70px wide, so the fix here isn't "scroll
+   sideways" but "stop being 520px wide at all": drop the min-width, and
+   free up room by also dropping the Service column (already visible on
+   every lead row elsewhere, e.g. Overview's Recent leads) and shrinking
+   the icon-only row-menu button's padding. This has to come after the
+   700px block above so its min-width doesn't win the cascade. */
+@media(max-width:480px){.lead-table{min-width:0}.lead-table th:nth-child(2),.lead-table td:nth-child(2){display:none}.lead-table td:last-child{padding-left:2px;padding-right:8px}.lead-table .row-menu{padding:0;width:24px}.status-select{font-size:8px;padding:0 4px}}
 @media(max-width:520px){
   .view{padding:18px 11px 92px}
   .topbar{padding:0 11px}
