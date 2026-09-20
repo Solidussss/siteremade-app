@@ -206,23 +206,44 @@ entirely on every route filtering by `workspace_id` itself.
   one reintroducing the exact "which file wins" ambiguity this router
   replaced).
 
+**Fixed (production-readiness pass):**
+
+1. **Cross-tenant lead lookup in the legacy single-tenant Twilio webhook —
+   fixed.** `routes/legacy-twilio-inbound.js`'s `findLeadByPhone()` used to
+   scan `leads` across **every workspace** (no `workspace_id` filter) and
+   attach the inbound SMS to whichever matching lead was updated most
+   recently, globally — a real cross-tenant risk if two tenants ever had a
+   contact with the same phone number. Fixed by resolving the workspace
+   deterministically first: `workspaceForReceivingNumber()` looks up
+   `integration_connections` (`provider:'twilio'`, `status:'connected'`,
+   `config.phoneNumber`) — the exact same table the modern per-tenant
+   Twilio routes (`routes/twilio-stripe.js`, `v40-twilio-subaccounts.js`)
+   already trust for this same mapping — for a row whose registered number
+   matches the receiving `To` number, and only then runs `findLeadByPhone`
+   scoped to that one workspace. No guessing was needed: this data already
+   existed and was already the source of truth for the modern routes: the
+   legacy route just wasn't using it yet.
+
+   If `TWILIO_FROM` isn't registered in `integration_connections` at all
+   (plausible — it predates that table, and this comment previously asked
+   "is this endpoint still live for a real tenant, and if so which one?"
+   without an answer available from this sandbox), the fix fails safe: the
+   message is not attributed to any workspace, Twilio still gets its 200
+   OK, and it is simply not logged to a lead — rather than falling back to
+   the old cross-workspace scan, which would leave the exact vulnerability
+   this fixes wide open for that one case. **Remaining product/ops
+   question, not a blocker:** if `TWILIO_FROM` is still a live number for
+   some real business today, that business's inbound SMS will stop being
+   logged to a lead until someone connects that number to their workspace
+   the normal way (`POST /api/app/integrations/twilio/connect`), which
+   also moves them onto the fully-isolated modern path. Verified with a
+   new `e2e-test.js` case: two workspaces sharing a phone number, asserting
+   the message lands in the correct one and never the other, and that an
+   unregistered number produces no cross-workspace guess.
+
 **Found, needs a product/ops decision before merge — not changed:**
 
-1. **Cross-tenant lead lookup in the legacy single-tenant Twilio webhook.**
-   `routes/legacy-twilio-inbound.js`'s `findLeadByPhone()` scans `leads`
-   across **every workspace** (no `workspace_id` filter) and attaches the
-   inbound SMS to whichever matching lead was updated most recently,
-   globally. `POST /api/public/twilio/inbound` only checks the destination
-   number against one global `TWILIO_FROM` env var — it never resolves
-   which workspace that number belongs to. If two different tenants each
-   have a contact with the same phone number, one business's customer
-   conversation can land in a different tenant's CRM. This predates this
-   migration (the logic was copied verbatim from `v17-preload.js` to
-   preserve behavior) and a safe fix requires knowing which workspace
-   `TWILIO_FROM` is actually meant to represent today — is this endpoint
-   still live for a real tenant, and if so which one? Left unchanged
-   pending that answer.
-2. **`auth:'user'` (not `'owner'`) on workspace-wide Stripe/Twilio identity
+1. **`auth:'user'` (not `'owner'`) on workspace-wide Stripe/Twilio identity
    changes.** `POST /api/app/integrations/stripe/connect`, `.../twilio/
    connect`, and `.../twilio/existing/authorize` (a real Twilio LOA/porting
    submission) are reachable by any workspace member, not just an owner.
@@ -232,7 +253,7 @@ entirely on every route filtering by `workspace_id` itself.
    Twilio accounts are properly the business's own workspace members'
    responsibility to connect, not SiteRemade staff's. Recorded here in case
    that reading is wrong, but no fix applied.
-3. **V48 migration risk against real production data — partially resolved,
+2. **V48 migration risk against real production data — partially resolved,
    still needs someone with production access.** This sandbox has no
    Supabase credentials and no database connector, so none of this could be
    run against the real database; nothing below claims otherwise.
