@@ -441,6 +441,99 @@ longer throws" isn't the same as "it makes sense once it's live":
 `ui-test.js`'s error allowlist for this specific "wait is not defined"
 message has been removed now that the fix means it can't occur.
 
+## Live-refresh backend cost (product-experience pass)
+
+The previous pass put an ETag on `GET /api/app/bootstrap` so an unchanged
+5-second poll returns an empty 304 instead of the full payload — a real
+win for network and re-render cost, but it was explicitly flagged as
+**not** touching backend cost, because computing that ETag still required
+running the full `workspaceSnapshot()` — 13 Supabase queries, six of them
+unbounded or capped at 200-5000 rows — before the server could even tell
+whether anything had changed. Every 5-second poll paid that cost, changed
+or not.
+
+`workspaceFingerprint(wid)` (`server.js`) now answers "did anything
+change" first, using a cheap, targeted signal per table instead of
+fetching every row:
+
+- **leads, conversations, website_updates, website_projects** — each has
+  a real `updated_at` column that every `update()` call against it in
+  this codebase already sets (checked every call site, not assumed), and
+  insert/delete change the row count. Row count + the single most-recent
+  `updated_at` can't miss a change.
+- **messages, appointments, activities, ad_spend** — insert/delete only;
+  no update touches a field the client ever sees (an appointment's
+  `reminder_sent_at` isn't in `mapAppointment`). Row count + most-recent
+  `created_at` is enough.
+- **ad_funds** — same idea, plus a second cheap check on the most recent
+  non-null `funded_at`, because a fund request can flip Pending → Funded
+  long after a newer request was created, which wouldn't move the count
+  or the created_at watermark on its own.
+- **prospect_views** — insert-only and already projected down to just
+  `place_id` in the real snapshot; a bare row count needs no data at all.
+- **invoices, automations** — the two exceptions. Neither table has an
+  `updated_at` column, and both can change in place without moving any
+  timestamp: the Payments screen lets an owner set an invoice to *any*
+  status by hand (not just Paid — Draft/Pending/Void are all one dropdown
+  away), and toggling an automation just flips a boolean with no
+  timestamp column to bump at all. Rather than add a schema column and
+  depend on a migration nobody can verify against real production data
+  yet (the same caution V48 already got), these two are read in full on
+  every poll — but projected to just the 2-3 columns that are actually
+  mutable, not every column. Both tables are small and bounded in
+  practice (automations is a fixed handful of rows; invoices scale with
+  real business volume, not with polling), so this wasn't the cost
+  problem to begin with.
+- **website_analytics** — a single row per workspace whose one write path
+  (`routes/umami-analytics.js`) always bumps its own `updated_at`, so
+  that column alone is the whole check.
+
+When the fingerprint hash matches the client's `If-None-Match`, the
+handler returns 304 **without ever calling `workspaceSnapshot()`**. When
+it doesn't, it falls through to the exact same full rebuild as before —
+freshness on a real change is identical to today; only the cost of an
+*unchanged* poll is different.
+
+**Correctness risk and how it was tested:** the whole point of a
+fingerprint is that it must never go stale, or another open tab/device
+silently stops seeing real changes. `backend-fingerprint-test.js` proves
+the three specific gaps this design had to close, each verified against
+the real route logic (not a reimplementation):
+- toggling an automation (no timestamp column, no count change) still
+  invalidates the fingerprint;
+- editing an invoice to **Void** — not Paid, so `paid_at` never moves —
+  still invalidates it;
+- marking the **older** of two ad-fund requests as Funded (no new row,
+  count and latest-`created_at` both unchanged) still invalidates it.
+
+All three would have been silently missed by a naive count-only or
+count+`updated_at`-only design, which is why invoices and automations get
+the narrower full-column read instead of being folded into the same
+count/timestamp pattern as everything else.
+
+**Before/after, measured** by that same test against a seeded workspace
+(50 leads, 12 invoices, 3 automations, 30 activities, 2 ad-fund requests):
+
+| | queries | rows returned | bytes on the wire |
+|---|---|---|---|
+| Every poll, old behavior (= any poll with a real change, still today) | 29 | 117 | 24,549 |
+| Unchanged poll, new behavior | 16 | 20 | 0 (304) |
+
+Rows returned on an unchanged poll dropped ~83%, and the large/unbounded
+tables (leads, activities, and anything with real message/note text)
+contribute zero rows instead of all of them. Query *count* drops too in
+this run (16 vs 29) but that's a secondary effect of skipping
+`workspaceSnapshot()` entirely, not the primary goal — a genuinely
+different signal per table still means one lightweight round trip per
+table either way. A single-round-trip check (one Postgres function call
+instead of ~13) is possible but would need a new schema object deployed
+and verified against real production data first, which is exactly the
+kind of unverified-migration risk this pass is deliberately avoiding.
+
+No client-side change was needed — `app.js`'s `liveRefresh()` already
+sends `If-None-Match` and already handles a 304 from the previous pass;
+this fix is entirely inside the bootstrap route.
+
 ## App experience review (real-user walkthrough, no redesign)
 
 Walked the app as a first-time owner would, using a realistically seeded
