@@ -613,3 +613,35 @@ Other findings, roughly in order of how visible they are:
 
 None of the above were fixed in this pass — per the brief, this is a
 report of what a real user would notice, not a redesign.
+
+## Integrations: retiring the 6 dead-end cards (product-experience pass)
+
+Confirmed by grep across the whole repo, not assumed: QuickBooks, Xero,
+Slack, Microsoft Teams, DocuSign and PandaDoc have no OAuth flow, no
+callback route and no client-library call anywhere in the codebase —
+unlike Gmail/Google Calendar/Twilio/Stripe/Google Ads/Meta Ads, which do.
+`routes/integrations.js`'s `configured` flag for these six only checks
+whether an env var pair *exists*; setting one wouldn't actually connect
+anything, because there's nothing on the other end to connect to. That's
+what made `v34-integrations.js`'s generic click handler pop a raw
+`alert()` for them — the card had no real "next step" to send the owner
+to.
+
+Fix: `v34-integrations.js` now hard-codes these six ids into an
+`UNAVAILABLE` set, independent of whatever the status endpoint reports.
+For those cards only: the state pill always reads "Coming later" (not
+"Setup required"), the button is a real disabled `<button>` (not just
+styled to look inactive — clicking it does nothing, fires no handler, no
+`alert()`), and the card itself is slightly dimmed (`.v34-unavailable`,
+`opacity:.72`) to read as backgrounded at a glance. No visual language
+was introduced — same card, pill and button components every other
+integration uses, just their existing `:disabled` state. The real
+integrations (Gmail, Twilio, Stripe, Google Ads, Meta Ads, Zapier, etc.)
+are untouched.
+
+This is deliberately a "not yet" treatment, not a removal — the cards
+stay visible so the roadmap breadth is still legible — per the brief's
+"present professionally as unavailable/coming later... do not fabricate
+functionality." Verified with a Playwright check that the QuickBooks
+button is disabled and that force-clicking it raises no dialog, alongside
+the existing full UI-test run.
