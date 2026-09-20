@@ -645,3 +645,59 @@ stay visible so the roadmap breadth is still legible — per the brief's
 functionality." Verified with a Playwright check that the QuickBooks
 button is disabled and that force-clicking it raises no dialog, alongside
 the existing full UI-test run.
+
+## Small polish fixes (product-experience pass)
+
+Four defects named directly in the app-experience review, fixed without
+touching anything else on their pages:
+
+- **Duplicated dashboard stat row.** `v19-client.js`'s `renderFocus()`
+  (ACTIVE LEADS / WAITING REPLIES / FOLLOW UPS / TODAY'S BOOKINGS /
+  OUTSTANDING, a bare strip at the very top of Overview) and
+  `v22-client.js`'s `renderHomeHero()` ("Know exactly what to do next",
+  with the same active-leads/waiting-replies/outstanding numbers as
+  clickable, framed stat buttons) had ended up showing nearly the same
+  numbers twice, stacked directly on top of each other — `v22.css` had
+  even already been tuning the older strip's spacing rather than hiding
+  it, so this wasn't a leftover so much as two iterations that never got
+  reconciled. Rather than delete either widget outright: the "Follow-ups
+  due" number (active leads untouched 2+ days) is the one real stat the
+  older strip had that the newer hero didn't, so it was folded into the
+  hero's stat row (now 5 stats instead of 4), and the older strip is
+  retired the same way `v28-market.css` already retired `.v19-fit` —
+  `.v19-focus-strip{display:none!important}` in `v22.css` — rather than
+  touched in `v19-client.js`, since that file still uses the same
+  numbers elsewhere (the pipeline board).
+- **Unexplained empty "RESPONSE TIME AVG" metric.** The metric itself was
+  never broken — `app.js` already computed a real average reply time from
+  conversations with 2+ messages — but its caption (`#responseMeta`)
+  was static placeholder text ("Conversation activity") that never
+  updated, unlike its sibling metrics' captions (`#appointmentMeta`,
+  `#valueMeta`), which do. So a workspace with no multi-message
+  conversations yet showed a bare "—" with a caption that explained
+  nothing. Now reads "Not enough replies yet to measure" (or "Across N
+  replies" once there's data) — same computation, just an honest caption.
+- **Idle login text rendered error-red.** `#loginStatus{color:#c54747}`
+  in `app.css` made the login screen's small print red *by default*,
+  including the idle "Supabase-secured account" text and the transient
+  "Signing in…" text — not just real errors. Its sibling `#signupStatus`
+  already does this correctly (neutral by default, `.error`/`.success`
+  color applied only when relevant); `#loginStatus` just never got the
+  same treatment. Fixed the base color to neutral and confirmed the two
+  `app.js` call sites that relied on the red default for genuine errors
+  (Supabase misconfigured; login rejected) now set red explicitly, so
+  real errors still show red — verified visually, not just by absence of
+  the old rule.
+- **"Railway" / raw env var names in user-facing copy.** Found in three
+  places, not just the one the review screenshotted: the Admin page's
+  Meta Ads panel ("Railway is missing META_APP_ID and META_APP_SECRET"),
+  and the same pattern in the Website Projects brief-generation error
+  (`server.js`, both the actual 503 response and its otherwise-unreachable
+  fallback throw) — the exact message a business owner sees if they try
+  "Generate with AI" before it's configured. All three now describe the
+  situation in plain product language with no hosting-provider name or
+  raw env var names. Confirmed by loading the Admin page and asserting
+  neither string appears anywhere in the rendered page.
+
+All four verified against the full e2e/UI/backend-fingerprint suite plus
+a direct screenshot/text check of each fix.

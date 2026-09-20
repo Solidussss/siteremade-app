@@ -16,10 +16,14 @@ document.documentElement.dataset.siteremadeVersion='23';
     const box=addHero('#view-home','v22HomeHero','TODAY\'S BUSINESS','Know exactly what to do next.','SiteRemade pulls your leads, replies, bookings and money into one operating view.');if(!box)return;
     const active=state.leads.filter(l=>!['Won','Lost'].includes(l.status)).length;
     const waiting=state.conversations.reduce((n,c)=>n+Math.max(0,Number(c.unread)||0),0);
+    // Same "needs a follow-up" definition v19-client.js's now-retired focus
+    // strip used (active lead, untouched 2+ days) — folded in here instead
+    // of duplicated in its own row; see PHASE3-ROUTE-MAP.md.
+    const stale=state.leads.filter(l=>!['Won','Lost'].includes(l.status)&&Math.max(0,Math.floor((Date.now()-new Date(l.updatedAt||l.createdAt||Date.now()).getTime())/86400000))>=2).length;
     const upcoming=state.appointments.filter(a=>new Date(a.start)>=new Date()).length;
     const pending=state.invoices.filter(i=>i.status==='Pending').reduce((n,i)=>n+Number(i.amount||0),0);
     const s=box.querySelector('.v22-hero-stats');
-    [['Active leads',active,'leads'],['Waiting replies',waiting,'inbox'],['Upcoming',upcoming,'calendar'],['Outstanding',moneySafe(pending),'payments']].forEach(([label,val,view])=>{const b=make('button','v22-hero-stat');b.innerHTML=`<span>${label}</span><strong>${val}</strong>`;b.onclick=()=>switchView(view);s.appendChild(b);});
+    [['Active leads',active,'leads'],['Waiting replies',waiting,'inbox'],['Follow-ups due',stale,'leads'],['Upcoming',upcoming,'calendar'],['Outstanding',moneySafe(pending),'payments']].forEach(([label,val,view])=>{const b=make('button','v22-hero-stat');b.innerHTML=`<span>${label}</span><strong>${val}</strong>`;b.onclick=()=>switchView(view);s.appendChild(b);});
   }
 
   function websiteNumbers(){
