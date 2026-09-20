@@ -107,12 +107,9 @@ Four files still patch `http.createServer` directly:
   content-based-fallthrough shape as above; same reason for staying put.
 - **v30-google-auth.js** — wraps `res.end` for `GET /` and `/index.html` to
   inject the "Continue with Google" button. This injection never actually
-  fires (see **Known pre-existing bugs** below) but the routes it used to
-  define (`GET /auth/google`, `POST /api/auth/oauth-session`) have moved to
-  `routes/google-signin.js`. The wrapper itself is left in place rather
-  than removed, since removing dead-in-practice code that's tied to an
-  unresolved product question (should the button work, or was it meant to
-  be gone?) is a product decision, not a structural cleanup.
+  fired before this pass (see **Known pre-existing bugs** below, now
+  fixed) but the routes it used to define (`GET /auth/google`, `POST
+  /api/auth/oauth-session`) have moved to `routes/google-signin.js`.
 - **v17-preload.js** — serves `index.html` for `GET /` / `/index.html` via
   `enhancedHtml()` (now a plain file read — see the frontend-consolidation
   note in `index.html`'s own header comment) and wraps `res.end` around
@@ -131,19 +128,26 @@ Four files still patch `http.createServer` directly:
    `routes/twilio-stripe.js`. Verified pre-existing against an isolated
    checkout of the commit before this migration started. Regression-tested
    in `smoketest.sh`.
-2. **Left as-is, documented** — the "Continue with Google" button
-   (`v30-google-auth.js`) can never appear. Root cause: Node's
-   `res.getHeader()` does not reflect headers set via `res.writeHead()`
-   (only ones set via `res.setHeader()` before it) — and every response in
-   this codebase sets its content type through `res.writeHead()`. The
-   injection wrapper gates on `res.getHeader('Content-Type')`, which is
-   therefore always empty for every response it ever sees, so the
-   `type.includes('text/html')` check never passes and `injectGoogleAuth()`
-   is never called. Confirmed empirically (traced with instrumented copies
-   of the file, restored afterward) and confirmed pre-existing against an
-   isolated checkout of the commit before this migration started. Left
-   unfixed because fixing it changes user-facing behavior (a login button
-   would newly appear) — that's a product decision, not a structural one.
+2. **Fixed** (production-readiness pass) — the "Continue with Google"
+   button (`v30-google-auth.js`) could never appear. Two independent bugs:
+   (a) Node's `res.getHeader()` does not reflect headers set via
+   `res.writeHead()` (only ones set via `res.setHeader()` before it), and
+   every response in this codebase sets its content type through
+   `res.writeHead()` — so the injection wrapper's `res.getHeader('Content-
+   Type')` check was always empty and `injectGoogleAuth()` was never
+   called; (b) even with that fixed, its `res.removeHeader('Content-
+   Length')` call (made from `res.end`, after `writeHead` already ran)
+   throws `Cannot remove headers after they are sent` — Node precomputes
+   the header block as soon as `writeHead` runs — which the surrounding
+   try/catch was silently swallowing, so the button still wouldn't have
+   appeared. Confirmed empirically (traced with instrumented copies of the
+   file, restored afterward) and confirmed pre-existing against an
+   isolated checkout of the commit before this migration started. Fixed by
+   capturing headers at `writeHead` time and stripping `Content-Length`
+   before it's sent for text/html responses (Node falls back to chunked
+   encoding), with gzip handled by decompress → inject → recompress.
+   Verified against a running server (button present in both plain and
+   gzip responses) and covered by a new assertion in `ui-test.js`.
 
 ## Frontend consolidation
 
