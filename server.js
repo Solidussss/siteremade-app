@@ -350,7 +350,22 @@ async function api(req,res,u){
   const c=await ctx(req,res,u);if(!c)return json(res,401,{ok:false,message:'Authentication required.'});
   if(m==='GET'&&p==='/api/app/bootstrap'){
     if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[],websiteProjects:[]});
-    return json(res,200,{ok:true,locked:false,...await workspaceSnapshot(c)});
+    const snapshot={ok:true,locked:false,...await workspaceSnapshot(c)};
+    // Performance: app.js's liveRefresh() polls this exact endpoint every
+    // 5 seconds for as long as the dashboard is open, unconditionally
+    // re-fetching and re-rendering everything even when nothing changed.
+    // An ETag over the literal response body — checked against the
+    // client's If-None-Match — lets an unchanged poll get back an empty
+    // 304 instead of the full payload, at the same 5-second cadence and
+    // with identical data whenever something *did* change. This can't
+    // miss a real update the way a hand-picked "did anything change"
+    // heuristic could: it's a hash of the exact bytes that would have
+    // been sent, not a guess at which fields matter.
+    const text=JSON.stringify(snapshot);
+    const etag='"'+crypto.createHash('sha1').update(text).digest('hex')+'"';
+    if(req.headers['if-none-match']===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-store'});return res.end();}
+    res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(text),'Cache-Control':'no-store','ETag':etag});
+    return res.end(text);
   }
   if(m==='POST'&&p==='/api/app/workspaces/switch'){const b=await body(req),wid=clean(b.workspaceId,80);if(!c.workspaces.some(w=>w.id===wid))return json(res,403,{ok:false,message:'No access.'});return json(res,200,{ok:true},[`sr_workspace=${encodeURIComponent(wid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`]);}
   // V11: unpaid clients are blocked before ANY business feature route.

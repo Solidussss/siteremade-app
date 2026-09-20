@@ -346,25 +346,47 @@ raw payload size in isolation.
    (76% smaller). Combined with fix #1, the three requests a fresh visitor
    needs before the login form is usable drop from **~396KB to roughly
    45-55KB on the wire** (index.html + app.css + app.js, all gzipped).
-4. **Found, not fixed — needs a product decision, this is very likely the
-   dominant cost after the dashboard is already open:** `app.js`'s
-   `liveRefresh()` (driven by `startLiveSync()`'s `setInterval(...,
-   5000)`) re-runs the *entire* `GET /api/app/bootstrap` query — the same
-   ~13-table `Promise.all` used for the initial page load (leads,
-   conversations, appointments, invoices, automations, activities, ad
-   spend, ad funds, prospect views, website analytics, website updates,
-   website projects) — every 5 seconds, for every open tab, then
-   re-renders 9 different views regardless of whether anything changed.
-   This weighs on both the client (repeated full re-renders) and,
-   especially under concurrent usage, the backend/Supabase (the same
-   heavy multi-table query fired every 5 seconds per active user,
-   competing for the same connection pool as everything else, including
-   login and the initial bootstrap). Not changed here because narrowing it
-   — a longer interval, or a lighter "did anything change" endpoint
-   instead of the full bootstrap — changes the live-update freshness
-   product behavior, which is explicitly out of scope for this pass. If
-   the app still feels slow after this batch ships, this is where to look
-   next.
+4. **Partially fixed (second production-readiness pass) — client/network
+   cost addressed; backend query cost is not.** `app.js`'s `liveRefresh()`
+   (driven by `startLiveSync()`'s `setInterval(..., 5000)`) re-runs the
+   *entire* `GET /api/app/bootstrap` query — the same ~13-table
+   `Promise.all` used for the initial page load (leads, conversations,
+   appointments, invoices, automations, activities, ad spend, ad funds,
+   prospect views, website analytics, website updates, website projects)
+   — every 5 seconds, for every open tab, then unconditionally re-renders
+   9 different views regardless of whether anything changed.
+
+   **Fixed:** the server now computes an ETag over the literal JSON
+   response and honors `If-None-Match`; `liveRefresh()` sends back the
+   ETag it last saw. When nothing changed, the response is an empty `304`
+   instead of the full payload, and the client skips the state
+   `Object.assign` and all 9 render calls entirely. When something *did*
+   change, behavior is byte-identical to before: a fresh `200` with the
+   current data and a new ETag. This is provably equivalent (not a
+   heuristic "did anything change" guess that could miss a real update) —
+   the ETag is a hash of the exact response body that would have been
+   sent, so it can only match when the data genuinely didn't change.
+   Measured against a 40-lead workspace: an unchanged poll's payload goes
+   from ~10.8KB to 0 bytes, plus the client skips ~9 render-function calls
+   and a full `Object.assign` on every tick that finds nothing new.
+   Verified with a new `live-refresh-etag-test.js` (Playwright, against the
+   real server + client code): two unchanged polls in a row produce a
+   `200` then a `304`; a real data change immediately after still produces
+   a fresh, correct `200` and the client picks up the new data — freshness
+   is unaffected.
+
+   **Not fixed, still the likely dominant *backend* cost:** this only
+   reduces what goes over the wire and what the client does with it. The
+   full 13-table `Promise.all` against Supabase still runs on **every**
+   poll, every 5 seconds, per open tab — the ETag is computed *after* that
+   query already ran, so it doesn't reduce Supabase query load or
+   connection-pool pressure under concurrent usage. Actually skipping that
+   query would need the server to know something changed without querying
+   for it (e.g. a change counter bumped by every mutating route, or a
+   longer poll interval), which changes either the freshness guarantee or
+   touches every mutation path in the app — out of scope for a low-risk
+   pass. If the app still feels slow under real concurrent load after this
+   ships, this is where to look next.
 
 **Not measurable from this environment:** real Railway cold-start/request
 latency, real Supabase query latency under production data volumes and
