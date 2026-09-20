@@ -228,24 +228,36 @@ entirely on every route filtering by `workspace_id` itself.
    Twilio accounts are properly the business's own workspace members'
    responsibility to connect, not SiteRemade staff's. Recorded here in case
    that reading is wrong, but no fix applied.
-3. **V48 migration risk against real production data** (pre-dates this
-   session, flagged for completeness before this branch merges): line 37's
-   `alter table integration_connections add column if not exists
-   workspace_id ...` (and `provider`) omit the `not null` that the
-   fresh-`create table` path has, so if that table was hand-created without
-   these columns, existing rows would get a silent `NULL workspace_id` —
-   permanently invisible to `is_workspace_member()` and excluded from the
-   new unique index at line 44 (NULLs are distinct). Separately, lines 44
-   and 147's `create unique index` statements aren't guarded the way the
-   CHECK constraints below them are — if either table already has duplicate
-   `(workspace_id, provider[, ...])` rows, the index creation throws and
-   rolls back the *entire* migration script (one Supabase SQL Editor run is
-   one transaction). **Before running V48 against production**: confirm
-   `integration_connections` has no pre-existing rows (or that they already
-   have `workspace_id`/`provider` populated), and query for duplicate
-   `(workspace_id, provider)` / `(workspace_id, provider, customer_id,
-   recommendation_key)` tuples on `integration_connections` and
-   `ad_recommendations` first.
+3. **V48 migration risk against real production data — partially resolved,
+   still needs someone with production access.** This sandbox has no
+   Supabase credentials and no database connector, so none of this could be
+   run against the real database; nothing below claims otherwise.
+   What changed in `V48-SCHEMA-CATCHUP-MIGRATION.sql`: the two
+   `create unique index` statements (on `integration_connections` and
+   `ad_recommendations`) are now wrapped the same way the CHECK constraints
+   below them already were — a duplicate-data failure is caught and skipped
+   with a `RAISE NOTICE` instead of rolling back the entire migration
+   script. That part of the risk (one bad table aborting the whole run) is
+   fixed regardless of what production data actually looks like.
+   What's still unresolved and *can't* be resolved without production
+   access: if `integration_connections` (or `ad_recommendations`) was
+   hand-created without a `workspace_id` column, `add column if not exists
+   workspace_id ...` (no default, can't safely be made `not null` on an
+   ALTER against a possibly non-empty table) leaves existing rows with a
+   silent `NULL workspace_id` — invisible to `is_workspace_member()` and to
+   the unique index. The migration now includes a `RAISE NOTICE` that
+   reports the exact count of such rows the moment it's run, so this can no
+   longer pass unnoticed — but it still can't be fixed here, because the
+   correct workspace for an orphaned row isn't something that can be
+   inferred.
+   **`V48-PREFLIGHT-CHECK.sql`** (new, read-only, in the repo root) is the
+   concrete next step: five SELECT-only queries that tell you, before ever
+   running V48, whether these tables already exist, whether either unique
+   index would collide with real duplicate data, and whether either table
+   already has NULL-workspace_id rows. Have someone with production
+   Supabase access run it and read the results before running V48 for
+   real. If every query comes back empty (including "table doesn't exist
+   yet"), V48 is safe to run as-is.
 
 **Confirmed secure, no action needed:** all three Twilio webhook entry
 points (main-account, subaccount, and the legacy single-tenant one)

@@ -41,8 +41,36 @@ alter table public.integration_connections add column if not exists account_labe
 alter table public.integration_connections add column if not exists config jsonb not null default '{}'::jsonb;
 alter table public.integration_connections add column if not exists created_at timestamptz not null default now();
 alter table public.integration_connections add column if not exists updated_at timestamptz not null default now();
-create unique index if not exists integration_connections_workspace_provider_idx on public.integration_connections(workspace_id, provider);
+-- Guarded the same way the CHECK constraints near the bottom of this file
+-- are: if integration_connections already existed (hand-created, per the
+-- header comment) with duplicate (workspace_id, provider) rows, a bare
+-- `create unique index` here would throw and roll back this entire script
+-- (one Supabase SQL Editor run is one transaction) with everything above
+-- already having a NOTICE-only fallback, this was the one statement left
+-- that could still abort the run — production data was never inspected to
+-- confirm there are no duplicates, so this can't safely assume there
+-- aren't any.
+do $$ begin
+  execute 'create unique index if not exists integration_connections_workspace_provider_idx on public.integration_connections(workspace_id, provider)';
+exception when unique_violation then
+  raise notice 'integration_connections_workspace_provider_idx skipped: existing duplicate (workspace_id, provider) rows found. Run: select workspace_id, provider, count(*) from public.integration_connections group by 1,2 having count(*) > 1; — then reconcile the data before adding this unique index by hand.';
+end $$;
 create index if not exists integration_connections_provider_status_idx on public.integration_connections(provider, status);
+-- Visibility for the other half of the same pre-existing risk: lines 36-37
+-- above add workspace_id/provider without `not null` (unlike the
+-- create-table path above them), because forcing `not null` on an ALTER
+-- against a table that might already have rows without a default would
+-- itself risk aborting the migration. If integration_connections was
+-- hand-created without these columns, existing rows now silently have a
+-- NULL workspace_id — invisible to is_workspace_member() and excluded from
+-- the unique index above (NULLs are distinct). This makes that condition
+-- impossible to miss instead of silent:
+do $$ declare n int; begin
+  select count(*) into n from public.integration_connections where workspace_id is null;
+  if n > 0 then
+    raise notice 'integration_connections has % row(s) with a NULL workspace_id — these are invisible to workspace-scoped RLS/app queries and were not backfilled by this migration (the correct workspace can''t be inferred here). Identify and fix them by hand before relying on this table.', n;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- google_ads_credentials — one row per workspace's connected Google Ads OAuth.
@@ -144,8 +172,20 @@ alter table public.ad_recommendations add column if not exists status text not n
 alter table public.ad_recommendations add column if not exists reviewed_at timestamptz;
 alter table public.ad_recommendations add column if not exists created_at timestamptz not null default now();
 alter table public.ad_recommendations add column if not exists updated_at timestamptz not null default now();
-create unique index if not exists ad_recommendations_unique_key_idx on public.ad_recommendations(workspace_id, provider, customer_id, recommendation_key);
+-- Same guard as integration_connections above: don't let a duplicate-data
+-- unique-index failure abort the rest of this script.
+do $$ begin
+  execute 'create unique index if not exists ad_recommendations_unique_key_idx on public.ad_recommendations(workspace_id, provider, customer_id, recommendation_key)';
+exception when unique_violation then
+  raise notice 'ad_recommendations_unique_key_idx skipped: existing duplicate (workspace_id, provider, customer_id, recommendation_key) rows found. Run: select workspace_id, provider, customer_id, recommendation_key, count(*) from public.ad_recommendations group by 1,2,3,4 having count(*) > 1; — then reconcile the data before adding this unique index by hand.';
+end $$;
 create index if not exists ad_recommendations_workspace_status_idx on public.ad_recommendations(workspace_id, provider, customer_id, status);
+do $$ declare n int; begin
+  select count(*) into n from public.ad_recommendations where workspace_id is null;
+  if n > 0 then
+    raise notice 'ad_recommendations has % row(s) with a NULL workspace_id — same risk as integration_connections above; identify and fix by hand.', n;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- website_projects — Website Studio (V46). Intake -> AI brief -> builder
