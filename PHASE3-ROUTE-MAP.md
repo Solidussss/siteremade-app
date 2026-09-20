@@ -440,3 +440,83 @@ longer throws" isn't the same as "it makes sense once it's live":
 
 `ui-test.js`'s error allowlist for this specific "wait is not defined"
 message has been removed now that the fix means it can't occur.
+
+## App experience review (real-user walkthrough, no redesign)
+
+Walked the app as a first-time owner would, using a realistically seeded
+workspace ("Maple Ridge Landscaping": 5 leads across every status, 2
+conversations with messages, 2 appointments, 3 invoices, 3 automations,
+2 activity entries, 1 delivered website project). Screenshotted every
+screen listed in the review request plus a few adjacent ones (analytics,
+admin, automations) at desktop width; a mobile-viewport pass was
+attempted but the capture script re-hit the already-open Automations view
+for both mobile screenshots instead of Dashboard/Leads, so mobile
+layouts are **not verified** in this pass — flagging that gap rather than
+guessing.
+
+This is an inventory of what feels outdated, generic, confusing,
+disconnected, or manual. Nothing here was changed; per the brief, this
+pass stops at reporting.
+
+**Bottom line on "tool collection vs. coherent system":** the core loop —
+Overview → Leads → Inbox → Calendar → Automations — already feels like a
+system, not a pile of screens. The dashboard leads with "3 things worth
+handling" and an "Ask SiteRemade" panel, the lead drawer surfaces
+pipeline stage and a suggested next action, and automations plainly show
+which of 3 workflows are live. That matches the direction in item 7
+(proactive, tells-you-what-to-do-next) more than it looks like a
+generic CRM shell. Two areas break that impression:
+
+- **Website Projects** is a plain, unstyled long-form page built around a
+  raw JSON textarea for the brief (literally `{"summary": ""}` as the
+  starting content) — a developer-facing data-entry screen dropped into
+  an otherwise polished product. Someone who isn't comfortable hand-
+  editing JSON has no clear way to fill this in. This is the single
+  starkest "collection of tools" moment in the app, and it's also exactly
+  the workflow item 7 wants to eventually replace with a structured,
+  AI-assisted brief — so it's worth keeping this page narrow rather than
+  investing in its current form.
+- **Integrations** has 15 provider cards; 6 of them (QuickBooks, Xero,
+  Slack, Microsoft Teams, DocuSign, PandaDoc) have no backend at all
+  (confirmed in `routes/integrations.js` — no env-driven config, no
+  handler) and their "Set up" button is a raw browser `alert()`
+  ("This integration still needs its provider credentials before it can
+  connect.", from `v34-integrations.js`). A styled, on-brand app showing
+  six dead-end browser alerts reads as unfinished/generic rather than as
+  a deliberate "coming soon."
+
+Other findings, roughly in order of how visible they are:
+
+- **Dashboard home**: the top stat row (leads, revenue, etc.) is repeated
+  a second time inside the "Know exactly what to do next" box just below
+  it — literal duplication of the same numbers in two places on one
+  screen. One "RESPONSE TIME AVG" metric renders with no value and no
+  explanation of why it's empty (looks broken rather than "not enough
+  data yet").
+- **Login screen**: `#loginStatus`'s "Supabase-secured account" message
+  renders in red/error styling while just sitting idle (not communicating
+  an actual error) — small, but it primes a new user to think something's
+  already wrong before they've done anything.
+- **Payments** and **Analytics**: both use the same blurred "coming soon"
+  overlay for the Google + Meta advertising panel. Consistent, so it
+  reads as intentional rather than broken — but it's the same ad-setup
+  gap that shows up again on the Admin page (below), so a first-time
+  owner sees "ads aren't connected yet" three separate times in three
+  different visual treatments instead of once, clearly, in one place.
+- **Admin ("Growth Admin")**: functionally the most ambitious screen in
+  the app — ad guardrails, a Google/Meta connection status pair, an "AI
+  decision queue," client provisioning, and a workspace list all on one
+  long page — and it holds together conceptually (it's all "run the
+  agency" work for one persona). One rough edge: a status line reads
+  *"Railway is missing META_APP_ID and META_APP_SECRET"* — an internal
+  hosting-provider name and raw environment-variable names leaking
+  straight into user-facing copy. That's the kind of detail that makes a
+  page feel like an internal ops tool rather than a product a paying
+  customer is meant to read.
+- **Leads, lead drawer, Inbox, Calendar, Automations**: no notable issues.
+  These feel like the most finished, coherent part of the app and are the
+  best current evidence for what item 7's "operating system" direction
+  should generalize from, not away from.
+
+None of the above were fixed in this pass — per the brief, this is a
+report of what a real user would notice, not a redesign.
