@@ -331,7 +331,7 @@ async function api(req,res,u){
 
   if(m==='POST'&&p==='/api/auth/login'){
     const b=await body(req);const {data,error}=await anon.auth.signInWithPassword({email:clean(b.email,254),password:clean(b.password,500)});
-    if(error||!data.session)return json(res,401,{ok:false,message:'Invalid email or password.'});
+    if(error||!data.session){console.error('Auth login failed:',{message:error?.message||'No session',code:error?.code||'',status:error?.status||''});return json(res,401,{ok:false,message:'Invalid email or password.'});}
     const profile=(await db.from('profiles').select('*').eq('id',data.user.id).maybeSingle()).data;
     if(!profile){await anon.auth.signOut();return json(res,403,{ok:false,message:'This account has no SiteRemade profile.'});}
     const ws=await membershipsFor(data.user.id,profile.role==='owner');
