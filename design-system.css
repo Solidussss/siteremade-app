@@ -237,21 +237,111 @@ body .skeleton::after{content:"";position:absolute;inset:0;transform:translateX(
 @keyframes sr-shimmer{100%{transform:translateX(100%)}}
 @media (prefers-reduced-motion: reduce){body .skeleton::after{animation:none;display:none}}
 
-/* ---- 12. Screen identity: Overview / command center ------------------------
-   Editorial hero treatment: serif page title (via §2's h1 rule), and the
-   "what needs attention" surface reads as the dominant element rather than
-   one card among equals.
+/* ---- 12. Screen identity: Overview / command center (deep pass) -----------
+   Overview is actually composed of THREE separately-injected surfaces on
+   top of the static page-head, discovered by tracing the actual render
+   path rather than just index.html's markup:
+     1. `.v22-hero` (v22-client.js) — "TODAY'S BUSINESS" + 5 stat buttons,
+        inserted right after .page-head.
+     2. `.metric-grid` (static) — 4 metric cards, inserted after #1.
+     3. `.v42-attention` (v42-daily-workflow.js) — the "NEEDS ATTENTION"
+        action list, inserted right after #2.
+   These three were fighting for the same "here's your business state"
+   job as three separate equal-weight boxes (a real duplication: Active
+   leads/Waiting replies/Outstanding already appear in the hero, then
+   overlapping numbers appear again in metric-grid). The redesign turns
+   this into one real hierarchy: the hero becomes the dominant opening
+   band with its stats as plain dividers instead of five more little
+   boxes; metric-grid collapses from 4 equal bordered cards into one
+   dense strip (still 4 separate elements/ids underneath — zero JS
+   changes — just no longer 4 separate boxes visually); and the attention
+   list gets the flagship treatment as the clear "what to do next" panel.
+   All of this is done by restyling markup app.js/v22/v42 already
+   generate — no DOM structure, IDs, or behavior changed anywhere.
 */
 body #view-home .page-head h1{font-size:clamp(30px,3.4vw,44px)}
-body #view-home .leads-panel{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
 
-/* ---- 13. Screen identity: Website Projects (flagship delivery workspace) --- */
+/* 1. Hero band ("Know exactly what to do next") — the opening statement */
+body #view-home .v22-hero{
+  border:0;border-radius:var(--radius-lg);background:linear-gradient(165deg,#fff,var(--accent-tint) 340%);
+  box-shadow:var(--shadow-sm);padding:28px 30px;
+}
+body #view-home .v22-hero-copy p.eyebrow{color:var(--accent-ink)}
+body #view-home .v22-hero-copy h2{font-family:var(--font-display);font-weight:560;font-size:clamp(20px,2vw,26px);letter-spacing:-.01em;margin:6px 0 4px}
+/* Flatten the 5 stat "buttons" from little boxed cards into a single
+   divided strip — same clickable elements, same onclick=switchView(...)
+   behavior, just presented as one continuous row instead of 5 more
+   boxes (this is the single biggest "not everything should be a card"
+   fix on this screen). */
+body #view-home .v22-hero-stat{background:transparent;border:0;border-left:1px solid var(--line);border-radius:0;padding:2px 0 2px 16px;min-height:0}
+body #view-home .v22-hero-stat:first-child{border-left:0;padding-left:0}
+body #view-home .v22-hero-stat:hover{background:transparent}
+body #view-home .v22-hero-stat:hover strong{color:var(--accent-ink)}
+body #view-home .v22-hero-stat strong{transition:color .12s var(--ease);font-variant-numeric:tabular-nums}
+
+/* 2. Metric strip — 4 static .metric-card elements, restyled to read as
+   one continuous dense strip (shared surface, dividers) instead of 4
+   separate boxes, with the hero-metric (New Leads, has the sparkline)
+   kept as a deliberately distinct accent tile since it's the one number
+   worth a second glance. */
+body #view-home .metric-grid{gap:0;border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden;background:var(--surface)}
+body #view-home .metric-card{border:0;border-radius:0;border-right:1px solid var(--line);box-shadow:none;min-height:132px}
+body #view-home .metric-card:last-child{border-right:0}
+body #view-home .metric-card.hero-metric{border-radius:0}
+
+/* 3. "Needs attention" — the true action surface, flagship treatment */
+body #view-home .v42-attention{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
+body #view-home .v42-attention-head strong{font-family:var(--font-display);font-weight:560;font-size:20px}
+
+/* Recent leads stays the dominant panel below the fold; Activity becomes
+   a quieter companion rail instead of an equal-weight box. */
+body #view-home .leads-panel{border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);box-shadow:var(--shadow-sm)}
+body #view-home .activity-panel{border:0;background:var(--surface-sunken);box-shadow:none}
+
+@media(max-width:900px){
+  body #view-home .v22-hero-stat{border-left:0;border-top:1px solid var(--line);padding:10px 0 0}
+  body #view-home .v22-hero-stat:first-child{border-top:0;padding-top:0}
+  body #view-home .metric-grid{border:0;border-radius:0;gap:8px;background:transparent}
+  body #view-home .metric-card{border:1px solid var(--line);border-radius:var(--radius-md)}
+}
+
+/* ---- 13. Screen identity: Website Projects (flagship delivery workspace) ---
+   Two real, additive changes beyond restyling (app.js): a visual 5-stage
+   lifecycle stepper (Intake → Brief Ready → Building → Review →
+   Delivered) shown to both the owner and client views — genuinely new,
+   not a reskin, but purely additive: the owner's actual status control
+   (#projectStatusSelect) and its onchange handler are completely
+   untouched, this sits above it. And the project-list row's selected
+   state moved from an inline conditional style (with a fallback accent
+   color that didn't match the app's real accent anywhere else) onto a
+   real `.selected` class this stylesheet can style properly.
+*/
 body #view-website-projects .panel{box-shadow:var(--shadow-sm)}
 body #view-website-projects .website-update-history-card,body #view-website-projects .website-update-form-card{
   border:0;border-top:3px solid var(--ink-900);border-radius:14px 14px var(--radius-lg) var(--radius-lg);
 }
-body #view-website-projects .website-update-item{transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+body #view-website-projects .website-update-item{transition:border-color .15s var(--ease),box-shadow .15s var(--ease),background .15s var(--ease);border-radius:var(--radius-sm);position:relative}
 body #view-website-projects .website-update-item:hover{border-color:var(--line-strong);box-shadow:var(--shadow-sm)}
+body #view-website-projects .website-update-item.selected{background:var(--accent-tint)}
+body #view-website-projects .website-update-item.selected:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+body #view-website-projects .website-update-item.selected .website-update-page{color:var(--accent-ink)}
+
+/* Lifecycle stepper */
+body .project-stepper{display:flex;align-items:flex-start;gap:0;margin:0 0 22px;padding:0 2px}
+body .project-stepper-step{flex:1;position:relative;text-align:center;padding-top:16px}
+body .project-stepper-step:before{content:"";position:absolute;top:5px;left:-50%;width:100%;height:2px;background:var(--line);z-index:0}
+body .project-stepper-step:first-child:before{display:none}
+body .project-stepper-step.done:before{background:var(--ink-900)}
+body .project-stepper-step i{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;width:11px;height:11px;border-radius:50%;background:var(--surface);border:2px solid var(--line);font-style:normal;font-size:0;margin-top:-5px}
+body .project-stepper-step.done i,body .project-stepper-step.current i{width:22px;height:22px;margin-top:-11px;font-size:10px;font-weight:800;border:0}
+body .project-stepper-step.done i{background:var(--ink-900);color:#fff}
+body .project-stepper-step.current i{background:var(--accent);color:#fff;box-shadow:0 0 0 4px var(--accent-tint)}
+body .project-stepper-step span{display:block;margin-top:8px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-300)}
+body .project-stepper-step.done span,body .project-stepper-step.current span{color:var(--ink-900)}
+@media(max-width:640px){
+  body .project-stepper-step span{font-size:0}
+  body .project-stepper-step.current span{font-size:9.5px}
+}
 
 /* ---- 14. Screen identity: Growth (Market Finder, Analytics) ---------------
    Distinct from Operations via a data-forward accent instead of the

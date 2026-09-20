@@ -149,6 +149,18 @@ function renderWebsiteUpdates(){
 // Revisions and client feedback share the website_updates table with the legacy
 // general-request flow above (see server.js mapProject/mapWebsiteUpdate).
 const PROJECT_STATUSES=['Intake','Brief Ready','Building','Review','Delivered'];
+// V2 redesign (Website Projects flagship pass): a purely visual lifecycle
+// stepper, additive alongside the existing status control — it does not
+// replace or touch #projectStatusSelect's markup or its onchange handler
+// (still the only thing that actually changes a project's status), and
+// the client-facing branch never had a status control to begin with, just
+// a plain text row. Shown to both owner and client views since "where is
+// my website right now" is exactly the kind of thing a delivery workspace
+// should make visually obvious at a glance instead of burying in a select.
+function projectStepper(status){
+  const i=Math.max(0,PROJECT_STATUSES.indexOf(status));
+  return `<div class="project-stepper">${PROJECT_STATUSES.map((s,idx)=>`<div class="project-stepper-step ${idx<i?'done':idx===i?'current':''}"><i>${idx<i?'✓':idx+1}</i><span>${esc(s)}</span></div>`).join('')}</div>`;
+}
 // Website Projects structured intake/brief (product-experience pass): the
 // intake and brief data shapes stored by the backend are unchanged — these
 // are just pick-lists that make filling them in faster than typing free
@@ -330,7 +342,13 @@ function renderWebsiteProjects(){
   if(state.selectedProjectId&&!rows.find(p=>p.id===state.selectedProjectId))state.selectedProjectId=null;
   if(!state.selectedProjectId&&rows[0])state.selectedProjectId=rows[0].id;
   if(list){
-    list.innerHTML=rows.length?rows.map(p=>`<button type="button" class="website-update-item" data-project="${p.id}" style="text-align:left;width:100%;cursor:pointer;border:${p.id===state.selectedProjectId?'1px solid var(--accent,#4c6ef5)':'none'}"><div class="website-update-top"><div><span class="website-update-page">${esc(p.status)}</span><strong>${esc(p.businessName||'Untitled project')}</strong></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div><p>${p.revisionCount||0} revision${p.revisionCount===1?'':'s'} · ${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())}</p></button>`).join(''):'<div class="empty-state">No website projects yet. Start one from a lead.</div>';
+    // V2 redesign: was an inline style="border:..." per row (with a fallback
+    // accent color, #4c6ef5, that did not match the real --accent token
+    // anywhere else in the app -- see DESIGN-SYSTEM-V2.md's audit). A
+    // .selected class instead lets design-system.css give the active
+    // project a real, deliberate selected-state treatment (tinted
+    // background + left accent bar) instead of a thin conditional border.
+    list.innerHTML=rows.length?rows.map(p=>`<button type="button" class="website-update-item${p.id===state.selectedProjectId?' selected':''}" data-project="${p.id}" style="text-align:left;width:100%;cursor:pointer"><div class="website-update-top"><div><span class="website-update-page">${esc(p.status)}</span><strong>${esc(p.businessName||'Untitled project')}</strong></div><span class="status-pill ${p.clientReviewStatus==='approved'?'':'neutral'}">${esc((p.clientReviewStatus||'not_submitted').replace('_',' ').toUpperCase())}</span></div><p>${p.revisionCount||0} revision${p.revisionCount===1?'':'s'} · ${esc((p.payment&&p.payment.paymentStatus||'none').toUpperCase())}</p></button>`).join(''):'<div class="empty-state">No website projects yet. Start one from a lead.</div>';
     qsa('[data-project]').forEach(b=>b.onclick=()=>{state.selectedProjectId=b.dataset.project;renderWebsiteProjects();});
   }
   renderProjectDetail();
@@ -345,6 +363,7 @@ function renderProjectDetail(){
   const intake=p.intake||{},vd=intake.visualDirection||{};
   if(state.user?.role==='owner'){
     host.innerHTML=`
+      ${projectStepper(p.status)}
       <div class="project-section">
         <div class="settings-grid" style="grid-template-columns:1fr 1fr">
           <div class="setting-row"><div><strong>Lead</strong><span>${esc(lead?.name||'—')}</span></div></div>
@@ -474,6 +493,7 @@ function renderProjectDetail(){
   }else{
     const canReview=!!p.previewUrl||['Review','Delivered'].includes(p.status);
     host.innerHTML=`
+      ${projectStepper(p.status)}
       <div class="setting-row"><div><strong>Status</strong><span>${esc(p.status)}</span></div></div>
       ${p.previewUrl?`<div class="setting-row"><div><strong>Preview</strong><span><a href="${esc(p.previewUrl)}" target="_blank" rel="noopener">${esc(p.previewUrl)}</a></span></div></div>`:''}
       ${p.liveUrl?`<div class="setting-row"><div><strong>Live site</strong><span><a href="${esc(p.liveUrl)}" target="_blank" rel="noopener">${esc(p.liveUrl)}</a></span></div></div>`:''}

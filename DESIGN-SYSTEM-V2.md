@@ -244,11 +244,35 @@ changes at any step — this is the presentation layer only.
       `overflow-y:auto` on `.sidebar`. Verified against the full existing
       test suite (smoketest/e2e/ui/mobile/live-refresh/fingerprint, all
       passing) plus visual screenshot review at desktop and 390px mobile.
-- [ ] Step 2 — Overview: deeper command-center pass (current state has the
-      new type/card treatment; the "what needs attention" surface and
-      metric hierarchy can go further)
-- [ ] Step 3 — Website Projects: flagship workspace layout beyond the
-      `.panel-flagship` treatment already applied
+- [x] Step 2 — Overview command center. Traced the real render path (not
+      just index.html): Overview is actually 3 separately-injected
+      surfaces on top of the static page — v22-client.js's "TODAY'S
+      BUSINESS" hero, the static 4-card metric-grid, and v42-daily-
+      workflow.js's "NEEDS ATTENTION" list — which were fighting for the
+      same job as 3 equal-weight boxes with real numeric overlap (Active
+      leads/Outstanding appeared in two places). Fixed the hierarchy
+      itself, not just the skin: the hero is now the dominant opening
+      band with its 5 stats as plain dividers instead of 5 more little
+      boxes; the 4 metric cards collapse into one dense divided strip
+      (same 4 elements/ids, zero JS changes) instead of 4 separate
+      bordered boxes; the attention list gets the flagship top-hairline
+      treatment as the clear "what to do next" surface; Activity is now
+      a deliberately quieter companion rail instead of competing equally
+      with Recent Leads. All CSS-only — no DOM structure, IDs, or
+      behavior touched.
+- [x] Step 3 — Website Projects flagship workspace. Two real additive
+      changes, not just restyling: (1) a new 5-stage visual lifecycle
+      stepper (Intake → Brief Ready → Building → Review → Delivered),
+      shown on both the owner and client-facing project detail views —
+      genuinely new UI, built as a small pure function
+      (`projectStepper()` in app.js) that sits above the existing status
+      control without touching it or its onchange handler at all; (2)
+      the project list's selected-row highlight moved off an inline
+      conditional `style="border:..."` (which used a fallback accent
+      color that didn't match the app's real accent anywhere else — a
+      leftover from the audit) onto a proper `.selected` class with a
+      real tinted-background + left-accent-bar treatment. Both panels
+      get the flagship top-hairline treatment from Step 1, extended.
 - [ ] Step 4 — Leads/Inbox/Calendar/Payments connective-journey cues
 - [ ] Step 5 — deeper Growth / Configuration / Admin identity work beyond
       the accent-tint/quieter-type pass already applied
