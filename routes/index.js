@@ -13,7 +13,8 @@ const registerers = [
   require('./ad-intelligence'),
   require('./twilio-existing-number'),
   require('./twilio-stripe'),
-  require('./market-finder')
+  require('./market-finder'),
+  require('./mailbox')
 ];
 
 function buildRouter() {
