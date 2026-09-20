@@ -14,7 +14,8 @@ const registerers = [
   require('./twilio-existing-number'),
   require('./twilio-stripe'),
   require('./market-finder'),
-  require('./mailbox')
+  require('./mailbox'),
+  require('./google-signin')
 ];
 
 function buildRouter() {
