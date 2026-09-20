@@ -7,6 +7,7 @@
 require('dotenv').config();
 
 const http = require('http');
+const zlib = require('zlib');
 const originalCreateServer = http.createServer.bind(http);
 
 function injectGoogleAuth(html) {
@@ -25,15 +26,59 @@ http.createServer = function patchedGoogleCreateServer(listener) {
     try {
       const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html')) {
+        // BUG FIX: this used to check `res.getHeader('Content-Type')`, but
+        // the index.html handler further down this chain (v17-preload.js's
+        // enhancedHtml response) sets its headers via res.writeHead(status,
+        // headers) directly, not res.setHeader(). Node's res.getHeader()
+        // only reflects headers set through setHeader — it has always
+        // returned '' here, so `type.includes('text/html')` was always
+        // false and this injection never ran. The "Continue with Google"
+        // button has never actually rendered. Fixed by capturing the
+        // headers at writeHead time instead of trying to read them back.
+        //
+        // A second, independent bug was hiding behind the first: even with
+        // detection fixed, the old code's `res.removeHeader('Content-Length')`
+        // call (made from inside res.end, i.e. after writeHead already ran)
+        // throws "Cannot remove headers after they are sent" — Node
+        // precomputes the header block as soon as writeHead runs, not only
+        // once bytes reach the socket — so it would have been silently
+        // caught below and injection would still never have applied. Fixed
+        // by stripping Content-Length from the writeHead call itself,
+        // before it's sent, whenever the response is text/html; Node falls
+        // back to chunked transfer encoding, which is valid HTTP/1.1.
+        //
+        // Also handles the case where the page is served gzip-compressed
+        // (added in the performance pass): decompress, inject, recompress,
+        // so a gzip-accepting client doesn't get a corrupted body.
+        let isHtml = false, isGzip = false;
+        const originalWriteHead = res.writeHead.bind(res);
+        res.writeHead = (status, arg2, arg3) => {
+          const headers = (arg2 && typeof arg2 === 'object') ? arg2 : arg3;
+          if (headers) {
+            for (const key of Object.keys(headers)) {
+              const lower = key.toLowerCase();
+              if (lower === 'content-type' && String(headers[key]).includes('text/html')) isHtml = true;
+              if (lower === 'content-encoding' && String(headers[key]).toLowerCase() === 'gzip') isGzip = true;
+            }
+            if (isHtml) {
+              for (const key of Object.keys(headers)) {
+                if (key.toLowerCase() === 'content-length') delete headers[key];
+              }
+            }
+          }
+          return originalWriteHead(status, arg2, arg3);
+        };
         const originalEnd = res.end.bind(res);
         res.end = (chunk, ...args) => {
           try {
-            const type = String(res.getHeader('Content-Type') || '');
-            if (chunk && type.includes('text/html')) {
+            if (chunk && isHtml) {
+              if (isGzip) {
+                const decompressed = zlib.gunzipSync(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                const output = injectGoogleAuth(decompressed.toString('utf8'));
+                return originalEnd(zlib.gzipSync(output), ...args);
+              }
               const input = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
-              const output = injectGoogleAuth(input);
-              res.removeHeader('Content-Length');
-              return originalEnd(output, ...args);
+              return originalEnd(injectGoogleAuth(input), ...args);
             }
           } catch (error) {
             console.error('Google auth HTML injection:', error);
