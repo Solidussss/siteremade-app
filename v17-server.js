@@ -1,9 +1,5 @@
 require('./v32-google-env-aliases');
-require('./v40-existing-number');
-require('./v45-ad-intelligence');
 require('./v29-mail-server');
-require('./v20-loader');
 require('./v30-google-auth');
-require('./v37-static-integrations');
 require('./v17-preload');
 require('./server');

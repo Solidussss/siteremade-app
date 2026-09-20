@@ -1,3 +1,18 @@
+<!--
+  Phase 3 frontend consolidation: the <link>/<script> tags below were
+  previously injected on every request by a chain of fs.readFileSync
+  monkeypatches spread across v20-assets.js, v22-assets.js,
+  v34-gmail-direct.js, v37-static-integrations.js, v40-existing-number.js,
+  v45-ad-intelligence.js, and v17-preload.js's enhancedHtml(). That chain
+  re-ran the same string replacements on every single page load for no
+  behavioral reason (the output was always identical once each vNN file
+  had shipped), so it has been collapsed into this file directly — this is
+  the byte-for-byte HTML those patches used to produce, captured from a
+  live server and pasted in once. The vNN *-client.js/*.css files
+  themselves are unchanged and still served as their own static files;
+  only the "rewrite index.html on every request" indirection is gone. See
+  PHASE3-ROUTE-MAP.md for details.
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,6 +25,12 @@
   <link rel="stylesheet" href="app.css?v=20" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#0d0e11" />
+  <link rel="stylesheet" href="/v22.css?v=27" />
+  <link rel="stylesheet" href="/v24.css?v=27" />
+  <link rel="stylesheet" href="/v20.css?v=20" />
+  <link rel="stylesheet" href="/v17.css?v=17" />
+  <link rel="stylesheet" href="/v18.css?v=18" />
+  <link rel="stylesheet" href="/v19.css?v=19" />
 </head>
 <body>
   <div class="auth-screen" id="authScreen">
@@ -88,6 +109,7 @@
         <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
         <button class="nav-item" data-view="website-projects"><span>✎</span><strong>Website Projects</strong><em id="websiteProjectBadge">0</em></button>
         <button class="nav-item" data-view="automations"><span>✦</span><strong>Automations</strong></button>
+        <button class="nav-item" data-view="integrations"><span>⌘</span><strong>Integrations</strong><em id="integrationBadge" hidden>0</em></button>
         <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
         <button class="nav-item" data-view="admin" id="adminNav"><span>▦</span><strong>Admin</strong></button>
       </nav>
@@ -252,6 +274,10 @@
 
       <section class="view" id="view-inbox">
         <div class="page-head compact-head"><div><p class="eyebrow">CONVERSATIONS</p><h1>Inbox</h1><p>Website messages and customer conversations in one place.</p></div><button class="primary-action" id="newConversationButton">+ New conversation</button></div>
+        <section id="v29MailboxBar" class="v29-mailbar" data-static-gmail-connect>
+          <div><span class="v29-dot"></span><strong>Connect your business inbox</strong><small>Connect Gmail so customer email replies appear here inside SiteRemade.</small></div>
+          <div class="v29-mail-actions"><a class="secondary-button" href="/api/app/gmail/start">Connect Gmail</a></div>
+        </section>
         <div class="placeholder-layout">
           <div class="conversation-list" id="conversationList"></div>
           <div class="conversation-window">
@@ -377,7 +403,9 @@
       <section class="view" id="view-automations"><div class="page-head compact-head"><div><p class="eyebrow">AUTOMATION</p><h1>Automations</h1><p>Follow-ups and internal actions triggered automatically.</p></div><span class="coming-badge">CONFIGURABLE</span></div><div class="automation-list" id="automationList"></div></section>
       <section class="view" id="view-settings"><div class="page-head compact-head"><div><p class="eyebrow">WORKSPACE</p><h1>Settings</h1><p>Configure the business once. SiteRemade uses it everywhere.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">BUSINESS</p><form id="settingsForm"><label>Business name<input name="businessName" id="settingsBusiness" /></label><label>Lead notification email<input name="email" id="settingsEmail" type="email" /></label><label>Phone<input name="phone" id="settingsPhone" /></label><label>Timezone<input name="timezone" id="settingsTimezone" /></label><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">ACTIVE MODULES</p><div class="setting-row"><div><strong>Website</strong><span>SiteRemade website</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>Lead System</strong><span>Capture + pipeline</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>AI Receptionist</strong><span>Chat + qualification</span></div><span class="status-pill neutral" id="aiReceptionistBadge">OFF</span></div><div class="setting-row"><div><strong>Advertising</strong><span>Google + Meta</span></div><span class="status-pill neutral">OFF</span></div></div></div><div class="settings-grid settings-extra"><div class="panel settings-card"><p class="eyebrow">AI RECEPTIONIST</p><form id="aiSettingsForm"><label>Services<textarea name="services" id="aiServices" rows="3"></textarea></label><label>Service area<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label><label>Tone / instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label><div class="settings-actions"><button class="primary-action">Save AI settings</button><button class="secondary-button" id="testAiButton" type="button">Test receptionist</button></div><p class="helper-copy" id="aiSettingsStatus">The bot uses these instructions on your website chat.</p></form></div><div class="panel settings-card"><p class="eyebrow">INTEGRATIONS</p><div class="integration-list" id="integrationList"></div><p class="helper-copy">External services become live automatically when their environment keys are configured on the server.</p></div></div></section>
       <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div></section>
-    </main>
+    
+      <section class="view" id="view-integrations"><div class="page-head compact-head"><div><p class="eyebrow">CONNECTED APPS</p><h1>Integrations</h1><p>Connect the tools your business already uses and run them from SiteRemade.</p></div><span class="coming-badge" id="integrationSummary">0 connected</span></div><div class="v34-feature"><strong>One customer system.</strong><p>Email, calls, bookings, payments, ads, accounting and documents all stay connected to the same lead.</p></div><div id="v34Grid" class="v34-grid"></div></section>
+</main>
   </div>
 
   <nav class="mobile-nav" aria-label="Mobile navigation">
@@ -424,5 +452,14 @@
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
   <script src="app.js?v=21"></script>
+<script src="/v40-existing-number-client.js?v=3"></script><script src="/v45-ad-intelligence-client.js"></script>
+  <script src="/v22-client.js?v=27"></script>
+  <script src="/v24-umami-client.js?v=27"></script>
+  <script src="/v20-client.js?v=20"></script>
+  <script src="/v29-bootstrap.js?v=36"></script>
+<script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
+  <script src="/v17-client.js?v=17"></script>
+  <script src="/v18-client.js?v=18"></script>
+  <script src="/v19-client.js?v=19"></script>
 </body>
 </html>
