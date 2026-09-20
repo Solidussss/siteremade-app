@@ -361,16 +361,39 @@ bootstrap `Promise.all`) rather than guessed at.
 targeted Playwright check (`perf-deferred-scripts-test.js`) confirming none
 of the 15 deferred files load before login, all load exactly once right
 after, and `v45-ad-intelligence-client.js` specifically is requested under
-exactly one URL. One pre-existing, unrelated bug surfaced by this change's
-timing shift (not caused by it): `v19-client.js` has always called an
+exactly one URL. One pre-existing, unrelated bug was surfaced by this
+change's timing shift (not caused by it) and **fixed in the
+production-readiness pass**: `v19-client.js` had always called an
 undefined local `wait()` helper (a copy-paste gap — its siblings
 `v22-client.js`/`v44-google-ads-client.js` correctly define their own) and
-has always thrown on `install()`, so the customer-journey drawer panel,
+had always thrown on `install()`, so the customer-journey drawer panel,
 prospect fit scoring, and automation-health widget it was meant to add
-have never actually rendered. Before this fix that error fired silently
-while the login screen was still showing (bucketed as expected pre-login
-noise); now it fires right after login instead, doing the same nothing.
-Left unfixed, like the Google sign-in button — fixing it would make
-previously-nonfunctional UI start appearing, a product decision, not a
-performance one — and `ui-test.js`'s error allowlist now documents exactly
-why this one specific error is expected post-login.
+had never actually rendered. Before that timing-shift fix the error fired
+silently while the login screen was still showing (bucketed as expected
+pre-login noise); after it, the same error fired right after login
+instead, doing the same nothing — which is what surfaced it for fixing.
+
+Fixed by adding the same `wait()` guard `v22-client.js` already uses.
+Verified each of the three previously-dead features individually with a
+seeded Playwright session before treating this as done, since "it no
+longer throws" isn't the same as "it makes sense once it's live":
+- **Automation-health widget** and the **Leads pipeline board / next-
+  action column** (also gated by the same `wait()`) render cleanly with
+  their own dedicated styling — no conflicts, screenshotted and confirmed.
+- **Prospect fit scoring** (`.v19-fit` badge) does get created in the DOM
+  now, but stays invisible: `v28-market.css` already has `.v19-fit{display:
+  none!important}` — a later prospecting rebuild (the "why it's worth a
+  look" / hot-good-fair-weak scoring visible in Market Finder today)
+  deliberately superseded and hid this exact badge already. So turning
+  `wait()` on doesn't change what a user sees here at all; nothing left to
+  do.
+- **Customer-journey drawer panel** renders inside the lead drawer, below
+  the newer "Customer workflow" quick-actions section, as a detailed
+  history/timeline. `v17.css` already has a dedicated `.lead-drawer
+  .v19-customer-panel` style rule sized for the current drawer layout —
+  this was evidently anticipated to coexist there, it just never turned on
+  before now. It sits low enough in the drawer to need scrolling to see;
+  noted as a minor UX observation in the app-experience review, not a bug.
+
+`ui-test.js`'s error allowlist for this specific "wait is not defined"
+message has been removed now that the fix means it can't occur.

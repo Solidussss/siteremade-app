@@ -1,5 +1,15 @@
 document.documentElement.dataset.siteremadeVersion='19';
 (() => {
+  // BUG FIX: install() below called a bare wait() with no local definition
+  // anywhere in this file — its sibling files (v22-client.js,
+  // v44-google-ads-client.js) each define their own `wait`/local guard,
+  // but this one never did, so every call threw "wait is not defined" and
+  // install() never got past its first line. Everything in this file (the
+  // focus strip, setup checklist, pipeline board, next-action column,
+  // finder presets, prospect fit scores, customer-journey drawer panel,
+  // and automation-health widget) has been dead code since it shipped.
+  // Fixed by adding the same readiness guard v22-client.js already uses.
+  const wait=()=>typeof state!=='undefined'&&typeof qs==='function'&&typeof renderAll==='function';
   const byId=id=>document.getElementById(id);
   const make=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;};
   const activeLead=l=>!['Won','Lost'].includes(l.status);
