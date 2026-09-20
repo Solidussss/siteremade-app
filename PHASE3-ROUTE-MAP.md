@@ -257,3 +257,104 @@ own* auth token rather than the main account's. OAuth callbacks
 and a 10-minute TTL, so a callback can't be replayed against a different
 workspace. No route was found echoing an OAuth token, API secret, or the
 service-role key back to the browser.
+
+## Performance review: login → usable dashboard
+
+Profiled the exact path `app.siteremade.com → login → dashboard usable`
+locally (payload sizes, request counts, and initialization architecture —
+this environment has no live Railway/Supabase instance, so real network/
+Supabase-latency numbers aren't included; see the note at the end).
+
+**Root cause, in order of impact:** almost the entire cost was architecture
+— what loaded before login and how often data got refetched after — not
+raw payload size in isolation.
+
+1. **~300KB of dashboard-only JS/CSS loaded before the login screen was
+   even interactive.** 9 `<script>` tags plus 6 `<link rel="stylesheet">`
+   tags in `index.html` were dashboard feature layers (mail, market finder,
+   ad intelligence, calendar, daily workflow, the existing-number wizard,
+   etc.) — none of them act on anything outside `#authScreen`'s hidden
+   sibling elements, so none of them do anything until `app.js`'s
+   `bootstrap()` succeeds and reveals the dashboard. Several of those 9
+   further `import()` or `createElement('script')` another ~17 files.
+   Measured via a full crawl of every static tag + dynamic `import()`/
+   `createElement` load from `GET /`: **41 requests, ~396KB** before login
+   was possible.
+   **Fixed**: moved all 15 tags out of `index.html` into a
+   `loadDashboardFeatureScripts()` call in `app.js`, fired exactly once,
+   right where `bootstrap()` already reveals the dashboard
+   (`qs('#authScreen').hidden=true`). Same files, same order (`script.async
+   = false` preserves document order for dynamically-inserted scripts),
+   same behavior — just triggered by successful login instead of by page
+   load. **Before/after, pre-login:** 41 requests / ~396KB → **3 requests /
+   ~177KB** (index.html + app.css + app.js — the only three things the
+   login screen actually needs).
+2. **A genuine duplicate load, found while measuring the above.**
+   `v45-ad-intelligence-client.js` was both a static `<script>` tag AND
+   `import()`-ed a second time from `v29-bootstrap.js` under a different
+   URL (`?v=2` vs. no query), so the browser fetched and executed the
+   whole file twice on every dashboard load — two submit listeners
+   double-firing every ad-settings save, and two permanent
+   `MutationObserver`s each watching the *entire document* for every DOM
+   change for the rest of the page's life. **Fixed**: removed the
+   redundant `import()` (see `v29-bootstrap.js`); verified via a targeted
+   Playwright check that the file is now requested under exactly one URL.
+3. **No response compression at all.** `server.js`'s static file server
+   (`serve()`) and `v17-preload.js`'s separate `index.html` handler both
+   sent full uncompressed bytes regardless of the client's
+   `Accept-Encoding` header — pure transport waste for text that
+   typically compresses 70-80%. **Fixed**: both now gzip when the client
+   accepts it (verified byte-identical after decompression). Measured:
+   `app.js` 79.4KB → 20.7KB (74% smaller), `index.html` 43.9KB → 10.4KB
+   (76% smaller). Combined with fix #1, the three requests a fresh visitor
+   needs before the login form is usable drop from **~396KB to roughly
+   45-55KB on the wire** (index.html + app.css + app.js, all gzipped).
+4. **Found, not fixed — needs a product decision, this is very likely the
+   dominant cost after the dashboard is already open:** `app.js`'s
+   `liveRefresh()` (driven by `startLiveSync()`'s `setInterval(...,
+   5000)`) re-runs the *entire* `GET /api/app/bootstrap` query — the same
+   ~13-table `Promise.all` used for the initial page load (leads,
+   conversations, appointments, invoices, automations, activities, ad
+   spend, ad funds, prospect views, website analytics, website updates,
+   website projects) — every 5 seconds, for every open tab, then
+   re-renders 9 different views regardless of whether anything changed.
+   This weighs on both the client (repeated full re-renders) and,
+   especially under concurrent usage, the backend/Supabase (the same
+   heavy multi-table query fired every 5 seconds per active user,
+   competing for the same connection pool as everything else, including
+   login and the initial bootstrap). Not changed here because narrowing it
+   — a longer interval, or a lighter "did anything change" endpoint
+   instead of the full bootstrap — changes the live-update freshness
+   product behavior, which is explicitly out of scope for this pass. If
+   the app still feels slow after this batch ships, this is where to look
+   next.
+
+**Not measurable from this environment:** real Railway cold-start/request
+latency, real Supabase query latency under production data volumes and
+concurrent load, and CDN/edge behavior. Everything above was measured
+against a local boot of the same server code with an in-memory Supabase
+stub, which is representative of payload sizes, request counts, and
+initialization order/timing (those don't depend on network conditions) but
+not of absolute network latency. If the app is still slow after this batch
+ships, that's the next thing to instrument — ideally with real Railway/
+Supabase timing (e.g., logging query duration server-side around the
+bootstrap `Promise.all`) rather than guessed at.
+
+**Verified:** `node --check` on every touched file; `smoketest.sh`;
+`e2e-test.js` and both Playwright UI suites against `fake-supabase`; a new
+targeted Playwright check (`perf-deferred-scripts-test.js`) confirming none
+of the 15 deferred files load before login, all load exactly once right
+after, and `v45-ad-intelligence-client.js` specifically is requested under
+exactly one URL. One pre-existing, unrelated bug surfaced by this change's
+timing shift (not caused by it): `v19-client.js` has always called an
+undefined local `wait()` helper (a copy-paste gap — its siblings
+`v22-client.js`/`v44-google-ads-client.js` correctly define their own) and
+has always thrown on `install()`, so the customer-journey drawer panel,
+prospect fit scoring, and automation-health widget it was meant to add
+have never actually rendered. Before this fix that error fired silently
+while the login screen was still showing (bucketed as expected pre-login
+noise); now it fires right after login instead, doing the same nothing.
+Left unfixed, like the Google sign-in button — fixing it would make
+previously-nonfunctional UI start appearing, a product decision, not a
+performance one — and `ui-test.js`'s error allowlist now documents exactly
+why this one specific error is expected post-login.

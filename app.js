@@ -9,7 +9,35 @@ const dateLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric
 const dateTimeLabel=iso=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(iso));
 
 async function api(url,opts={}){const r=await fetch(url,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||`Request failed (${r.status})`);return data;}
-async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase'))qs('#loginStatus').textContent=e.message;console.error(e);return false;}}
+// Production-readiness/performance review: these files are dashboard
+// feature layers (mail, market finder, ads, calendar, daily workflow,
+// analytics, existing-number wizard, etc.) that only ever style or act on
+// elements inside the dashboard, hidden behind #authScreen until a session
+// exists — none of them do anything the login/signup screen needs. They
+// used to be static <link>/<script> tags in index.html, so every visitor
+// downloaded ~300KB of dashboard-only CSS/JS (plus everything several of
+// the scripts further pull in via dynamic import()), and the CSS was
+// render-blocking, just to see the login form. They still load exactly
+// once, in the same order (scripts kept in order via `script.async =
+// false`, the standard way to preserve document order for scripts inserted
+// this way), and behave identically — just from the moment the dashboard
+// actually becomes visible instead of from page load.
+let dashboardScriptsLoaded=false;
+function loadDashboardFeatureScripts(){
+  if(dashboardScriptsLoaded)return;
+  dashboardScriptsLoaded=true;
+  ['/v22.css?v=27','/v24.css?v=27','/v20.css?v=20','/v17.css?v=17','/v18.css?v=18','/v19.css?v=19'].forEach(href=>{
+    const l=document.createElement('link');
+    l.rel='stylesheet';l.href=href;
+    document.head.appendChild(l);
+  });
+  ['/v40-existing-number-client.js?v=3','/v45-ad-intelligence-client.js','/v22-client.js?v=27','/v24-umami-client.js?v=27','/v20-client.js?v=20','/v29-bootstrap.js?v=36','/v17-client.js?v=17','/v18-client.js?v=18','/v19-client.js?v=19'].forEach(src=>{
+    const s=document.createElement('script');
+    s.src=src;s.async=false;
+    document.body.appendChild(s);
+  });
+}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase'))qs('#loginStatus').textContent=e.message;console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
