@@ -116,10 +116,19 @@ module.exports = function registerMailboxRoutes(router) {
   });
 
   router.post('/api/app/mailbox/sync', { auth: 'user' }, async (req, res, { c, json }) => {
-    const row = await connection(c.wid);
-    if (!row) return json(res, 400, { ok: false, message: 'Connect Gmail or Outlook first.' });
-    const added = await sync(row);
-    return json(res, 200, { ok: true, added });
+    try {
+      const row = await connection(c.wid);
+      if (!row) return json(res, 400, { ok: false, message: 'Connect Gmail or Outlook first.' });
+      const added = await sync(row);
+      return json(res, 200, { ok: true, added });
+    } catch (e) {
+      const msg = String(e?.message || 'Mailbox sync failed');
+      if (/expired|revoked|invalid_grant/i.test(msg)) {
+        await db.from('mailbox_connections').delete().eq('workspace_id', c.wid);
+        return json(res, 409, { ok: false, code: 'MAILBOX_RECONNECT_REQUIRED', message: 'Gmail connection expired. Reconnect Gmail.' });
+      }
+      throw e;
+    }
   });
 
   router.delete('/api/app/mailbox', { auth: 'user' }, async (req, res, { c, json }) => {
