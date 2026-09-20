@@ -15,7 +15,10 @@ const registerers = [
   require('./twilio-stripe'),
   require('./market-finder'),
   require('./mailbox'),
-  require('./google-signin')
+  require('./google-signin'),
+  require('./gmail-direct'),
+  require('./analytics-bootstrap'),
+  require('./umami-analytics')
 ];
 
 function buildRouter() {
