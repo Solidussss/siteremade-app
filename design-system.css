@@ -729,3 +729,75 @@ body .site-request-list span{display:flex;align-items:center;gap:8px;font-size:1
    [hidden] rule, so without this, `el.hidden = true` silently did nothing
    on them (caught by the Publish button still showing in verification). */
 body #view-website [hidden],body #view-analytics [hidden],body #view-ads [hidden],body #view-contact [hidden],body #view-settings [hidden]{display:none!important}
+
+/* ---- 23. Analytics (Phase 3E) ------------------------------------------------
+   Quiet and legible: numbers set in type on the canvas (no zero-card grid),
+   one line chart, ranked lists with hairline bars. The only chart color is
+   --accent (single series, validated ≥3:1 on the surface). */
+body .an-head{align-items:flex-end}
+body .an-range{display:inline-flex;background:var(--surface-sunken);border-radius:999px;padding:3px;flex:none}
+body .an-range button{border:0;background:transparent;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:650;color:var(--ink-500);cursor:pointer}
+body .an-range button.active{background:var(--surface);color:var(--ink-900);box-shadow:var(--shadow-sm)}
+body #analyticsSubtitle .chip{margin-left:6px;vertical-align:1px}
+body .an-body{transition:opacity .2s var(--ease)}
+body .an-body.is-refreshing{opacity:.55}
+body .an-empty{display:grid;justify-items:start;gap:10px;max-width:620px;padding:56px 0 24px}
+body .an-empty strong{font-family:var(--font-display);font-weight:560;font-size:clamp(24px,2.4vw,32px);line-height:1.15;letter-spacing:-.015em;color:var(--ink-900)}
+body .an-empty span{font-size:15px;line-height:1.6;color:var(--ink-500)}
+body .an-skeleton{display:grid;gap:14px}
+body .an-skeleton .skeleton{height:64px}
+body .an-skeleton .an-skeleton-chart{height:200px}
+body .an-stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:0 0 40px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+body .an-stat{padding:22px 20px 20px;border-left:1px solid var(--line)}
+body .an-stat:first-child{border-left:0;padding-left:0}
+body .an-stat dt{font-size:13px;font-weight:650;color:var(--ink-700)}
+body .an-stat dd{margin:8px 0 6px;font-family:var(--font-display);font-weight:560;font-size:clamp(28px,2.6vw,38px);line-height:1;letter-spacing:-.02em;color:var(--ink-900);font-variant-numeric:tabular-nums}
+body .an-stat p{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-500)}
+body .an-trend{margin:0 0 44px}
+body .an-trend-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+body .an-trend-head h2,body .an-list h3{font-size:15px;font-weight:700;letter-spacing:-.005em;margin:0;color:var(--ink-900)}
+body .an-trend-total{font-size:13px;color:var(--ink-500);font-variant-numeric:tabular-nums}
+body .an-chart{position:relative;width:100%}
+body .an-chart svg{display:block;width:100%;height:auto;overflow:visible;outline:0}
+body .an-chart svg:focus-visible{box-shadow:0 0 0 3px var(--accent-tint);border-radius:8px}
+body .an-grid{stroke:var(--line);stroke-width:1}
+body .an-axis{fill:var(--ink-300);font-size:11px;font-family:var(--font-ui)}
+body .an-line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+body .an-area{fill:var(--accent);opacity:.07}
+body .an-cross{stroke:var(--ink-300);stroke-width:1}
+body .an-dot{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+body .an-tip{position:absolute;pointer-events:none;display:grid;gap:2px;padding:8px 12px;border-radius:10px;background:var(--ink-900);color:#fff;box-shadow:var(--shadow-md);white-space:nowrap}
+body .an-tip strong{font-size:14px;font-variant-numeric:tabular-nums}
+body .an-tip span{font-size:12px;color:#b9bdc6}
+body .an-table{margin-top:8px}
+body .an-table summary{cursor:pointer;font-size:12.5px;color:var(--ink-500)}
+body .an-table table{margin-top:10px;border-collapse:collapse;font-size:13px;min-width:220px}
+body .an-table td,body .an-table th{padding:5px 18px 5px 0;text-align:left;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+body .an-table th{font-size:11.5px;color:var(--ink-500);font-weight:700}
+body .an-primary{margin-bottom:40px;max-width:760px}
+body .an-secondary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px;padding-top:32px;border-top:1px solid var(--line)}
+body .an-secondary-one{grid-template-columns:minmax(0,1fr);max-width:760px;margin-top:40px}
+body .an-list ol{list-style:none;margin:12px 0 0;padding:0}
+body .an-list li{position:relative;display:flex;justify-content:space-between;gap:16px;padding:10px 0 12px;border-top:1px solid var(--line);font-size:13.5px}
+body .an-list li:first-child{border-top:0}
+body .an-list li i{position:absolute;left:0;bottom:4px;height:3px;border-radius:3px;background:var(--accent);opacity:.35}
+body .an-list-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-900)}
+body .an-list-value{flex:none;font-weight:650;color:var(--ink-700);font-variant-numeric:tabular-nums}
+body .an-list-empty{margin:10px 0 0;font-size:13px;color:var(--ink-500)}
+@media(max-width:1100px){
+  body .an-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  body .an-stat:nth-child(4){border-left:0;padding-left:0}
+  body .an-stat:nth-child(n+4){border-top:1px solid var(--line)}
+}
+@media(max-width:820px){
+  body .an-head{flex-direction:column;align-items:flex-start;gap:16px}
+  body .an-secondary{grid-template-columns:minmax(0,1fr);gap:28px}
+}
+@media(max-width:560px){
+  body .an-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body .an-stat{padding:18px 14px 16px}
+  body .an-stat:nth-child(odd){border-left:0;padding-left:0}
+  body .an-stat:nth-child(4){border-left:1px solid var(--line);padding-left:14px}
+  body .an-stat:nth-child(n+3){border-top:1px solid var(--line)}
+  body .an-stat:last-child{grid-column:1/-1}
+}

@@ -470,39 +470,23 @@
         <div class="panel funding-history feature-blocked ad-feature-blocked"><div class="feature-block-overlay compact"><span>COMING SOON</span><strong>Advertising funding</strong></div><div class="panel-head"><div><p class="eyebrow">SITEREMADE</p><h2>Ad funding history</h2></div></div><div id="adFundHistory" class="transaction-list"></div></div>
       </section>
 
-      <section class="view" id="view-analytics"><div class="page-head compact-head"><div><p class="eyebrow">PERFORMANCE</p><h1>Analytics</h1><p>Real performance from your leads, bookings and payments.</p></div><span class="coming-badge">LIVE DATA</span></div>
-        <div class="metric-grid analytics-metrics"><article class="metric-card"><div class="metric-label"><span>LEADS</span></div><div class="metric-value"><strong id="analyticsLeads">0</strong></div><p>Total opportunities</p></article><article class="metric-card"><div class="metric-label"><span>WON RATE</span></div><div class="metric-value"><strong id="analyticsWinRate">0%</strong></div><p>Won / closed leads</p></article><article class="metric-card"><div class="metric-label"><span>BOOKINGS</span></div><div class="metric-value"><strong id="analyticsBookings">0</strong></div><p>Appointments scheduled</p></article><article class="metric-card"><div class="metric-label"><span>COLLECTED</span></div><div class="metric-value"><strong id="analyticsRevenue">$0</strong></div><p>Recorded paid invoices</p></article></div>
-        <div class="analytics-grid"><div class="panel"><div class="panel-head"><div><p class="eyebrow">PIPELINE</p><h2>Lead conversion</h2></div></div><div id="analyticsPipeline" class="analytics-bars"></div></div><div class="panel"><div class="panel-head"><div><p class="eyebrow">SOURCES</p><h2>Where leads come from</h2></div></div><div id="analyticsSources" class="analytics-bars"></div></div></div>
-        <div class="panel traffic-panel">
-          <div class="panel-head"><div><p class="eyebrow">WEBSITE TRAFFIC</p><h2>Website performance</h2><p>Save the business domain here. Real visitor counts appear after Google Analytics is connected.</p></div><span class="coming-badge neutral" id="trafficConnectionStatus">ADD WEBSITE DOMAIN</span></div>
-          <form id="websiteTrafficForm" class="traffic-domain-form"><label>Website domain<input id="trafficDomain" name="domain" placeholder="yourbusiness.com" required /></label><button class="secondary-button" type="submit">Save domain</button><p class="modal-status" id="websiteTrafficStatus"></p></form>
-          <div class="traffic-metrics"><div><span>SESSIONS</span><strong id="trafficSessions">—</strong></div><div><span>USERS</span><strong id="trafficUsers">—</strong></div><div><span>PAGEVIEWS</span><strong id="trafficPageviews">—</strong></div><div><span>LAST SYNC</span><strong id="trafficLastSync">Not connected</strong></div></div>
-          <p class="traffic-note">A domain alone cannot expose private traffic numbers. SiteRemade will use the site's Google Analytics connection for real data instead of showing made-up estimates.</p>
-        </div>
-        <div class="panel ads-panel feature-blocked ad-feature-blocked">
-          <div class="feature-block-overlay"><span>COMING SOON</span><strong>Google + Meta campaign management</strong><p>Campaign controls are intentionally blocked until the ad integrations are ready.</p></div>
-          <div class="panel-head"><div><p class="eyebrow">MANAGED AD PERFORMANCE</p><h2>Budget → leads → bookings → revenue</h2></div><span class="coming-badge" id="adsConnectionBadge">SITEREMADE MANAGED</span></div>
-          <div class="ad-metrics">
-            <div><span>AD SPEND</span><strong id="adSpendTotal">$0</strong></div>
-            <div><span>AD LEADS</span><strong id="adLeadTotal">0</strong></div>
-            <div><span>COST / LEAD</span><strong id="adCpl">—</strong></div>
-            <div><span>ROAS</span><strong id="adRoas">—</strong></div>
-          </div>
-          <div class="ads-grid">
-            <form id="adSpendForm" class="compact-form">
-              <label>Platform<select name="platform"><option>Google</option><option>Meta</option><option>Other</option></select></label>
-              <label>Campaign<input name="campaign" placeholder="Panel upgrades" /></label>
-              <label>Spend<input name="spend" type="number" min="0" step="0.01" required placeholder="250" /></label>
-              <label>Leads<input name="leads" type="number" min="0" step="1" value="0" /></label>
-              <button class="primary-action" type="submit">Add spend</button>
-              <p class="modal-status" id="adSpendStatus"></p>
-            </form>
-            <div>
-              <div id="adSpendList" class="ad-spend-list"><div class="empty-state">No ad spend recorded yet.</div></div>
-              <button class="secondary-button" id="askAdsButton" type="button">Ask AI what this means</button>
-            </div>
+      <!-- Analytics (Phase 3E). Same real backend as before
+           (routes/umami-analytics.js → GET /api/app/umami/analytics), new
+           presentation: a handful of plain-language numbers, one quiet
+           trend, top pages, then secondary detail. Deliberately contains
+           no .metric-grid / .traffic-panel: v43-ad-control.js and
+           v42-daily-workflow.js (still loaded for Admin/legacy screens)
+           look for those inside #view-analytics to inject old panels. -->
+      <section class="view" id="view-analytics" aria-labelledby="analyticsTitle">
+        <div class="page-head an-head">
+          <div><p class="eyebrow">ANALYTICS</p><h1 id="analyticsTitle">How your website is doing</h1><p id="analyticsSubtitle">Visitors, what they look at, and how many get in touch.</p></div>
+          <div class="an-range" role="group" aria-label="Time range" id="analyticsRange">
+            <button type="button" data-an-days="7">7 days</button>
+            <button type="button" data-an-days="30" class="active">30 days</button>
+            <button type="button" data-an-days="90">90 days</button>
           </div>
         </div>
+        <div id="analyticsBody" class="an-body" aria-live="polite"></div>
       </section>
       <section class="view" id="view-website-projects">
         <div class="page-head compact-head">

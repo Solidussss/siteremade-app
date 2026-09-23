@@ -268,7 +268,129 @@ function renderPayments(){
   qs('#adFundedTotal').textContent=money(funded);qs('#adFundSpent').textContent=money(spent);qs('#adFundAvailable').textContent=money(available);
   qs('#adFundHistory').innerHTML=(state.adFunds||[]).length?state.adFunds.map(f=>`<div><span class="payment-icon">↗</span><strong>${esc(f.platform)} ads</strong><span>${dateLabel(f.createdAt)}</span><em>${money(f.amount)}</em><span class="status-pill ${f.status==='Funded'?'':'neutral'}">${esc(f.status)}</span></div>`).join(''):'<div class="empty-state">No advertising funds added yet.</div>';const fundForm=qs('#adFundForm');if(fundForm){fundForm.style.display=state.user?.role==='owner'?'none':'grid';if(state.user?.role==='owner')qs('#adFundStatus').textContent='Client approves/funds the advertising budget. You manage campaign delivery and record performance from this workspace.';}
 }
-function renderAnalytics(){const closed=state.leads.filter(l=>['Won','Lost'].includes(l.status));const won=state.leads.filter(l=>l.status==='Won');const collected=state.invoices.filter(i=>i.status==='Paid').reduce((s,i)=>s+Number(i.amount||0),0);qs('#analyticsLeads').textContent=state.leads.length;qs('#analyticsWinRate').textContent=closed.length?`${Math.round(won.length/closed.length*100)}%`:'0%';qs('#analyticsBookings').textContent=state.appointments.length;qs('#analyticsRevenue').textContent=money(collected);renderAnalyticsBars('#analyticsPipeline',['New','Contacted','Quoted','Won','Lost'].map(k=>[k,state.leads.filter(l=>l.status===k).length]));const src={};state.leads.forEach(l=>src[l.source||'Unknown']=(src[l.source||'Unknown']||0)+1);renderAnalyticsBars('#analyticsSources',Object.entries(src).sort((a,b)=>b[1]-a[1]));renderAdSpend(collected);const form=qs('#adSpendForm');if(form){form.style.display=state.user?.role==='owner'?'grid':'none';const status=qs('#adSpendStatus');if(status&&state.user?.role!=='owner')status.textContent='Campaign spend is managed and reported by SiteRemade.';}}
+// Legacy renderAnalytics (lead/won-rate/bookings/revenue cards) was replaced by
+// the website analytics view below (Phase 3E).
+// ===========================================================================
+// Analytics — Phase 3E
+// ===========================================================================
+// Reads the same real Umami-backed endpoint the old view used
+// (routes/umami-analytics.js, GET /api/app/umami/analytics?days=N →
+// {connected, domain, stats, series, active, pages, referrers, devices,
+// countries, channels, events, …}). Fetched when the view is opened or the
+// range changes (at most once a minute per range), never on the 5s live
+// refresh. "Form submissions" is counted from this app's own contact
+// submissions (real rows, same definition as Contact), not guessed from
+// analytics events. CTA clicks come only from tracked Umami events whose
+// names look like clicks; if the site doesn't tag any, the view says so.
+const analyticsState={days:30,cache:{},loading:false,error:null};
+const anNum=v=>{const n=Number(v?.value??v??0);return Number.isFinite(n)?n:0;};
+const anFmt=n=>Number(n||0).toLocaleString('en-CA');
+const AN_CTA=/click|cta|call|phone|tel|book|quote|button|email|directions/i,AN_FORM=/form|submit/i;
+async function loadWebsiteAnalytics(force){
+  const days=analyticsState.days,hit=analyticsState.cache[days];
+  if(!force&&hit&&Date.now()-hit.at<60000){renderAnalytics();return;}
+  analyticsState.loading=true;analyticsState.error=null;renderAnalytics();
+  try{const d=await api(`/api/app/umami/analytics?days=${days}`);analyticsState.cache[days]={data:d,at:Date.now()};}
+  catch(e){analyticsState.error=e.message||'Analytics unavailable';}
+  finally{analyticsState.loading=false;renderAnalytics();}
+}
+function analyticsSubmissions(days){const since=Date.now()-days*86400000;return contactSubmissions().filter(l=>String(l.source||'').toLowerCase()!=='twilio sms'&&new Date(l.createdAt).getTime()>=since).length;}
+function renderAnalytics(){
+  const body=qs('#analyticsBody');if(!body)return;
+  qsa('[data-an-days]').forEach(b=>{const on=Number(b.dataset.anDays)===analyticsState.days;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
+  const hit=analyticsState.cache[analyticsState.days],d=hit?.data;
+  body.classList.toggle('is-refreshing',analyticsState.loading&&!!d);
+  // Called from renderAll()/live refresh too: only rebuild when something
+  // this view shows actually changed, so an open tooltip or "Show as a
+  // table" isn't reset every 5 seconds.
+  const sig=JSON.stringify([analyticsState.days,hit?.at,analyticsState.error,!!d||analyticsState.loading,d?analyticsSubmissions(d.days||analyticsState.days):0]);
+  if(body.dataset.sig===sig)return;body.dataset.sig=sig;
+  const range=qs('#analyticsRange');
+  if(!d){
+    if(range)range.hidden=true;
+    if(analyticsState.loading){body.innerHTML='<div class="an-skeleton" aria-label="Loading analytics"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton an-skeleton-chart"></div></div>';return;}
+    if(analyticsState.error){body.innerHTML=`<div class="an-empty"><strong>Analytics are unavailable right now.</strong><span>We couldn't reach the analytics service (${esc(analyticsState.error)}). Your website isn't affected — try again in a little while.</span><button type="button" class="text-link" id="analyticsRetry">Try again</button></div>`;qs('#analyticsRetry').onclick=()=>loadWebsiteAnalytics(true);return;}
+    body.innerHTML='';return;
+  }
+  if(!d.connected){
+    if(range)range.hidden=true;
+    qs('#analyticsSubtitle').textContent='Visitors, what they look at, and how many get in touch.';
+    body.innerHTML=`<div class="an-empty"><strong>Analytics will appear once your site is live.</strong><span>${d.domain?`We have your address (${esc(d.domain)}) but aren't receiving visits from it yet. Once your live site is sending visits, they show up here — nothing else to install.`:'As soon as your website is live and connected, you’ll see visitors, popular pages and enquiries here.'}</span>${d.domain?'':'<button type="button" class="text-link" data-an-settings>Add your website address in Settings</button>'}</div>`;
+    const go=body.querySelector('[data-an-settings]');if(go)go.onclick=()=>switchView('settings');
+    return;
+  }
+  if(range)range.hidden=false;
+  const days=d.days||analyticsState.days,s=d.stats||{};
+  const visitors=anNum(s.visitors),views=anNum(s.pageviews),visits=anNum(s.visits);
+  const events=Array.isArray(d.events)?d.events:[];
+  const ctaEvents=events.filter(e=>AN_CTA.test(String(e.x||''))&&!AN_FORM.test(String(e.x||'')));
+  const cta=ctaEvents.reduce((n,e)=>n+anNum(e.y),0);
+  const subs=analyticsSubmissions(days);
+  const conv=visitors>=50?(subs/visitors*100):null;
+  const active=anNum(d.active?.visitors??d.active?.x??d.active);
+  qs('#analyticsSubtitle').innerHTML=`${esc(d.domain)}${active?` · <span class="chip chip-success">${anFmt(active)} on your site now</span>`:''}`;
+  if(!visitors&&!views){
+    body.innerHTML=`<div class="an-empty"><strong>No visits recorded in the last ${days} days.</strong><span>Tracking is connected to ${esc(d.domain)}. Visits will show here as people find your site.${subs?` Meanwhile, ${subs} ${subs===1?'person has':'people have'} contacted you through it.`:''}</span></div>`;
+    return;
+  }
+  const stat=(label,value,note,extra='')=>`<div class="an-stat ${extra}"><dt>${label}</dt><dd>${value}</dd><p>${note}</p></div>`;
+  const list=(title,rows,empty,fmtLabel=x=>x)=>{const data=(Array.isArray(rows)?rows:[]).slice(0,6),max=Math.max(1,...data.map(r=>anNum(r.y)));return `<section class="an-list"><h3>${title}</h3>${data.length?`<ol>${data.map(r=>`<li><span class="an-list-label" title="${esc(r.x||'')}">${esc(fmtLabel(r.x||'(none)'))}</span><span class="an-list-value">${anFmt(anNum(r.y))}</span><i style="width:${Math.max(3,anNum(r.y)/max*100)}%"></i></li>`).join('')}</ol>`:`<p class="an-list-empty">${empty}</p>`}</section>`;};
+  const sources=(Array.isArray(d.channels)&&d.channels.length)?d.channels:d.referrers;
+  body.innerHTML=`
+    <dl class="an-stats">
+      ${stat('Visitors',anFmt(visitors),`People who visited in the last ${days} days`)}
+      ${stat('Page views',anFmt(views),visits?`${(views/Math.max(1,visits)).toFixed(1)} pages per visit`:'Pages people opened')}
+      ${stat('Form submissions',anFmt(subs),'Contact form and chat requests received')}
+      ${stat('Button clicks',ctaEvents.length?anFmt(cta):'—',ctaEvents.length?'Calls, bookings and other tracked buttons':'Not tracked on your site yet')}
+      ${stat('Conversion rate',conv===null?'—':`${conv<10?conv.toFixed(1):Math.round(conv)}%`,conv===null?'Shown once you’ve had 50+ visitors':'Visitors who got in touch')}
+    </dl>
+    <section class="an-trend"><div class="an-trend-head"><h2>Visits per day</h2><span class="an-trend-total" id="anTrendReadout"></span></div><div class="an-chart" id="anChart"></div>
+      <details class="an-table"><summary>Show as a table</summary><div id="anTable"></div></details></section>
+    <div class="an-primary">${list('Most viewed pages',d.pages,'Pages appear here as people browse.')}</div>
+    <div class="an-secondary">
+      ${list('Where visitors come from',sources,'Direct, search and social visits appear here.')}
+      ${list('Devices',d.devices,'No device data yet.',x=>String(x).charAt(0).toUpperCase()+String(x).slice(1))}
+      ${list('Countries',d.countries,'No location data yet.',anCountry)}
+    </div>
+    ${ctaEvents.length||events.length?`<div class="an-secondary an-secondary-one">${list('Tracked actions',events,'')}</div>`:''}`;
+  renderAnalyticsChart(anDailySeries(d,days));
+}
+function anCountry(code){try{return new Intl.DisplayNames(['en'],{type:'region'}).of(String(code).toUpperCase())||code;}catch{return code;}}
+// Umami returns only the days that had traffic; fill the gaps with zeros so
+// the line doesn't skip across empty days.
+function anDailySeries(d,days){
+  const raw=(d.series&&(d.series.sessions||d.series.pageviews))||[],by={};
+  const key=t=>{const x=new Date(t);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;};
+  raw.forEach(p=>{const t=typeof p.x==='string'?p.x.replace(' ','T'):p.x;const k=key(t);if(k.includes('NaN'))return;by[k]=(by[k]||0)+anNum(p.y);});
+  const out=[];for(let i=days-1;i>=0;i--){const t=new Date();t.setHours(12,0,0,0);t.setDate(t.getDate()-i);out.push({date:t,y:by[key(t)]||0});}
+  return out;
+}
+let anChartSeries=[];
+function renderAnalyticsChart(series){
+  anChartSeries=series;
+  const host=qs('#anChart'),table=qs('#anTable');if(!host)return;
+  const fmtD=t=>new Intl.DateTimeFormat('en-CA',{month:'short',day:'numeric'}).format(t);
+  if(table)table.innerHTML=`<table><thead><tr><th>Day</th><th>Visits</th></tr></thead><tbody>${series.map(p=>`<tr><td>${esc(fmtD(p.date))}</td><td>${anFmt(p.y)}</td></tr>`).join('')}</tbody></table>`;
+  const W=Math.max(280,host.clientWidth||640),H=200,pl=8,pr=8,pt=14,pb=26;
+  const max=Math.max(1,...series.map(p=>p.y)),niceMax=max<=4?4:Math.ceil(max/4)*4;
+  const x=i=>pl+(series.length<2?0:i*(W-pl-pr)/(series.length-1)),y=v=>pt+(H-pt-pb)*(1-v/niceMax);
+  const line=series.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(p.y).toFixed(1)}`).join('');
+  const area=`${line}L${x(series.length-1).toFixed(1)},${y(0)}L${x(0).toFixed(1)},${y(0)}Z`;
+  const grid=[0,.5,1].map(f=>`<line x1="${pl}" x2="${W-pr}" y1="${y(niceMax*f)}" y2="${y(niceMax*f)}" class="an-grid"/><text x="${W-pr}" y="${y(niceMax*f)-4}" text-anchor="end" class="an-axis">${anFmt(niceMax*f)}</text>`).join('');
+  const ticks=[0,Math.floor((series.length-1)/2),series.length-1].map((i,k)=>`<text x="${x(i)}" y="${H-6}" text-anchor="${k===0?'start':k===2?'end':'middle'}" class="an-axis">${esc(fmtD(series[i].date))}</text>`).join('');
+  host.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Visits per day, last ${series.length} days" tabindex="0">${grid}<path d="${area}" class="an-area"/><path d="${line}" class="an-line"/>${ticks}<line class="an-cross" y1="${pt}" y2="${y(0)}" x1="0" x2="0" visibility="hidden"/><circle class="an-dot" r="4.5" visibility="hidden"/><rect x="0" y="0" width="${W}" height="${H}" fill="transparent" class="an-hit"/></svg><div class="an-tip" hidden><strong></strong><span></span></div>`;
+  const svg=host.querySelector('svg'),cross=svg.querySelector('.an-cross'),dot=svg.querySelector('.an-dot'),tip=host.querySelector('.an-tip');
+  const total=series.reduce((n,p)=>n+p.y,0),readout=qs('#anTrendReadout');if(readout)readout.textContent=`${anFmt(total)} visits`;
+  let focusIdx=series.length-1;
+  const show=i=>{i=Math.max(0,Math.min(series.length-1,i));focusIdx=i;const px=x(i),py=y(series[i].y);cross.setAttribute('x1',px);cross.setAttribute('x2',px);cross.setAttribute('visibility','visible');dot.setAttribute('cx',px);dot.setAttribute('cy',py);dot.setAttribute('visibility','visible');tip.hidden=false;tip.querySelector('strong').textContent=`${anFmt(series[i].y)} visit${series[i].y===1?'':'s'}`;tip.querySelector('span').textContent=fmtD(series[i].date);const tw=tip.offsetWidth||110;tip.style.left=Math.min(W-tw,Math.max(0,px-tw/2))+'px';tip.style.top=Math.max(0,py-58)+'px';};
+  const hide=()=>{cross.setAttribute('visibility','hidden');dot.setAttribute('visibility','hidden');tip.hidden=true;};
+  svg.addEventListener('pointermove',e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)*(W/r.width);show(Math.round((px-pl)/((W-pl-pr)/Math.max(1,series.length-1))));});
+  svg.addEventListener('pointerleave',hide);svg.addEventListener('blur',hide);
+  svg.addEventListener('focus',()=>show(focusIdx));
+  svg.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();show(focusIdx-1);}else if(e.key==='ArrowRight'){e.preventDefault();show(focusIdx+1);}});
+}
+if(window.ResizeObserver&&qs('#view-analytics')){let anW=0;new ResizeObserver(()=>{const h=qs('#anChart');if(h&&h.clientWidth&&Math.abs(h.clientWidth-anW)>8){anW=h.clientWidth;if(anChartSeries.length)renderAnalyticsChart(anChartSeries);}}).observe(qs('#view-analytics'));}
+qsa('[data-an-days]').forEach(b=>b.onclick=()=>{analyticsState.days=Number(b.dataset.anDays)||30;loadWebsiteAnalytics();});
 function renderAnalyticsBars(sel,rows){const max=Math.max(1,...rows.map(r=>r[1]));qs(sel).innerHTML=rows.map(([label,n])=>`<div class="analytics-row"><div><strong>${esc(label)}</strong><span>${n}</span></div><div class="analytics-track"><i style="width:${n/max*100}%"></i></div></div>`).join('')||'<div class="empty-state">No data yet.</div>';}
 function renderWebsiteTraffic(){const a=state.websiteAnalytics||{},domain=qs('#trafficDomain'),status=qs('#trafficConnectionStatus');if(domain)domain.value=a.domain||'';if(qs('#trafficSessions'))qs('#trafficSessions').textContent=a.connected?Number(a.sessions||0).toLocaleString('en-CA'):'—';if(qs('#trafficUsers'))qs('#trafficUsers').textContent=a.connected?Number(a.users||0).toLocaleString('en-CA'):'—';if(qs('#trafficPageviews'))qs('#trafficPageviews').textContent=a.connected?Number(a.pageviews||0).toLocaleString('en-CA'):'—';if(qs('#trafficLastSync'))qs('#trafficLastSync').textContent=a.lastSync?dateTimeLabel(a.lastSync):'Not connected';if(status){status.textContent=a.connected?'GOOGLE ANALYTICS CONNECTED':a.domain?'DOMAIN SAVED · ANALYTICS NOT CONNECTED':'ADD WEBSITE DOMAIN';status.classList.toggle('neutral',!a.connected);}}
 function renderWebsiteUpdates(){
@@ -954,7 +1076,7 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
 const VIEW_SHOWN_HOOKS={analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
-function loadWebsiteAnalytics(){}function loadAds(){}function loadConnections(){} // filled in by the Analytics / Ads / Settings passes
+function loadAds(){}function loadConnections(){} // filled in by the Ads / Settings passes
 function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
