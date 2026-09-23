@@ -39,16 +39,40 @@ window.getSharedTwilioStatus=function(force){
 // false`, the standard way to preserve document order for scripts inserted
 // this way), and behave identically — just from the moment the dashboard
 // actually becomes visible instead of from page load.
+//
+// Website-first shell (Phase 3I): this list was unthreaded. Disconnected
+// (files left on disk, just no longer loaded) because they only existed to
+// build the old customer Overview / Analytics / Market Finder presentation
+// — and would clobber or duplicate the new views if still loaded:
+//   v22-client.js + v22.css  (Overview/Analytics "hero" bands, nav relabeling,
+//                             plus a whole third token/shell theme)
+//   v24-umami-client.js + v24.css (old Analytics renderer; the new
+//                             renderAnalytics() reads the same
+//                             /api/app/umami/analytics endpoint) — this was
+//                             also the only loader of v28-market-client.js
+//                             + v28-market.css (Market Finder decorations)
+//   v20-client.js + v20.css  (old "website traffic" panel wrapper)
+//   v19-client.js            (CRM setup checklist, pipeline board, lead
+//                             "next action" column, prospect fit scores)
+//   v18.css                  (styles no remaining script renders)
+// Still loaded, for compatibility: v17-client.js/v17.css (legacy inbox/
+// calendar/drawer rules for the staff-only internal screens), v18-client.js
+// (Google sign-in fragment handling — auth-adjacent, deliberately untouched;
+// it also imports v19-agency/v19-updates/v19-market/v29-lead-fix), v19.css
+// (still styles v19-agency.js's Admin overview), v40 (Business SMS number
+// wizard, now opened from Settings → Connections), v45 (Admin ad
+// intelligence) and v29-bootstrap.js (see that file for its own split).
+// Full list: PHASE3-ROUTE-MAP.md, "Website-first shell".
 let dashboardScriptsLoaded=false;
 function loadDashboardFeatureScripts(){
   if(dashboardScriptsLoaded)return;
   dashboardScriptsLoaded=true;
-  ['/v22.css?v=27','/v24.css?v=27','/v20.css?v=20','/v17.css?v=17','/v18.css?v=18','/v19.css?v=19'].forEach(href=>{
+  ['/v17.css?v=17','/v19.css?v=19'].forEach(href=>{
     const l=document.createElement('link');
     l.rel='stylesheet';l.href=href;
     document.head.appendChild(l);
   });
-  ['/v40-existing-number-client.js?v=3','/v45-ad-intelligence-client.js','/v22-client.js?v=27','/v24-umami-client.js?v=27','/v20-client.js?v=20','/v29-bootstrap.js?v=36','/v17-client.js?v=17','/v18-client.js?v=18','/v19-client.js?v=19'].forEach(src=>{
+  ['/v40-existing-number-client.js?v=4','/v45-ad-intelligence-client.js','/v29-bootstrap.js?v=37','/v17-client.js?v=17','/v18-client.js?v=18'].forEach(src=>{
     const s=document.createElement('script');
     s.src=src;s.async=false;
     document.body.appendChild(s);
