@@ -42,6 +42,27 @@
 const { readJsonBody } = require('../lib/context');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
+const { provisionWorkspaceSite } = require('./umami-analytics');
+
+// Phase 5: a linked workspace gets its analytics site set up server-side,
+// without the customer typing a domain first. Runs in the background (never
+// delays or fails the Website view -- Umami being slow or down must not
+// matter here), at most one attempt in flight per workspace, and retried on
+// a later visit (throttled) while the link still has no analytics_site_id.
+const PROVISION_RETRY_MS = 10 * 60 * 1000;
+const provisioning = new Map(); // workspace id -> last attempt (ms) / in-flight marker
+function provisionAnalyticsInBackground(c, summary, link) {
+  if (!link || link.analytics_site_id) return;
+  const last = provisioning.get(c.wid);
+  if (last === 'inflight' || (typeof last === 'number' && Date.now() - last < PROVISION_RETRY_MS)) return;
+  provisioning.set(c.wid, 'inflight');
+  // The Umami site is named after the business; a domain is only passed if
+  // the builder reports one as verified -- display metadata, never identity.
+  const verified = (Array.isArray(summary.domains) ? summary.domains : []).find(d => d && d.verifiedAt && typeof d.domain === 'string');
+  provisionWorkspaceSite(c.wid, { name: summary.businessName || (c.workspace && c.workspace.business_name) || summary.name || '', domain: verified ? verified.domain : '' })
+    .then(r => { if (r.ok) provisioning.delete(c.wid); else provisioning.set(c.wid, Date.now()); })
+    .catch(() => provisioning.set(c.wid, Date.now()));
+}
 
 const MAX_REQUEST_CHARS = 600; // the generator's own ceiling for an edit request
 
@@ -108,6 +129,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     const got = await canonical(c);
     if (!got.ok) return passThroughError(json, res, got.r);
     const linked = await recordLink(c, got.summary);
+    if (linked.status === 'linked') provisionAnalyticsInBackground(c, got.summary, linked.link);
     // Only the link STATUS reaches the browser (linked / not_linked /
     // mismatch / conflict / unknown) -- no ids beyond the projectId the
     // summary already carries.

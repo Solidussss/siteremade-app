@@ -13,6 +13,8 @@ const {
 } = require('./lib/context');
 const { buildRouter } = require('./routes');
 const router = buildRouter();
+const publicLimits = require('./lib/public-rate-limit');
+const websiteLinks = require('./lib/website-links');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
@@ -32,6 +34,11 @@ async function qc(promise){const {data,error,count}=await promise;if(error)throw
 function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
+// Phase 5: POST /api/public/chat/history has always called mapMessage(),
+// which was never defined anywhere -- a ReferenceError (500) for every
+// widget history poll once a conversation existed. Same shape as the
+// messages inside mapConversation() above, which is what widget.js reads.
+function mapMessage(m){return {id:m.id,from:m.sender,text:m.text,createdAt:m.created_at};}
 function mapAppointment(a){return {id:a.id,leadId:a.lead_id||'',title:a.title,customer:a.customer,start:a.start_at,duration:a.duration,status:a.status,notes:a.notes};}
 function mapInvoice(i){return {id:i.id,leadId:i.lead_id||'',projectId:i.project_id||'',customer:i.customer,description:i.description,amount:Number(i.amount)||0,status:i.status,paymentUrl:i.payment_url||null,stripeSessionId:i.stripe_session_id||null,createdAt:i.created_at,paidAt:i.paid_at||null};}
 function mapAutomation(a){return {id:a.automation_key,name:a.name,description:a.description,enabled:a.enabled};}
@@ -293,6 +300,45 @@ async function ensureSiteRemadeCustomer(c){
   return customer.id;
 }
 
+// Phase 5: 429 for the public intake endpoints (see lib/public-rate-limit.js).
+function tooMany(res,r){res.setHeader('Retry-After',String(r.retryAfterSeconds||60));return json(res,429,{ok:false,code:'rate_limited',message:'Too many requests in a short time. Please try again shortly.',retryAfterSeconds:r.retryAfterSeconds||60});}
+// Phase 5: the one "a website visitor got in touch" write path, shared by
+// POST /api/public/lead (widget/form with workspaceId+publicKey) and POST
+// /api/public/site-submission (generated site, workspace resolved from its
+// builder project id). Fields arrive already cleaned by the caller. Same
+// rows, activity, automations and notifications /api/public/lead always
+// produced -- moved here unchanged, not reimplemented.
+async function createWebsiteLead(w,{name,email,phone,service,source,value,message}){
+  const lead=await q(db.from('leads').insert({workspace_id:w.id,name,email,phone,service,source,status:'New',value,message,notes:[]}).select('*').single());
+  const cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'human',unread:1}).select('*').single());
+  const customerText=message||`New ${service} inquiry submitted from the website.`;
+  await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'customer',text:customerText});
+  await activity(w.id,'lead','New website inquiry',`${lead.name} · ${lead.service}`);
+  const autos=await q(db.from('automations').select('*').eq('workspace_id',w.id));
+  if(autos.some(a=>a.automation_key==='lead-alert'&&a.enabled)){notify(`New lead — ${lead.name}`,`${lead.name} requested ${lead.service}. ${lead.phone||lead.email||''}`,w.email);sms(w.phone,`SiteRemade: New lead — ${lead.name} · ${lead.service}`);}
+  if(autos.some(a=>a.automation_key==='lead-confirmation'&&a.enabled)){
+    const text=`Thanks for reaching out to ${w.business_name}. We received your request and will follow up shortly.`;
+    await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text});notify('We received your request',text,lead.email);
+  }
+  return {lead,conversation:cv};
+}
+// Phase 5: maps a site submission onto createWebsiteLead's fields. Accepts
+// both the flat shape {projectId,name,email,phone,message,formSource} and
+// the record a generated site's own server.js already POSTs when its
+// operator sets SUBMISSION_BACKEND=webhook (lib/export-compiler.js in the
+// builder repo): {projectId,sectionId,type,values:{name,email,...},revision,…}.
+// Field keys are the builder's fixed module vocabulary (contact / quote /
+// booking / newsletter); anything else is ignored, never stored raw.
+const SITE_FORM_LABELS={contact:'Contact form',quote:'Quote request',booking:'Booking request',newsletter:'Newsletter signup'};
+const SITE_FORM_EXTRAS=[['date','Requested date'],['time','Requested time'],['partySize','Party size / service'],['preferredContact','Preferred contact']];
+function siteSubmissionFields(b){
+  const v=b.values&&typeof b.values==='object'&&!Array.isArray(b.values)?b.values:b;
+  const email=clean(v.email,254),phone=clean(v.phone,80),type=clean(b.type,40).toLowerCase();
+  const primary=clean(v.message,4000)||clean(v.description,4000)||clean(v.notes,4000);
+  const extras=SITE_FORM_EXTRAS.map(([k,label])=>clean(v[k],200)?`${label}: ${clean(v[k],200)}`:'').filter(Boolean);
+  return {name:clean(v.name,120)||'Website visitor',email,phone,service:clean(v.service,160)||SITE_FORM_LABELS[type]||clean(b.formSource,160)||'Website form',source:'Website',value:0,message:[primary,...extras].filter(Boolean).join('\n').slice(0,4000)};
+}
+
 async function validPublicWorkspace(b){const wid=clean(b.workspaceId,80),key=clean(b.publicKey,120);if(!wid||!key)return null;const {data}=await db.from('workspaces').select('*').eq('id',wid).eq('public_key',key).maybeSingle();return data||null;}
 
 async function api(req,res,u){
@@ -343,23 +389,37 @@ async function api(req,res,u){
   if(m==='GET'&&p==='/api/auth/me'){const a=await getAuth(req,res);return a?json(res,200,{ok:true,user:{name:a.profile.name,email:a.user.email,role:a.profile.role}}):json(res,401,{ok:false,message:'Not signed in.'});}
 
   if(m==='POST'&&p==='/api/public/lead'){
+    {const r=publicLimits.publicLeadPerIp.take(publicLimits.clientIp(req));if(!r.ok)return tooMany(res,r);}
     const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});
     const name=clean(b.name,120);if(!name)return json(res,400,{ok:false,message:'Name required.'});
-    const service=clean(b.service||'General inquiry',160),message=clean(b.message,4000);
-    const lead=await q(db.from('leads').insert({workspace_id:w.id,name,email:clean(b.email,254),phone:clean(b.phone,80),service,source:clean(b.source||'Website',80),status:'New',value:Math.max(0,Number(b.value)||0),message,notes:[]}).select('*').single());
-    const cv=await q(db.from('conversations').insert({workspace_id:w.id,lead_id:lead.id,name:lead.name,mode:'human',unread:1}).select('*').single());
-    const customerText=message||`New ${service} inquiry submitted from the website.`;
-    await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'customer',text:customerText});
-    await activity(w.id,'lead','New website inquiry',`${lead.name} · ${lead.service}`);
-    const autos=await q(db.from('automations').select('*').eq('workspace_id',w.id));
-    if(autos.some(a=>a.automation_key==='lead-alert'&&a.enabled)){notify(`New lead — ${lead.name}`,`${lead.name} requested ${lead.service}. ${lead.phone||lead.email||''}`,w.email);sms(w.phone,`SiteRemade: New lead — ${lead.name} · ${lead.service}`);}
-    if(autos.some(a=>a.automation_key==='lead-confirmation'&&a.enabled)){
-      const text=`Thanks for reaching out to ${w.business_name}. We received your request and will follow up shortly.`;
-      await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text});notify('We received your request',text,lead.email);
-    }
+    {const r=publicLimits.leadsPerWorkspace.take(w.id);if(!r.ok)return tooMany(res,r);}
+    const {lead,conversation:cv}=await createWebsiteLead(w,{name,email:clean(b.email,254),phone:clean(b.phone,80),service:clean(b.service||'General inquiry',160),source:clean(b.source||'Website',80),value:Math.max(0,Number(b.value)||0),message:clean(b.message,4000)});
     return json(res,201,{ok:true,leadId:lead.id,conversationId:cv.id});
   }
+  // Phase 5: contact submissions from a SiteRemade-built (generated) site.
+  // The caller names only the builder project (`projectId`); the owning
+  // workspace is resolved HERE, server-side, from website_project_links
+  // (lib/website-links.js). Any workspaceId/publicKey in the body is never
+  // read -- there is nothing to spoof: an unlinked or made-up project id
+  // matches no workspace and is refused. A project id is an identifier,
+  // not a secret (same trust level as a workspace's public widget key), so
+  // abuse protection here is validation + rate limits, as for /lead.
+  if(m==='POST'&&p==='/api/public/site-submission'){
+    let b;try{b=await body(req,64*1024);}catch(e){return json(res,400,{ok:false,message:'That submission couldn’t be read.'});}
+    const projectId=clean(b.projectId,80);
+    if(!websiteLinks.PROJECT_ID_RE.test(projectId))return json(res,400,{ok:false,message:'A valid site identifier is required.'});
+    {const r=publicLimits.siteSubmissionPerProjectIp.take(projectId+'|'+publicLimits.clientIp(req));if(!r.ok)return tooMany(res,r);}
+    let wid;try{wid=await websiteLinks.findWorkspaceForProject(projectId);}catch(e){console.error('site-submission lookup:',e.message);return json(res,503,{ok:false,message:'Submissions can’t be received right now. Please try again shortly.'});}
+    const w=wid?(await db.from('workspaces').select('*').eq('id',wid).maybeSingle()).data:null;
+    if(!w)return json(res,404,{ok:false,message:'This site isn’t connected to a SiteRemade workspace.'});
+    const f=siteSubmissionFields(b);
+    if(!f.email&&!f.phone&&f.name==='Website visitor')return json(res,400,{ok:false,message:'A name, email or phone number is required.'});
+    {const r=publicLimits.leadsPerWorkspace.take(w.id);if(!r.ok)return tooMany(res,r);}
+    await createWebsiteLead(w,f);
+    return json(res,201,{ok:true});
+  }
   if(m==='POST'&&p==='/api/public/chat'){
+    {const r=publicLimits.publicChatPerIp.take(publicLimits.clientIp(req));if(!r.ok)return tooMany(res,r);}
     const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});const text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Message required.'});
     let lead=null;if(b.leadId){lead=(await db.from('leads').select('*').eq('id',clean(b.leadId,80)).eq('workspace_id',w.id).maybeSingle()).data;}
     const visitorName=clean(b.name,120),visitorEmail=clean(b.email,254),visitorPhone=clean(b.phone,80);
@@ -371,7 +431,9 @@ async function api(req,res,u){
     const history=await q(db.from('messages').select('*').eq('conversation_id',cv.id).order('created_at',{ascending:true}));
     let reply=null;
     if(cv.mode==='ai'){
-      reply=w.ai_enabled?await externalAI(w,history).catch(()=>null):null;
+      // Phase 5: a per-workspace hourly budget for paid AI replies; past it
+      // the visitor still gets the built-in reply below, never an error.
+      reply=w.ai_enabled&&process.env.OPENAI_API_KEY&&publicLimits.chatAiPerWorkspace.take(w.id).ok?await externalAI(w,history).catch(()=>null):null;
       if(!reply)reply=w.ai_enabled?localAI(w,text):`Thanks for reaching out to ${w.business_name}. Your message has been received and the team will follow up.`;
       await db.from('messages').insert({workspace_id:w.id,conversation_id:cv.id,sender:'ai',text:reply});
     }
@@ -382,6 +444,7 @@ async function api(req,res,u){
   }
 
   if(m==='POST'&&p==='/api/public/chat/history'){
+    {const r=publicLimits.publicChatHistoryPerIp.take(publicLimits.clientIp(req));if(!r.ok)return tooMany(res,r);}
     const b=await body(req),w=await validPublicWorkspace(b);if(!w)return json(res,404,{ok:false,message:'Workspace not found or public key invalid.'});
     const leadId=clean(b.leadId,80);if(!leadId)return json(res,400,{ok:false,message:'Lead required.'});
     const lead=(await db.from('leads').select('id').eq('id',leadId).eq('workspace_id',w.id).maybeSingle()).data;if(!lead)return json(res,404,{ok:false,message:'Conversation not found.'});

@@ -328,9 +328,14 @@ function renderAnalytics(){
   const subs=analyticsSubmissions(days);
   const conv=visitors>=50?(subs/visitors*100):null;
   const active=anNum(d.active?.visitors??d.active?.x??d.active);
-  qs('#analyticsSubtitle').innerHTML=`${esc(d.domain)}${active?` · <span class="chip chip-success">${anFmt(active)} on your site now</span>`:''}`;
+  qs('#analyticsSubtitle').innerHTML=d.domain?`${esc(d.domain)}${active?` · <span class="chip chip-success">${anFmt(active)} on your site now</span>`:''}`:'Visitors, what they look at, and how many get in touch.';
+  // Phase 5: analytics is now set up automatically when the website is
+  // linked to its builder project -- possibly before any domain exists and
+  // before a single visit. That's a ready state, not a problem to fix, so
+  // no "connect"/"add your address" prompt here. Honest about where visits
+  // come from: pages carrying the SiteRemade code from Settings.
   if(!visitors&&!views){
-    body.innerHTML=`<div class="an-empty"><strong>No visits recorded in the last ${days} days.</strong><span>Tracking is connected to ${esc(d.domain)}. Visits will show here as people find your site.${subs?` Meanwhile, ${subs} ${subs===1?'person has':'people have'} contacted you through it.`:''}</span></div>`;
+    body.innerHTML=`<div class="an-empty" id="analyticsReadyEmpty"><strong>Your site is ready.</strong><span>We’ll start showing visitor activity here as data comes in${d.domain?` from ${esc(d.domain)}`:''}. Visits are counted on pages that include your SiteRemade website code (Settings → Website).${subs?` Meanwhile, ${subs} ${subs===1?'person has':'people have'} contacted you through your site.`:''}</span></div>`;
     return;
   }
   const stat=(label,value,note,extra='')=>`<div class="an-stat ${extra}"><dt>${label}</dt><dd>${value}</dd><p>${note}</p></div>`;
