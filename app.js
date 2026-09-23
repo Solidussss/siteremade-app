@@ -163,7 +163,7 @@ function maybeRedirectForWebsiteBuilderHandoff(){
   location.href='/handoff/website-builder?return='+encodeURIComponent(pending.ret)+'&mode='+encodeURIComponent(pending.mode||'session');
   return true;
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();handleConnectionReturn();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
@@ -1171,7 +1171,113 @@ function renderAds(){
 }
 
 function renderAutomations(){qs('#automationList').innerHTML=state.automations.map(a=>`<button class="automation-card automation-toggle" data-auto="${a.id}"><span class="automation-icon">${a.id==='lead-confirmation'?'✦':a.id==='lead-alert'?'↗':'□'}</span><div><strong>${esc(a.name)}</strong><p>${esc(a.description)}</p></div><span class="toggle ${a.enabled?'on':''}"></span></button>`).join('');qsa('[data-auto]').forEach(b=>b.onclick=()=>toggleAutomation(b.dataset.auto));}
-function renderSettings(){qs('#settingsBusiness').value=state.workspace.businessName||'';qs('#settingsEmail').value=state.workspace.email||'';qs('#settingsPhone').value=state.workspace.phone||'';qs('#settingsTimezone').value=state.workspace.timezone||'';qs('#aiServices').value=state.workspace.ai?.services||'';qs('#aiServiceArea').value=state.workspace.ai?.serviceArea||'';qs('#aiTone').value=state.workspace.ai?.tone||'';const labels={supabase:'Database + Auth',openai:'AI engine',googlePlaces:'Google Places',resend:'Email',twilio:'SMS',stripe:'Stripe payments'};qs('#integrationList').innerHTML=Object.entries(labels).map(([k,l])=>`<div class="setting-row"><div><strong>${l}</strong><span>${state.integrations[k]?'Connected / configured':'Needs server credentials'}</span></div>${k==='stripe'&&state.integrations.stripe?`<button class="text-button" id="connectStripeButton">${state.workspace.stripeAccountId?'Reconnect':'Connect'}</button>`:`<span class="status-pill ${state.integrations[k]?'':'neutral'}">${state.integrations[k]?'LIVE':'OFF'}</span>`}</div>`).join('');const aiBadge=qs('#aiReceptionistBadge');if(aiBadge){const live=!!state.integrations.openai&&state.workspace.ai?.enabled!==false;aiBadge.textContent=live?'LIVE':'OFF';aiBadge.classList.toggle('neutral',!live);}const sb=qs('#connectStripeButton');if(sb)sb.onclick=async()=>{try{const d=await api('/api/app/integrations/stripe/connect',{method:'POST'});if(d.url)location.href=d.url}catch(e){alert(e.message)}};}
+// ===========================================================================
+// Settings — Phase 3H
+// ===========================================================================
+// Six groups: Account, Website, Domain & hosting, Billing, Connections,
+// Advanced. The old renderSettings() (business form + a "modules" list that
+// said Website/Lead System were LIVE regardless + an env-var integrations
+// list) was replaced. Form/field ids are unchanged so the existing
+// #settingsForm submit handler keeps working as-is.
+function renderSettings(){
+  const w=state.workspace||{},set=(id,v)=>{const el=qs('#'+id);if(el&&document.activeElement!==el)el.value=v||'';};
+  set('settingsBusiness',w.businessName);set('settingsEmail',w.email);set('settingsPhone',w.phone);set('settingsTimezone',w.timezone);
+  set('aiServices',w.ai?.services);set('aiServiceArea',w.ai?.serviceArea);set('aiTone',w.ai?.tone);
+  set('settingsDomain',state.websiteAnalytics?.domain);
+  const signed=qs('#settingsSignedIn');if(signed&&state.user)signed.textContent=`${state.user.name||''}${state.user.email&&state.user.email!==state.user.name?` · ${state.user.email}`:''}`;
+  const ai=qs('#aiReceptionistBadge');if(ai){const live=!!(state.integrations.openai||state.integrations.anthropic)&&w.ai?.enabled!==false;setChip(ai,live?'On':'Off',live?'success':'neutral');}
+  const code=qs('#settingsEmbedCode');if(code)code.textContent=`<script src="${location.origin}/widget.js" data-workspace="${w.id||''}" data-public-key="${w.publicKey||''}"></script>`;
+  // Domain & hosting — read-only, and honest about what isn't reported yet.
+  const snap=websiteSnapshot(),dr=qs('#settingsDomainRows');
+  if(dr)dr.innerHTML=`
+    <div class="st-row"><div><strong>Live address</strong><span>${snap.live?`<a href="${esc(snap.live)}" target="_blank" rel="noopener noreferrer">${esc(snap.live.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a>`:'Not live yet'}</span></div></div>
+    <div class="st-row"><div><strong>Preview address</strong><span>${snap.preview?`<a href="${esc(snap.preview)}" target="_blank" rel="noopener noreferrer">${esc(snap.preview.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a>`:'None'}</span></div></div>
+    <div class="st-row"><div><strong>Domain status &amp; SSL</strong><span>Not reported yet — SiteRemade manages this for you. Ask your SiteRemade contact about domain changes.</span></div><span class="chip chip-neutral">Managed</span></div>
+    <p class="st-note">Addresses come from your SiteRemade delivery record. Live DNS, SSL and deployment status will appear here once the SiteRemade builder is connected to this app.</p>`;
+  // Billing
+  const b=state.billing||{},status=String(b.status||w.siteRemadeSubscriptionStatus||'inactive'),active=['active','trialing'].includes(status);
+  const pl=qs('#settingsPlanLine');if(pl)pl.textContent=`${money((Number(b.monthlyCents)||0)/100)} per month`;
+  setChip(qs('#settingsPlanStatus'),status.replace('_',' ').replace(/^./,c=>c.toUpperCase()),active?'success':status==='past_due'?'warning':'neutral');
+  const sp=qs('#settingsStartPlan');if(sp)sp.hidden=active;
+  // Advanced — notification automations (real automations rows)
+  const AUTO_COPY={'lead-alert':['Tell me when someone gets in touch','Email and text you as soon as a new contact form or chat comes in.'],'lead-confirmation':['Send an automatic “we got your message” reply','Confirms to the person that their message arrived.'],'appointment-reminder':['Appointment reminders','Reminds customers before a booked appointment.']};
+  const au=qs('#settingsAutomations');
+  if(au)au.innerHTML=(state.automations||[]).length?state.automations.map(a=>{const [t,d]=AUTO_COPY[a.id]||[a.name,a.description];return `<div class="st-row"><div><strong>${esc(t)}</strong><span>${esc(d||'')}</span></div><button type="button" class="st-toggle${a.enabled?' on':''}" role="switch" aria-checked="${a.enabled}" aria-label="${esc(t)}" data-st-auto="${esc(a.id)}"><i></i></button></div>`;}).join(''):'<p class="st-note">No notifications are set up for this workspace.</p>';
+  qsa('[data-st-auto]').forEach(t=>t.onclick=async()=>{t.disabled=true;await toggleAutomation(t.dataset.stAuto);t.disabled=false;});
+  const wd=qs('#settingsWorkspaceDetails');if(wd)wd.innerHTML=`<div class="st-row"><div><strong>Workspace ID</strong><span class="st-mono">${esc(w.id||'—')}</span></div></div><div class="st-row"><div><strong>Public key</strong><span class="st-mono">${esc(w.publicKey||'—')}</span><span>Safe to share — it's what your website uses to send enquiries here.</span></div></div>`;
+  renderConnections();
+}
+// Connections: real providers only, each backed by an existing route.
+const connState={gmail:null,calendar:null,twilio:null,stripe:null,ads:null,at:0,loading:false};
+async function loadConnections(force){
+  if(!force&&connState.at&&Date.now()-connState.at<30000){renderConnections();return;}
+  connState.loading=true;renderConnections();
+  const get=u=>api(u).catch(e=>({ok:false,error:e.message}));
+  const [gmail,calendar,twilio,stripe,ads]=await Promise.all([get('/api/app/mailbox/status'),get('/api/app/integrations/google-calendar/status'),(window.getSharedTwilioStatus?window.getSharedTwilioStatus(force).catch(e=>({ok:false,error:e.message})):get('/api/app/integrations/twilio/status')),get('/api/app/integrations/stripe/status'),get('/api/app/google-ads/status')]);
+  Object.assign(connState,{gmail,calendar,twilio,stripe,ads,at:Date.now(),loading:false});
+  renderConnections();
+}
+function renderConnections(){
+  const host=qs('#settingsConnections');if(!host)return;
+  if(!connState.at){host.innerHTML='<div class="an-skeleton"><div class="skeleton"></div><div class="skeleton"></div></div>';return;}
+  const owner=state.user?.role==='owner',{gmail,calendar,twilio,stripe,ads}=connState;
+  const unavailable='<span class="chip chip-neutral">Not available yet</span>';
+  const row=(key,name,what,chip,actions)=>`<div class="st-row st-conn" data-conn="${key}"><div><strong>${name}</strong><span>${what}</span></div><div class="st-conn-side">${chip}${actions}</div></div>`;
+  const on=(t)=>`<span class="chip chip-success">${esc(t||'Connected')}</span>`,off='<span class="chip chip-neutral">Not connected</span>';
+  const btn=(act,label,kind='secondary-button')=>`<button type="button" class="${kind}" data-conn-act="${act}">${label}</button>`;
+  const rows=[];
+  // Gmail (mailbox_connections; Google Calendar reuses the same Google connection)
+  if(gmail?.ok===false)rows.push(row('gmail','Gmail','Reply to website enquiries from your own inbox.',`<span class="chip chip-warning">Couldn't check</span>`,''));
+  else if(gmail?.connected)rows.push(row('gmail','Gmail',`${esc(gmail.email||'Connected')}${gmail.lastSync?` · synced ${esc(contactWhen(gmail.lastSync).toLowerCase())}`:''}`,on(),btn('gmail-sync','Sync now')+btn('gmail-disconnect','Disconnect','text-link')));
+  else rows.push(row('gmail','Gmail','Reply to website enquiries from your own inbox.',gmail?.available?.gmail===false?unavailable:off,gmail?.available?.gmail===false?'':btn('gmail-connect','Connect')));
+  // Google Calendar
+  if(calendar?.connected)rows.push(row('calendar','Google Calendar',`${esc(calendar.email||'Connected')} · bookings stay in sync`,on(),btn('calendar-sync','Sync now')));
+  else rows.push(row('calendar','Google Calendar','Keep appointments in sync with your calendar.',calendar?.configured===false?unavailable:off,calendar?.configured===false?'':btn('calendar-connect','Connect')));
+  // Business texting (Twilio)
+  if(twilio?.connected)rows.push(row('twilio','Business texting',`${esc(twilio.phoneNumber||'Your business number')} · texts to this number show up in Contact`,on(),btn('twilio-disconnect','Disconnect','text-link')));
+  else rows.push(row('twilio','Business texting','Get text messages from customers on the number you already use.',twilio?.configured===false?unavailable:off,twilio?.configured===false?'':btn('twilio-connect','Connect number')));
+  // Stripe (customer payments)
+  if(stripe?.connected)rows.push(row('stripe','Stripe payments',`${esc(stripe.label||'Connected')} · card payments from your customers`,on(),''));
+  else rows.push(row('stripe','Stripe payments',stripe?.accountId?'Stripe setup was started but isn’t finished yet.':'Take card payments from your customers.',stripe?.configured===false?unavailable:(stripe?.accountId?'<span class="chip chip-warning">Setup incomplete</span>':off),stripe?.configured===false?'':btn('stripe-connect',stripe?.accountId?'Finish setup':'Connect')));
+  // Google Ads (connection is staff-managed: /start is owner-only)
+  if(ads?.connected&&ads?.scopeReady)rows.push(row('ads','Google Ads',ads.selectedCustomerId?`Account ${esc(String(ads.selectedCustomerId).replace(/(\d{3})(\d{3})(\d{4})/,'$1-$2-$3'))} · reporting only`:'Connected · no ad account chosen yet',on(),owner?btn('ads-admin','Manage in Admin'):''));
+  else rows.push(row('ads','Google Ads',owner?'Read campaign results into the Ads page. Changes are never made automatically.':'SiteRemade connects this for you when your ads start.',ads?.connected?'<span class="chip chip-warning">Needs permission</span>':off,owner&&ads?.configured?btn('ads-connect',ads?.connected?'Grant access':'Connect'):''));
+  host.innerHTML=rows.join('')+'<p class="st-note" id="settingsConnStatus" role="status"></p>';
+  qsa('[data-conn-act]').forEach(b=>b.onclick=()=>connectionAction(b.dataset.connAct,b));
+}
+async function connectionAction(act,b){
+  const out=qs('#settingsConnStatus'),say=t=>{if(out)out.textContent=t;};
+  const busy=async(label,fn)=>{const old=b.textContent;b.disabled=true;b.textContent=label;try{await fn();}catch(e){say(e.message);}finally{b.disabled=false;b.textContent=old;}};
+  if(act==='gmail-connect')return location.assign('/api/app/gmail/start');
+  if(act==='calendar-connect')return location.assign('/api/app/integrations/google-calendar/start');
+  if(act==='ads-connect')return location.assign('/api/app/google-ads/start');
+  if(act==='ads-admin')return switchView('admin');
+  if(act==='gmail-sync')return busy('Syncing…',async()=>{const d=await api('/api/app/mailbox/sync',{method:'POST'});say(`Inbox synced${d.added?` — ${d.added} new message${d.added===1?'':'s'}`:''}.`);await loadConnections(true);});
+  if(act==='calendar-sync')return busy('Syncing…',async()=>{const d=await api('/api/app/integrations/google-calendar/sync',{method:'POST'});say(`Calendar synced — ${d.created||0} added, ${d.updated||0} updated.`);});
+  if(act==='gmail-disconnect'){if(!confirm('Disconnect Gmail from this workspace? Google Calendar sync uses the same Google connection and will stop too.'))return;return busy('Disconnecting…',async()=>{await api('/api/app/mailbox',{method:'DELETE'});say('Gmail disconnected.');await loadConnections(true);});}
+  if(act==='twilio-connect'){if(typeof window.srOpenBusinessNumberSetup==='function')return window.srOpenBusinessNumberSetup();say('The number setup is still loading — try again in a moment.');return;}
+  if(act==='twilio-disconnect'){if(!confirm('Disconnect your business number? Texts to it will stop showing up here.'))return;return busy('Disconnecting…',async()=>{await api('/api/app/integrations/twilio',{method:'DELETE'});say('Business number disconnected.');await loadConnections(true);});}
+  if(act==='stripe-connect')return busy('Opening Stripe…',async()=>{const d=await api('/api/app/integrations/stripe/connect',{method:'POST',body:'{}'});if(!d.url)throw new Error('Stripe didn’t return a setup link.');location.assign(d.url);});
+}
+qsa('[data-st-jump]').forEach(a=>a.onclick=e=>{e.preventDefault();qs('#'+a.dataset.stJump)?.scrollIntoView({behavior:'smooth',block:'start'});});
+if(qs('#settingsSignOut'))qs('#settingsSignOut').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload();};
+if(qs('#settingsCopyEmbed'))qs('#settingsCopyEmbed').onclick=async()=>{const t=qs('#settingsEmbedCode').textContent,b=qs('#settingsCopyEmbed');try{await navigator.clipboard.writeText(t);b.textContent='Copied';}catch{b.textContent='Select and copy';}setTimeout(()=>b.textContent='Copy',1600);};
+if(qs('#settingsDomainForm'))qs('#settingsDomainForm').onsubmit=async e=>{e.preventDefault();const out=qs('#settingsDomainStatus');out.textContent='Saving…';try{const d=await api('/api/app/analytics/website',{method:'POST',body:JSON.stringify({domain:qs('#settingsDomain').value,businessName:state.workspace.businessName})});state.websiteAnalytics={...(state.websiteAnalytics||{}),...(d.websiteAnalytics||{}),domain:d.domain||d.websiteAnalytics?.domain};analyticsState.cache={};out.textContent='Saved. Visits will show in Analytics once your site sends them.';renderWebsite();}catch(err){out.textContent=err.message;}};
+const planStart=async(btn,out)=>{out.textContent='Opening secure billing…';try{const d=await api('/api/app/billing/subscription/start',{method:'POST'});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message;}};
+if(qs('#settingsStartPlan'))qs('#settingsStartPlan').onclick=()=>planStart(qs('#settingsStartPlan'),qs('#settingsBillingStatus'));
+if(qs('#settingsManageBilling'))qs('#settingsManageBilling').onclick=async()=>{const out=qs('#settingsBillingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message;}};
+// Returning from Gmail / Stripe OAuth lands on /?mailbox=… or /?stripe=… —
+// open Settings → Connections and say what happened. (Google Ads returns
+// are still handled by v44, which opens Admin.)
+function handleConnectionReturn(){
+  const q=new URLSearchParams(location.search),mb=q.get('mailbox'),sp=q.get('stripe');if(!mb&&!sp)return;
+  switchView('settings');setTimeout(()=>qs('#st-connections')?.scrollIntoView({block:'start'}),80);
+  if(mb==='connected')showToast('Gmail connected','Enquiry replies can now come from your inbox.');
+  else if(mb==='error')showToast('Gmail wasn’t connected',q.get('reason')||'Please try again.');
+  if(sp==='connected')showToast('Stripe','Returned from Stripe setup.');
+  ['mailbox','reason','stripe'].forEach(k=>q.delete(k));const rest=q.toString();history.replaceState({},'',location.pathname+(rest?'?'+rest:''));
+  loadConnections(true);
+}
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
 function fillLeadSelects(){for(const id of ['appointmentLead','invoiceLead','conversationLead']){const el=qs('#'+id);if(!el)continue;const current=el.value;el.innerHTML='<option value="">Choose a lead</option>'+state.leads.map(l=>`<option value="${l.id}">${esc(l.name)} — ${esc(l.service)}</option>`).join('');if(current)el.value=current;}}
 
@@ -1219,7 +1325,6 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
 const VIEW_SHOWN_HOOKS={analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
-function loadConnections(){} // filled in by the Settings pass
 function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
@@ -1379,7 +1484,7 @@ qs('#showForgotFromReset').onclick=()=>{
 };
 qs('#logoutButton').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload()};
 qs('#workspaceSwitchButton').onclick=()=>{const m=qs('#workspaceMenu');m.hidden=!m.hidden};
-qs('#aiSettingsForm').onsubmit=async e=>{e.preventDefault();await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});await refreshLight();};
+qs('#aiSettingsForm').onsubmit=async e=>{e.preventDefault();const out=qs('#aiSettingsStatus');if(out)out.textContent='Saving…';try{await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});await refreshLight();if(out)out.textContent='Saved.';}catch(err){if(out)out.textContent=err.message;}};
 if(qs('#testAiButton'))qs('#testAiButton').onclick=()=>{const demo=qs('#widgetDemo');demo.hidden=false;const msgs=qs('#widgetMessages');msgs.innerHTML='<div class="widget-bubble ai">Hi — tell me what you need help with and I’ll get the details for the business.</div>';};
 if(qs('#closeWidgetDemo'))qs('#closeWidgetDemo').onclick=()=>qs('#widgetDemo').hidden=true;
 if(qs('#widgetForm'))qs('#widgetForm').onsubmit=async e=>{e.preventDefault();const text=qs('#widgetText').value.trim();if(!text)return;const msgs=qs('#widgetMessages');const safe=esc(text);msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble customer">${safe}</div>`);qs('#widgetText').value='';try{const d=await api('/api/public/chat',{method:'POST',body:JSON.stringify({workspaceId:state.workspace.id,publicKey:state.workspace.publicKey,leadId:qs('#widgetForm').dataset.leadId||'',name:qs('#widgetName').value.trim(),email:qs('#widgetEmail').value.trim(),phone:qs('#widgetPhone').value.trim(),text})});qs('#widgetForm').dataset.leadId=d.leadId||'';if(d.reply)msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(d.reply)}</div>`);else msgs.insertAdjacentHTML('beforeend','<div class="widget-bubble ai">Message sent to the team. They can reply here or by email/SMS.</div>');}catch(err){msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(err.message)}</div>`);}msgs.scrollTop=msgs.scrollHeight;};

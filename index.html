@@ -549,7 +549,92 @@
       </section>
 
       <section class="view" id="view-automations"><div class="page-head compact-head"><div><p class="eyebrow">AUTOMATION</p><h1>Automations</h1><p>Follow-ups and internal actions triggered automatically.</p></div><span class="coming-badge">CONFIGURABLE</span></div><div class="automation-list" id="automationList"></div></section>
-      <section class="view" id="view-settings"><div class="page-head compact-head"><div><p class="eyebrow">WORKSPACE</p><h1>Settings</h1><p>Configure the business once. SiteRemade uses it everywhere.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">BUSINESS</p><form id="settingsForm"><label>Business name<input name="businessName" id="settingsBusiness" /></label><label>Lead notification email<input name="email" id="settingsEmail" type="email" /></label><label>Phone<input name="phone" id="settingsPhone" /></label><label>Timezone<input name="timezone" id="settingsTimezone" /></label><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">ACTIVE MODULES</p><div class="setting-row"><div><strong>Website</strong><span>SiteRemade website</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>Lead System</strong><span>Capture + pipeline</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>AI Receptionist</strong><span>Chat + qualification</span></div><span class="status-pill neutral" id="aiReceptionistBadge">OFF</span></div><div class="setting-row"><div><strong>Advertising</strong><span>Google + Meta</span></div><span class="status-pill neutral">OFF</span></div></div></div><div class="settings-grid settings-extra"><div class="panel settings-card"><p class="eyebrow">AI RECEPTIONIST</p><form id="aiSettingsForm"><label>Services<textarea name="services" id="aiServices" rows="3"></textarea></label><label>Service area<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label><label>Tone / instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label><div class="settings-actions"><button class="primary-action">Save AI settings</button><button class="secondary-button" id="testAiButton" type="button">Test receptionist</button></div><p class="helper-copy" id="aiSettingsStatus">The bot uses these instructions on your website chat.</p></form></div><div class="panel settings-card"><p class="eyebrow">INTEGRATIONS</p><div class="integration-list" id="integrationList"></div><p class="helper-copy">External services become live automatically when their environment keys are configured on the server.</p></div></div></section>
+      <!-- Settings (Phase 3H): six groups. Everything that no longer earns
+           a nav slot lives here — Gmail, Google Calendar, business texting
+           (Twilio), Stripe, Google Ads connection, SiteRemade billing,
+           notification automations. Connections lists ONLY providers with a
+           real backend; the six scaffold-only providers (QuickBooks, Xero,
+           Slack, Teams, DocuSign, PandaDoc) and the env-check-only ones
+           (Meta Ads, Google Business Profile, GA4, Zapier) are not shown.
+           Form ids settingsForm/aiSettingsForm and their field ids are the
+           same ones the existing handlers in app.js already bind. -->
+      <section class="view" id="view-settings" aria-labelledby="settingsTitle">
+        <div class="page-head"><div><p class="eyebrow">SETTINGS</p><h1 id="settingsTitle">Settings</h1><p>Your account, your website and the services connected to it.</p></div></div>
+        <div class="st-layout">
+          <nav class="st-nav" aria-label="Settings sections">
+            <a href="#st-account" data-st-jump="st-account">Account</a>
+            <a href="#st-website" data-st-jump="st-website">Website</a>
+            <a href="#st-domain" data-st-jump="st-domain">Domain &amp; hosting</a>
+            <a href="#st-billing" data-st-jump="st-billing">Billing</a>
+            <a href="#st-connections" data-st-jump="st-connections">Connections</a>
+            <a href="#st-advanced" data-st-jump="st-advanced">Advanced</a>
+          </nav>
+          <div class="st-body">
+            <section class="st-section" id="st-account">
+              <h2>Account</h2><p class="st-lede">Your business details. SiteRemade uses these everywhere.</p>
+              <form id="settingsForm" class="st-form">
+                <label>Business name<input name="businessName" id="settingsBusiness" autocomplete="organization" /></label>
+                <label>Where we send new-contact alerts<input name="email" id="settingsEmail" type="email" autocomplete="email" /></label>
+                <label>Business phone<input name="phone" id="settingsPhone" type="tel" autocomplete="tel" /></label>
+                <label>Time zone<input name="timezone" id="settingsTimezone" placeholder="America/Edmonton" /></label>
+                <div class="st-form-actions"><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus" role="status"></p></div>
+              </form>
+              <div class="st-rows">
+                <div class="st-row"><div><strong>Signed in as</strong><span id="settingsSignedIn">—</span></div><button type="button" class="secondary-button" id="settingsSignOut">Sign out</button></div>
+              </div>
+            </section>
+
+            <section class="st-section" id="st-website">
+              <h2>Website</h2><p class="st-lede">How your site connects to this app.</p>
+              <form id="settingsDomainForm" class="st-form st-form-inline">
+                <label>Website address for analytics<input name="domain" id="settingsDomain" placeholder="yourbusiness.com" autocomplete="url" required /></label>
+                <div class="st-form-actions"><button class="secondary-button" type="submit">Save address</button><p class="modal-status" id="settingsDomainStatus" role="status"></p></div>
+              </form>
+              <div class="st-sub">
+                <div class="st-sub-head"><h3>Website chat assistant</h3><span class="chip chip-neutral" id="aiReceptionistBadge">Off</span></div>
+                <p class="st-lede">What the chat on your website knows about your business.</p>
+                <form id="aiSettingsForm" class="st-form">
+                  <label>Services you offer<textarea name="services" id="aiServices" rows="3"></textarea></label>
+                  <label>Where you work<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label>
+                  <label>Tone and instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label>
+                  <div class="st-form-actions"><button class="primary-action" type="submit">Save</button><button class="secondary-button" id="testAiButton" type="button">Try the chat</button><p class="modal-status" id="aiSettingsStatus" role="status"></p></div>
+                </form>
+              </div>
+              <div class="st-sub">
+                <div class="st-sub-head"><h3>Contact form &amp; chat code</h3></div>
+                <p class="st-lede">Already on SiteRemade-built sites. Paste this before &lt;/body&gt; on any other site to send its enquiries here.</p>
+                <div class="st-code"><code id="settingsEmbedCode"></code><button type="button" class="secondary-button" id="settingsCopyEmbed">Copy</button></div>
+              </div>
+            </section>
+
+            <section class="st-section" id="st-domain">
+              <h2>Domain &amp; hosting</h2><p class="st-lede">SiteRemade hosts your site and looks after its domain.</p>
+              <div class="st-rows" id="settingsDomainRows"></div>
+            </section>
+
+            <section class="st-section" id="st-billing">
+              <h2>Billing</h2><p class="st-lede">Your SiteRemade plan. Payments are handled securely by Stripe.</p>
+              <div class="st-rows">
+                <div class="st-row"><div><strong>SiteRemade plan</strong><span id="settingsPlanLine">—</span></div><span class="chip chip-neutral" id="settingsPlanStatus">—</span></div>
+              </div>
+              <div class="st-form-actions"><button type="button" class="primary-action" id="settingsStartPlan">Start monthly plan</button><button type="button" class="secondary-button" id="settingsManageBilling">Manage billing</button><p class="modal-status" id="settingsBillingStatus" role="status"></p></div>
+            </section>
+
+            <section class="st-section" id="st-connections">
+              <h2>Connections</h2><p class="st-lede">Services connected to your workspace. Only services that actually work with SiteRemade are listed.</p>
+              <div class="st-rows" id="settingsConnections"></div>
+            </section>
+
+            <section class="st-section" id="st-advanced">
+              <h2>Advanced</h2>
+              <div class="st-sub-head"><h3>Notifications</h3></div>
+              <div class="st-rows" id="settingsAutomations"></div>
+              <div class="st-sub-head st-gap"><h3>Workspace details</h3></div>
+              <div class="st-rows" id="settingsWorkspaceDetails"></div>
+            </section>
+          </div>
+        </div>
+      </section>
       <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div>
         <!-- Website-first shell: the old CRM/business-OS screens are no
              longer customer navigation. They still work (same markup,
