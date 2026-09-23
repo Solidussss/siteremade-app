@@ -172,8 +172,100 @@
       </header>
 
       <!-- ===== Customer views (Website-first shell) ===== -->
+      <!-- Website (home). Hierarchy, top to bottom / left to right:
+           1. the site itself (preview), 2. its status, 3. "Update My
+           Website", 4. supporting controls. Everything here is static
+           markup that renderWebsite() only updates in place, so the 5s
+           live refresh never reloads the iframe or wipes a half-typed
+           request. Data source today is the SiteRemade delivery record
+           (website_projects preview/live URL, entered by staff) — never
+           presented as the canonical builder project; see
+           WEBSITEPROJECT-CONTRACT.md. -->
       <section class="view active" id="view-website" aria-labelledby="websiteTitle">
-        <div class="page-head"><div><p class="eyebrow">YOUR WEBSITE</p><h1 id="websiteTitle">Your website</h1></div></div>
+        <header class="site-head">
+          <div class="site-head-copy">
+            <p class="eyebrow">YOUR WEBSITE</p>
+            <h1 id="websiteTitle">Your website</h1>
+            <p class="site-head-domain"><span class="chip" id="websiteStateChip">Checking…</span><span id="websiteDomainLine">No web address yet</span></p>
+          </div>
+          <div class="site-head-actions">
+            <a class="secondary-button site-view-link" id="websiteViewLink" href="#" target="_blank" rel="noopener noreferrer" hidden>View website ↗</a>
+            <!-- Publish renders only when a canonical builder project says
+                 there is something publishable (capabilities.canPublish).
+                 With no contract yet, it never renders. -->
+            <button type="button" class="primary-action" id="websitePublishButton" hidden>Publish changes</button>
+          </div>
+        </header>
+
+        <div class="site-layout">
+          <figure class="site-stage" id="websiteStage" data-device="desktop">
+            <div class="site-chrome">
+              <span class="site-chrome-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="site-chrome-url" id="websiteChromeUrl">No web address yet</span>
+              <div class="site-device" role="group" aria-label="Preview size">
+                <button type="button" data-site-device="desktop" class="active" aria-pressed="true">Desktop</button>
+                <button type="button" data-site-device="mobile" aria-pressed="false">Mobile</button>
+              </div>
+            </div>
+            <div class="site-canvas" id="websiteCanvas">
+              <iframe id="websiteFrame" title="Your website" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" hidden></iframe>
+              <div class="site-empty" id="websiteEmpty">
+                <strong>Your website will appear here.</strong>
+                <span id="websiteEmptyCopy">As soon as SiteRemade has a preview or live address for your site, you'll see it right here.</span>
+              </div>
+            </div>
+            <figcaption class="site-caption"><span id="websiteCaption">No preview yet</span><a id="websiteCaptionLink" href="#" target="_blank" rel="noopener noreferrer" hidden>Not loading? Open in a new tab ↗</a></figcaption>
+          </figure>
+
+          <aside class="site-rail">
+            <dl class="site-status">
+              <div><dt>Status</dt><dd id="websiteStateValue">—</dd></div>
+              <div><dt>Domain</dt><dd id="websiteDomainValue">—</dd></div>
+              <div><dt>Deployment</dt><dd id="websiteDeployValue">—</dd></div>
+              <div><dt>Record updated</dt><dd id="websiteUpdatedValue">—</dd></div>
+            </dl>
+
+            <section class="site-editor" id="siteEditor" data-state="idle" aria-labelledby="siteEditorTitle">
+              <div class="site-editor-top"><p class="eyebrow">UPDATE MY WEBSITE</p><span class="site-editor-pill" id="siteEditorPill">Checking…</span></div>
+              <h2 id="siteEditorTitle">What would you like to change?</h2>
+              <form id="siteEditorForm" novalidate>
+                <label class="sr-only" for="siteEditorInput">Describe the change you want</label>
+                <textarea id="siteEditorInput" rows="4" maxlength="4000" placeholder="Say it the way you'd tell a person — “Add emergency call-outs to my services and put my phone number in the header.”"></textarea>
+                <div class="site-editor-examples" aria-label="Examples">
+                  <button type="button" data-edit-example="Add a new service: ">Add a new service</button>
+                  <button type="button" data-edit-example="Change the hero at the top of my homepage: ">Change the hero</button>
+                  <button type="button" data-edit-example="Replace photos: ">Replace photos</button>
+                  <button type="button" data-edit-example="Make the whole site feel more premium.">Make this feel more premium</button>
+                  <button type="button" data-edit-example="Add a booking section where customers can ">Add a booking section</button>
+                  <button type="button" data-edit-example="Change my prices: ">Change my prices</button>
+                  <button type="button" data-edit-example="Update my phone number to ">Update my phone number</button>
+                  <button type="button" data-edit-example="Create a winter version of the site: ">Create a winter version</button>
+                </div>
+                <div class="site-editor-actions">
+                  <button type="submit" class="site-editor-submit" id="siteEditorSubmit" disabled>Update my website</button>
+                  <button type="button" class="site-editor-handoff" id="siteEditorHandoff" hidden>Send to the SiteRemade team instead</button>
+                </div>
+                <ol class="site-editor-progress" id="siteEditorProgress" aria-label="Update progress" hidden>
+                  <li data-step="planning">Planning</li>
+                  <li data-step="previewing">Preview</li>
+                  <li data-step="ready">Ready to publish</li>
+                </ol>
+                <p class="site-editor-feedback" id="siteEditorFeedback" role="status" aria-live="polite"></p>
+              </form>
+            </section>
+          </aside>
+        </div>
+
+        <div class="site-support">
+          <section class="site-support-block" id="websiteDelivery" aria-label="Build and handover"></section>
+          <section class="site-support-block" id="websiteBuilder" aria-label="Builder project">
+            <p class="eyebrow">BUILDER PROJECT</p>
+            <h3>Not connected yet</h3>
+            <p>Your site's editable source lives in the SiteRemade builder. This app doesn't receive it yet, so live editing, publishing and deployment status can't be shown or changed from here.</p>
+            <a class="site-support-link" href="/handoff/website-builder">Open the SiteRemade builder ↗</a>
+          </section>
+          <section class="site-support-block" id="websiteRequests" aria-label="Requests to the SiteRemade team"></section>
+        </div>
       </section>
 
       <section class="view" id="view-ads" aria-labelledby="adsTitle">

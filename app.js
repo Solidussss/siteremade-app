@@ -176,7 +176,7 @@ function renderSubscriptionGate(){
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
 function renderAll(){
   [
-    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['dashboard',renderDashboard],
+    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['dashboard',renderDashboard],
     ['leads',renderLeads],['inbox',renderInbox],['calendar',renderCalendar],['payments',renderPayments],
     ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],['website-projects',renderWebsiteProjects],
     ['automations',renderAutomations],['settings',renderSettings],['notifications',renderNotifications],
@@ -213,6 +213,7 @@ const adminDivider=qs('#adminDivider'),adminLabel=qs('#adminLabel');if(adminDivi
 // Website-first shell: the mobile bar's Admin slot uses the `hidden`
 // attribute (not an inline display value) so the bar's grid only reserves a
 // sixth column for SiteRemade staff.
+const av=qs('.user-card .avatar');if(av&&state.user)av.textContent=initials(state.user.name||state.user.email||'');
 const man=qs('#mobileAdminNav');if(man)man.hidden=!isOwner;const mwn=qs('#mobileWorkspaceName');if(mwn)mwn.textContent=n;}
 function greeting(){const h=new Date().getHours();return h<12?'morning':h<18?'afternoon':'evening';}
 function inRange(iso){return Date.now()-new Date(iso).getTime()<=state.rangeDays*86400000;}
@@ -702,6 +703,208 @@ function renderDrawerProject(l){
   const b=qs('#openProjectButton');if(b)b.onclick=()=>{state.selectedProjectId=p.id;qs('#leadDrawer').hidden=true;switchView('website-projects');renderWebsiteProjects();};
 }
 
+// ===========================================================================
+// Website (home) — Phase 3C/3D
+// ===========================================================================
+// Two data sources, kept deliberately separate (WEBSITEPROJECT-CONTRACT.md):
+//  - canonicalWebsite: the generator's WebsiteProject. The app has no way to
+//    fetch it yet, so it is always null today. Nothing in this file ever
+//    fills it from website_projects.
+//  - the delivery record: the app's own website_projects row(s). Only its
+//    staff-entered previewUrl/liveUrl/status are used, and every place they
+//    appear is labelled as coming from the delivery record.
+const canonicalWebsite={project:null};
+// The single seam where the contract's edit/publish operations (§5.3–5.5)
+// will be called. Until then every method answers contract_unavailable
+// WITHOUT a network call, and nothing is ever reported as applied.
+const websiteEditService={
+  available(){const p=canonicalWebsite.project;return !!(p&&p.capabilities&&p.capabilities.canEdit);},
+  _unavailable(){return {ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
+  async requestEdit(/* {projectId, baseRevisionId, instruction, idempotencyKey} */){return this._unavailable();},
+  async getEdit(/* {projectId, editId} */){return this._unavailable();},
+  async discardEdit(/* {projectId, editId} */){return this._unavailable();},
+  async publish(/* {projectId, revisionId, idempotencyKey} */){return this._unavailable();}
+};
+// Editor states (contract §6). Today customers can reach idle / typing /
+// unavailable; planning → failed is reachable only in the owner-only
+// development mode (?editor=dev), which runs the stub above and so always
+// ends in "failed — nothing was changed".
+const WEBSITE_EDITOR_STATES=['idle','typing','planning','previewing','ready','failed','unavailable'];
+const websiteEditor={state:'idle',edit:null,error:null,sentToTeam:null,sending:false};
+const EDITOR_DEV_REQUESTED=new URLSearchParams(location.search).get('editor')==='dev';
+function editorDevMode(){return EDITOR_DEV_REQUESTED&&state.user?.role==='owner';}
+const websiteView={device:null,frameSrc:'',projectId:null};
+
+// Only ever hand http(s) URLs to an <iframe>/<a>: these are free-text
+// fields staff type into, so anything else (javascript:, data:, junk) is
+// treated as "no address".
+function safeSiteUrl(raw){const v=String(raw||'').trim();if(!v)return '';try{const u=new URL(/^https?:\/\//i.test(v)?v:'https://'+v);return /^https?:$/.test(u.protocol)&&u.hostname.includes('.')?u.toString():'';}catch{return '';}}
+function siteHost(url){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';}}
+function deliveryProjects(){const rank=p=>safeSiteUrl(p.liveUrl)?2:safeSiteUrl(p.previewUrl)?1:0;return [...(state.websiteProjects||[])].sort((a,b)=>rank(b)-rank(a)||new Date(b.updatedAt)-new Date(a.updatedAt));}
+function currentDeliveryProject(){const rows=deliveryProjects();return rows.find(p=>p.id===websiteView.projectId)||rows[0]||null;}
+function websiteSnapshot(){
+  const p=currentDeliveryProject(),live=safeSiteUrl(p?.liveUrl),preview=safeSiteUrl(p?.previewUrl);
+  const domain=siteHost(live)||String(state.websiteAnalytics?.domain||'').trim();
+  const key=live?'live':preview?'preview':p?'building':'none';
+  return {project:p,live,preview,url:live||preview,domain,key};
+}
+const WEBSITE_STATE_COPY={
+  live:{chip:'Live',tone:'success',caption:'Showing your live site'},
+  preview:{chip:'Preview · not live yet',tone:'warning',caption:'Showing your preview'},
+  building:{chip:'Being built',tone:'neutral',caption:'No preview yet'},
+  none:{chip:'Not set up yet',tone:'neutral',caption:'No preview yet'}
+};
+function setChip(el,text,tone){if(!el)return;el.textContent=text;el.className=`chip chip-${tone||'neutral'}`;}
+
+function renderWebsite(){
+  const view=qs('#view-website');if(!view)return;
+  const s=websiteSnapshot(),copy=WEBSITE_STATE_COPY[s.key],p=s.project;
+  const name=state.workspace.businessName||'Your website';
+  qs('#websiteTitle').textContent=name;
+  setChip(qs('#websiteStateChip'),copy.chip,copy.tone);
+  qs('#websiteDomainLine').textContent=s.domain||'No web address yet';
+  const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.live?'View website ↗':'Open preview ↗';}}
+  // Publish: canonical-only (contract §9). Never shown from delivery data.
+  const pub=qs('#websitePublishButton');if(pub){const c=canonicalWebsite.project;pub.hidden=!(c&&c.capabilities?.canPublish&&c.state!=='live');}
+  // Status rail
+  const stateVal=qs('#websiteStateValue');if(stateVal)stateVal.innerHTML=`<span class="chip chip-${copy.tone}">${esc(s.key==='building'&&p?`Being built · ${p.status}`:copy.chip)}</span>`;
+  const dom=qs('#websiteDomainValue');if(dom)dom.textContent=s.domain||'Not set';
+  const dep=qs('#websiteDeployValue');if(dep){dep.textContent='Not reported yet';dep.title='The SiteRemade builder doesn’t share deployment status with this app yet.';}
+  const upd=qs('#websiteUpdatedValue');if(upd)upd.textContent=p?.updatedAt?dateLabel(p.updatedAt):'—';
+  // Stage
+  qs('#websiteChromeUrl').textContent=s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet';
+  qs('#websiteCaption').textContent=s.url?`${copy.caption} · from your SiteRemade delivery record`:(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet');
+  const capLink=qs('#websiteCaptionLink');if(capLink){capLink.hidden=!s.url;if(s.url)capLink.href=s.url;}
+  const emptyCopy=qs('#websiteEmptyCopy');if(emptyCopy)emptyCopy.textContent=p?`Your site is being built — currently at “${p.status}”. The preview appears here once SiteRemade adds it.`:'As soon as SiteRemade has a preview or live address for your site, you’ll see it right here.';
+  if(!websiteView.device)setWebsiteDevice(window.matchMedia('(max-width:640px)').matches?'mobile':'desktop');
+  setWebsiteFrame(s.url);
+  renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
+}
+function setWebsiteFrame(url){
+  const f=qs('#websiteFrame'),empty=qs('#websiteEmpty');if(!f||!empty)return;
+  if(!url){f.hidden=true;if(f.getAttribute('src'))f.removeAttribute('src');websiteView.frameSrc='';empty.hidden=false;return;}
+  empty.hidden=true;f.hidden=false;
+  if(websiteView.frameSrc!==url){websiteView.frameSrc=url;f.src=url;}
+  fitWebsiteFrame();
+}
+function setWebsiteDevice(dev){
+  websiteView.device=dev==='mobile'?'mobile':'desktop';
+  const stage=qs('#websiteStage');if(stage)stage.dataset.device=websiteView.device;
+  qsa('[data-site-device]').forEach(b=>{const on=b.dataset.siteDevice===websiteView.device;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
+  fitWebsiteFrame();
+}
+// Renders the site at a real desktop (1440px) or phone (390px) width and
+// scales it down to the stage, so "Desktop" actually shows the desktop
+// layout instead of whatever breakpoint the stage width happens to hit.
+function fitWebsiteFrame(){
+  const c=qs('#websiteCanvas'),f=qs('#websiteFrame');if(!c||!f||f.hidden)return;
+  const W=c.clientWidth,H=c.clientHeight;if(!W||!H)return;
+  if(websiteView.device==='mobile'){const bw=390,bh=844,sc=Math.min(1,H/bh,W/bw);f.style.width=bw+'px';f.style.height=bh+'px';f.style.transform=`scale(${sc})`;f.style.left=Math.max(0,(W-bw*sc)/2)+'px';f.style.top=Math.max(0,(H-bh*sc)/2)+'px';}
+  else{const bw=1440,sc=W/bw;f.style.width=bw+'px';f.style.height=(H/sc)+'px';f.style.transform=`scale(${sc})`;f.style.left='0px';f.style.top='0px';}
+}
+if(window.ResizeObserver&&qs('#websiteCanvas'))new ResizeObserver(()=>fitWebsiteFrame()).observe(qs('#websiteCanvas'));
+qsa('[data-site-device]').forEach(b=>b.onclick=()=>setWebsiteDevice(b.dataset.siteDevice));
+
+// Build & handover (the delivery record), including the client review step
+// that used to live on the Website Projects screen. Re-rendered only when
+// its data actually changes, so the 5s live refresh can't wipe feedback a
+// customer is typing.
+function renderWebsiteDelivery(s){
+  const host=qs('#websiteDelivery');if(!host)return;
+  const p=s.project,rows=deliveryProjects(),owner=state.user?.role==='owner';
+  const canReview=!!p&&(!!safeSiteUrl(p.previewUrl)||p.status==='Review')&&p.status!=='Delivered'&&p.clientReviewStatus!=='approved';
+  const sig=JSON.stringify([p?.id,p?.status,p?.clientReviewStatus,p?.clientReviewFeedback,p?.updatedAt,rows.length,owner,canReview]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  if(!p){host.innerHTML=`<p class="eyebrow">BUILD &amp; HANDOVER</p><h3>No website project on file</h3><p>When SiteRemade starts building your site, its progress shows up here.</p>`;return;}
+  const review=p.clientReviewStatus==='approved'?'<p class="site-support-note">You approved this version.</p>':p.clientReviewStatus==='changes_requested'?`<p class="site-support-note">You asked for changes${p.clientReviewFeedback?`: “${esc(p.clientReviewFeedback)}”`:''}. SiteRemade is on it.</p>`:'';
+  host.innerHTML=`
+    <p class="eyebrow">BUILD &amp; HANDOVER</p>
+    <h3>${esc(p.status==='Delivered'?'Delivered':`In progress · ${p.status}`)}</h3>
+    ${rows.length>1?`<label class="site-project-pick">Showing<select id="websiteProjectPick">${rows.map(r=>`<option value="${esc(r.id)}" ${r.id===p.id?'selected':''}>${esc(r.businessName||'Website project')}</option>`).join('')}</select></label>`:''}
+    ${projectStepper(p.status)}
+    <p>From your SiteRemade delivery record — this tracks the build and handover of your site, not live edits.</p>
+    ${review}
+    ${canReview?`<form id="websiteReviewForm" class="site-review">
+      <label for="websiteReviewFeedback">Your preview is ready for review</label>
+      <textarea id="websiteReviewFeedback" rows="3" placeholder="Anything you'd like changed before it goes live? (optional if you're approving)"></textarea>
+      <div class="site-review-actions"><button class="primary-action" type="submit">Approve</button><button class="secondary-button" type="button" id="websiteRequestChanges">Request changes</button></div>
+      <p class="modal-status" id="websiteReviewStatus" role="status"></p>
+    </form>`:''}
+    ${owner?`<button type="button" class="site-support-link" id="websiteOpenProject">Edit delivery record (staff) →</button>`:''}`;
+  const pick=qs('#websiteProjectPick');if(pick)pick.onchange=()=>{websiteView.projectId=pick.value;renderWebsite();};
+  const open=qs('#websiteOpenProject');if(open)open.onclick=()=>{state.selectedProjectId=p.id;switchView('website-projects');renderWebsiteProjects();};
+  const form=qs('#websiteReviewForm');
+  if(form){
+    const send=async(decision)=>{const fb=qs('#websiteReviewFeedback').value.trim(),out=qs('#websiteReviewStatus');if(decision==='changes_requested'&&!fb){out.textContent='Add a note about what should change first.';return;}out.textContent='Sending…';try{const d=await api(`/api/app/website-projects/${p.id}/review`,{method:'POST',body:JSON.stringify({decision,feedback:fb})});const i=state.websiteProjects.findIndex(x=>x.id===p.id);if(i>=0)state.websiteProjects[i]=d.project;host.dataset.sig='';renderWebsite();renderWebsiteProjects();}catch(e){out.textContent=e.message;}};
+    form.onsubmit=e=>{e.preventDefault();send('approved');};
+    qs('#websiteRequestChanges').onclick=()=>send('changes_requested');
+  }
+}
+
+// Requests sent to the SiteRemade team (the pre-existing human queue:
+// website_updates rows with no project_id). Read-only here.
+function renderWebsiteRequests(){
+  const host=qs('#websiteRequests');if(!host)return;
+  const rows=(state.websiteUpdates||[]).filter(r=>!r.projectId).slice(0,4);
+  const sig=JSON.stringify(rows.map(r=>[r.id,r.status,r.updatedAt]));if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  const tone=st=>st==='Completed'?'success':st==='In Progress'?'info':'neutral';
+  host.innerHTML=`<p class="eyebrow">REQUESTS TO THE TEAM</p><h3>${rows.length?'Your recent requests':'Nothing sent yet'}</h3>`+
+    (rows.length?`<ul class="site-request-list">${rows.map(r=>`<li><p>${esc(r.request)}</p><span><span class="chip chip-${tone(r.status)}">${esc(r.status)}</span> ${esc(dateLabel(r.createdAt))}</span></li>`).join('')}</ul>`
+    :`<p>Things you send to the SiteRemade team show up here with their status. A person handles these — they aren't automatic edits.</p>`);
+}
+
+// ---- Update My Website: the interaction shell ------------------------------
+function renderWebsiteEditor(){
+  const box=qs('#siteEditor'),input=qs('#siteEditorInput');if(!box||!input)return;
+  const available=websiteEditService.available(),dev=editorDevMode(),text=input.value.trim();
+  let st=websiteEditor.state;
+  if(!['planning','previewing','ready','failed'].includes(st))st=!available&&!dev?'unavailable':(text?'typing':'idle');
+  websiteEditor.state=st;box.dataset.state=st;box.dataset.hasText=text?'1':'0';
+  const pill={unavailable:'Not connected yet',idle:dev?'Development mode':'Ready',typing:dev?'Development mode':'Ready',planning:'Working out the change…',previewing:'Preview ready',ready:'Ready to publish',failed:'Nothing was changed'}[st];
+  qs('#siteEditorPill').textContent=pill;
+  const submit=qs('#siteEditorSubmit');submit.disabled=!(available||dev)||!text||['planning','previewing'].includes(st);
+  const handoff=qs('#siteEditorHandoff');handoff.hidden=available||!text||websiteEditor.sending;
+  const prog=qs('#siteEditorProgress'),order=['planning','previewing','ready'];prog.hidden=!order.includes(st);
+  qsa('#siteEditorProgress li').forEach(li=>{const i=order.indexOf(li.dataset.step),cur=order.indexOf(st);li.classList.toggle('done',cur>i);li.classList.toggle('current',cur===i);});
+  const fb=qs('#siteEditorFeedback');fb.classList.toggle('is-error',st==='failed');fb.classList.toggle('is-success',!!websiteEditor.sentToTeam&&st!=='failed');
+  if(websiteEditor.sending)fb.textContent='Sending to the SiteRemade team…';
+  else if(st==='failed')fb.textContent=`${websiteEditor.error?.message||'That didn’t go through.'} Nothing on your website was changed, and your text is still here.`;
+  else if(websiteEditor.sentToTeam)fb.textContent='Sent to the SiteRemade team. A person will review it — your website hasn’t changed yet. You can follow it under “Requests to the team” below.';
+  else if(st==='unavailable')fb.textContent='Editing from here turns on once your site is connected to the SiteRemade builder. Nothing you type is sent or changed until you choose to.';
+  else if(dev&&!available)fb.textContent='Development mode (staff only): submitting runs the edit service stub, which always ends in “nothing was changed” until the builder contract exists.';
+  else fb.textContent='';
+}
+function setEditorState(next,extra={}){if(!WEBSITE_EDITOR_STATES.includes(next))return;Object.assign(websiteEditor,extra,{state:next});renderWebsiteEditor();}
+async function submitWebsiteEdit(){
+  const input=qs('#siteEditorInput'),text=input.value.trim();if(!text)return;
+  if(!websiteEditService.available()&&!editorDevMode()){renderWebsiteEditor();return;}
+  websiteEditor.sentToTeam=null;
+  setEditorState('planning',{error:null,edit:null});
+  const c=canonicalWebsite.project;
+  const idem=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2);
+  const res=await websiteEditService.requestEdit({projectId:c?.id||null,baseRevisionId:c?.revision?.id||null,instruction:text,idempotencyKey:idem});
+  if(!res||!res.ok){setEditorState('failed',{error:res||{message:'No response.'}});return;}
+  // Future (contract §5.3): poll websiteEditService.getEdit() and move
+  // through previewing → ready. Unreachable until requestEdit can succeed.
+  setEditorState(res.edit?.status==='ready'?'ready':'planning',{edit:res.edit});
+}
+async function sendWebsiteEditToTeam(){
+  const input=qs('#siteEditorInput'),text=input.value.trim();if(!text||websiteEditor.sending)return;
+  websiteEditor.sending=true;renderWebsiteEditor();
+  try{
+    const d=await api('/api/app/website-updates',{method:'POST',body:JSON.stringify({page:'Other',priority:'Normal',request:text,notes:'Sent from the Website view ("Update My Website"). Builder editing is not connected, so this was routed to the SiteRemade team as a manual request — nothing was changed automatically.'})});
+    if(d.websiteUpdate)state.websiteUpdates=[d.websiteUpdate,...(state.websiteUpdates||[])];
+    input.value='';websiteEditor.sending=false;setEditorState('idle',{sentToTeam:d.websiteUpdate||true,error:null});renderWebsiteRequests();
+  }catch(e){websiteEditor.sending=false;setEditorState('failed',{error:{message:e.message}});}
+}
+if(qs('#siteEditorForm')){
+  qs('#siteEditorForm').onsubmit=e=>{e.preventDefault();submitWebsiteEdit();};
+  qs('#siteEditorInput').addEventListener('input',()=>{websiteEditor.sentToTeam=null;if(websiteEditor.state==='failed')websiteEditor.state='idle';renderWebsiteEditor();});
+  qs('#siteEditorInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();submitWebsiteEdit();}});
+  qs('#siteEditorHandoff').onclick=()=>sendWebsiteEditToTeam();
+  qsa('[data-edit-example]').forEach(b=>b.onclick=()=>{const input=qs('#siteEditorInput');const add=b.dataset.editExample;input.value=input.value.trim()?`${input.value.trim()}\n${add}`:add;input.focus();input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new Event('input'));});
+}
+
 function renderAutomations(){qs('#automationList').innerHTML=state.automations.map(a=>`<button class="automation-card automation-toggle" data-auto="${a.id}"><span class="automation-icon">${a.id==='lead-confirmation'?'✦':a.id==='lead-alert'?'↗':'□'}</span><div><strong>${esc(a.name)}</strong><p>${esc(a.description)}</p></div><span class="toggle ${a.enabled?'on':''}"></span></button>`).join('');qsa('[data-auto]').forEach(b=>b.onclick=()=>toggleAutomation(b.dataset.auto));}
 function renderSettings(){qs('#settingsBusiness').value=state.workspace.businessName||'';qs('#settingsEmail').value=state.workspace.email||'';qs('#settingsPhone').value=state.workspace.phone||'';qs('#settingsTimezone').value=state.workspace.timezone||'';qs('#aiServices').value=state.workspace.ai?.services||'';qs('#aiServiceArea').value=state.workspace.ai?.serviceArea||'';qs('#aiTone').value=state.workspace.ai?.tone||'';const labels={supabase:'Database + Auth',openai:'AI engine',googlePlaces:'Google Places',resend:'Email',twilio:'SMS',stripe:'Stripe payments'};qs('#integrationList').innerHTML=Object.entries(labels).map(([k,l])=>`<div class="setting-row"><div><strong>${l}</strong><span>${state.integrations[k]?'Connected / configured':'Needs server credentials'}</span></div>${k==='stripe'&&state.integrations.stripe?`<button class="text-button" id="connectStripeButton">${state.workspace.stripeAccountId?'Reconnect':'Connect'}</button>`:`<span class="status-pill ${state.integrations[k]?'':'neutral'}">${state.integrations[k]?'LIVE':'OFF'}</span>`}</div>`).join('');const aiBadge=qs('#aiReceptionistBadge');if(aiBadge){const live=!!state.integrations.openai&&state.workspace.ai?.enabled!==false;aiBadge.textContent=live?'LIVE':'OFF';aiBadge.classList.toggle('neutral',!live);}const sb=qs('#connectStripeButton');if(sb)sb.onclick=async()=>{try{const d=await api('/api/app/integrations/stripe/connect',{method:'POST'});if(d.url)location.href=d.url}catch(e){alert(e.message)}};}
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
@@ -943,7 +1146,7 @@ if(qs('#adSpendForm'))qs('#adSpendForm').onsubmit=async e=>{e.preventDefault();c
 // response's ETag too (see the api() call above), so that first poll can
 // actually 304 like every one after it already could.
 let lastBootstrapETag=null;
-async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
+async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderWebsite();renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
 let liveSyncStarted=false;
 function startLiveSync(){if(liveSyncStarted||!state.user)return;liveSyncStarted=true;const c=renderBadges();lastLiveCounts={leads:c.newLeads,unread:c.unread};setInterval(liveRefresh,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveRefresh();});window.addEventListener('focus',liveRefresh);}
 if('serviceWorker' in navigator){
