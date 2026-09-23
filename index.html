@@ -186,6 +186,11 @@
           <div class="site-head-copy">
             <p class="eyebrow">YOUR WEBSITE</p>
             <h1 id="websiteTitle">Your website</h1>
+            <!-- Phase 9: only appears once this account has more than one
+                 SiteRemade website connected (see renderWebsiteProjectSwitcher
+                 in app.js). Hidden entirely for the common one-website case,
+                 so nothing changes for most customers. -->
+            <div class="site-project-pick" id="websiteProjectSwitcher" hidden></div>
             <p class="site-head-domain"><span class="chip" id="websiteStateChip">Checking…</span><span id="websiteDomainLine">No web address yet</span></p>
           </div>
           <div class="site-head-actions">
@@ -520,7 +525,7 @@
            look for those inside #view-analytics to inject old panels. -->
       <section class="view" id="view-analytics" aria-labelledby="analyticsTitle">
         <div class="page-head an-head">
-          <div><p class="eyebrow">ANALYTICS</p><h1 id="analyticsTitle">How your website is doing</h1><p id="analyticsSubtitle">Visitors, what they look at, and how many get in touch.</p></div>
+          <div><p class="eyebrow">ANALYTICS</p><h1 id="analyticsTitle">How your website is doing</h1><p id="analyticsSubtitle">Visitors, what they look at, and how many get in touch.</p><div class="site-project-pick" id="analyticsProjectSwitcher" hidden></div></div>
           <div class="an-range" role="group" aria-label="Time range" id="analyticsRange">
             <button type="button" data-an-days="7">7 days</button>
             <button type="button" data-an-days="30" class="active">30 days</button>

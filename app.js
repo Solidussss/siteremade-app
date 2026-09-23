@@ -286,11 +286,23 @@ const analyticsState={days:30,cache:{},loading:false,error:null};
 const anNum=v=>{const n=Number(v?.value??v??0);return Number.isFinite(n)?n:0;};
 const anFmt=n=>Number(n||0).toLocaleString('en-CA');
 const AN_CTA=/click|cta|call|phone|tel|book|quote|button|email|directions/i,AN_FORM=/form|submit/i;
+// Phase 9: when the switcher has a specific (non-default) website
+// selected, reads THAT project's own analytics (GET /api/app/website/
+// projects/:id/analytics) instead of the workspace-level endpoint --
+// otherwise every connected website would show whichever one the legacy
+// workspace-level row happens to be tracking. switchToWebsiteProject()
+// already clears analyticsState.cache on every switch, so a days-only
+// cache key is still safe here (never serves one website's cached numbers
+// under another's selection).
 async function loadWebsiteAnalytics(force){
   const days=analyticsState.days,hit=analyticsState.cache[days];
   if(!force&&hit&&Date.now()-hit.at<60000){renderAnalytics();return;}
   analyticsState.loading=true;analyticsState.error=null;renderAnalytics();
-  try{const d=await api(`/api/app/umami/analytics?days=${days}`);analyticsState.cache[days]={data:d,at:Date.now()};}
+  try{
+    const scoped=websiteView.selectedGeneratorProjectId;
+    const url=scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}/analytics?days=${days}`:`/api/app/umami/analytics?days=${days}`;
+    const d=await api(url);analyticsState.cache[days]={data:d,at:Date.now()};
+  }
   catch(e){analyticsState.error=e.message||'Analytics unavailable';}
   finally{analyticsState.loading=false;renderAnalytics();}
 }
@@ -303,6 +315,7 @@ const SMS_SOURCES=new Set(['twilio sms','business sms']);
 function analyticsSubmissions(days){const since=Date.now()-days*86400000;return contactSubmissions().filter(l=>!SMS_SOURCES.has(String(l.source||'').trim().toLowerCase())&&new Date(l.createdAt).getTime()>=since).length;}
 function renderAnalytics(){
   const body=qs('#analyticsBody');if(!body)return;
+  renderProjectSwitcher('analyticsProjectSwitcher',websiteView.selectedGeneratorProjectId||(canonicalWebsite.status==='ready'?canonicalWebsite.project.projectId:null));
   qsa('[data-an-days]').forEach(b=>{const on=Number(b.dataset.anDays)===analyticsState.days;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
   const hit=analyticsState.cache[analyticsState.days],d=hit?.data;
   body.classList.toggle('is-refreshing',analyticsState.loading&&!!d);
@@ -862,14 +875,25 @@ function renderDrawerProject(l){
 //    account not linked, no builder project, staff viewing a customer
 //    workspace, any error), the view falls back to exactly the Phase 3
 //    delivery-record presentation.
-const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null};
+// Phase 9: canonicalWebsite.project now shows either the CANONICAL project
+// (the singular /api/app/website, unchanged -- "most recently purchased",
+// same as always) or, once the customer has picked a different one from
+// the switcher below, that SPECIFIC project (via the project-scoped GET
+// /api/app/website/projects/:id). Which one is current is tracked by
+// canonicalWebsite.scopedProjectId (null = canonical/default); every
+// other reader of canonicalWebsite.project (renderWebsite, renderSettings,
+// websiteEditService, deployment/domain display) works unmodified either
+// way, since both endpoints return the same summary shape.
+const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null,scopedProjectId:null};
 async function loadCanonicalWebsite(force){
   if(canonicalWebsite.inflight)return canonicalWebsite.inflight;
   if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
   if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';
   canonicalWebsite.inflight=(async()=>{
+    const scoped=websiteView.selectedGeneratorProjectId||null;
     try{
-      const r=await fetch('/api/app/website',{headers:{'Content-Type':'application/json'}});
+      const url=scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}`:'/api/app/website';
+      const r=await fetch(url,{headers:{'Content-Type':'application/json'}});
       const d=await r.json().catch(()=>({}));
       // Phase 8: a builder project existing is no longer enough to call this
       // "Connected" -- the workspace also has to actually be LINKED to it
@@ -877,14 +901,70 @@ async function loadCanonicalWebsite(force){
       // link.status:'not_linked' means the builder has a real purchased
       // project for this person, but nobody has connected it to this
       // workspace yet -- exactly the "Connect a website" case below, same
-      // as no_project, not the "ready to edit" case.
-      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&(!d.link||d.link.status!=='not_linked')){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null});}
-      else if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&d.link&&d.link.status==='not_linked'){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'no_project',message:null});}
-      else Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:d.code||'bridge_unavailable',message:d.message||null});
-    }catch(e){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'bridge_unavailable',message:null});}
+      // as no_project, not the "ready to edit" case. (The project-scoped
+      // route never returns a `link` field at all -- forWorkspaceProject
+      // already proved this workspace is linked to it before answering, so
+      // `!d.link` alone correctly falls into the "ready" branch below.)
+      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&(!d.link||d.link.status!=='not_linked')){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null,scopedProjectId:scoped});if(!scoped)loadWebsiteProjectsList();}
+      else if(!scoped&&r.ok&&d.ok&&d.source==='generator'&&d.projectId&&d.link&&d.link.status==='not_linked'){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'no_project',message:null,scopedProjectId:null});}
+      else Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:d.code||'bridge_unavailable',message:d.message||null,scopedProjectId:null});
+    }catch(e){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'bridge_unavailable',message:null,scopedProjectId:null});}
     finally{canonicalWebsite.loadedAt=Date.now();canonicalWebsite.inflight=null;safeRender('website',renderWebsite);safeRender('settings',renderSettings);}
   })();
   return canonicalWebsite.inflight;
+}
+// Phase 9: every SiteRemade website this workspace has actually connected
+// (not "could connect" -- that's websiteCandidates above). Powers the
+// project switcher in the Website/Analytics headers, shown only once
+// there's more than one -- for the common single-website case this list is
+// length <=1 and nothing in the UI changes. Loaded lazily, only once the
+// default/canonical project has confirmed this workspace has at least one
+// real connection (see loadCanonicalWebsite's success branch above).
+const multiProject={status:'idle',list:[],loadedAt:0,inflight:null};
+async function loadWebsiteProjectsList(force){
+  if(multiProject.inflight)return multiProject.inflight;
+  if(!force&&multiProject.status!=='idle'&&Date.now()-multiProject.loadedAt<60000)return;
+  if(multiProject.status==='idle')multiProject.status='loading';
+  multiProject.inflight=(async()=>{
+    try{
+      const r=await fetch('/api/app/website/projects',{headers:{'Content-Type':'application/json'}});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&Array.isArray(d.projects))Object.assign(multiProject,{status:'ready',list:d.projects});
+      else Object.assign(multiProject,{status:'unavailable',list:[]});
+    }catch(e){Object.assign(multiProject,{status:'unavailable',list:[]});}
+    finally{multiProject.loadedAt=Date.now();multiProject.inflight=null;safeRender('website',renderWebsite);safeRender('analytics',renderAnalytics);}
+  })();
+  return multiProject.inflight;
+}
+// Customer-facing names only -- never a generator project id or the words
+// "canonical"/"linked"/"bridge" (ticket: no internal architecture terms in
+// the UI). Falls back to a stable, still-plain-English label when a
+// project has no business name yet.
+function websiteProjectLabel(p,i){return (p&&(p.businessName||p.name))||`Website ${i+1}`;}
+function switchToWebsiteProject(projectId){
+  const next=projectId||null;
+  if(websiteView.selectedGeneratorProjectId===next)return;
+  websiteView.selectedGeneratorProjectId=next;
+  canonicalWebsite.status='idle';canonicalWebsite.loadedAt=0;
+  analyticsState.cache={}; // a different website's own numbers -- never show a stale cached read from the last one
+  loadCanonicalWebsite(true);
+  safeRender('website',renderWebsite);safeRender('analytics',renderAnalytics);
+  if(qs('#view-analytics')?.classList.contains('active'))loadWebsiteAnalytics(true);
+}
+function renderProjectSwitcher(hostId,current){
+  const host=qs('#'+hostId);if(!host)return;
+  const list=multiProject.list;
+  if(list.length<2){host.hidden=true;host.innerHTML='';host.dataset.sig='';return;}
+  const currentId=current||list.find(p=>!p.unavailable)?.projectId||list[0].projectId;
+  // Signature-guarded like the rest of this file's small status blocks
+  // (renderWebsiteBuilderBlock etc.): this can be re-rendered every 5s by
+  // the live refresh, and rebuilding the <select> mid-interaction would
+  // drop an open dropdown or the customer's in-progress click.
+  const sig=JSON.stringify([list.map(p=>[p.projectId,p.businessName,p.name,p.unavailable]),currentId]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  host.hidden=false;
+  host.innerHTML=`<label for="${hostId}Select">Website<select id="${hostId}Select">${list.map((p,i)=>`<option value="${esc(p.projectId)}" ${p.projectId===currentId?'selected':''}>${esc(websiteProjectLabel(p,i))}${p.unavailable?' (unavailable)':''}</option>`).join('')}</select></label>`;
+  const sel=qs('#'+hostId+'Select');if(sel)sel.onchange=()=>switchToWebsiteProject(sel.value);
 }
 // Phase 8: "connect a website" -- every SiteRemade website this signed-in
 // person has actually purchased, fetched fresh from the builder (GET
@@ -939,8 +1019,26 @@ const websiteEditService={
       return {ok:false,status:r.status,code:d.code||'bridge_unavailable',message:d.message||'That didn’t go through.',currentRevision:d.currentRevision};
     }catch(e){return {ok:false,code:'bridge_unavailable',message:'The SiteRemade builder couldn’t be reached.'};}
   },
-  async requestEdit({projectId,baseRevision,instruction}){if(!this.available())return this._unavailable();return this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId});},
-  async publish({projectId,revision}){if(!this.available())return this._unavailable();return this._post('/api/app/website/publish',{revision,expectedProjectId:projectId});}
+  // Phase 9: when the switcher has a specific (non-default) website
+  // selected, canonicalWebsite.scopedProjectId is that project's id -- use
+  // the project-scoped edit/publish routes so this genuinely targets THAT
+  // website. The singular routes only ever resolve "the canonical
+  // (most-recently-purchased) website", so posting to them for a
+  // deliberately different selection would just 409 revision_conflict
+  // every time. The default/canonical case (scopedProjectId null) is
+  // untouched -- same URL, same body shape as before Phase 9.
+  async requestEdit({projectId,baseRevision,instruction}){
+    if(!this.available())return this._unavailable();
+    const scoped=canonicalWebsite.scopedProjectId;
+    if(scoped)return this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/edits`,{baseRevision,request:instruction});
+    return this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId});
+  },
+  async publish({projectId,revision}){
+    if(!this.available())return this._unavailable();
+    const scoped=canonicalWebsite.scopedProjectId;
+    if(scoped)return this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/publish`,{revision});
+    return this._post('/api/app/website/publish',{revision,expectedProjectId:projectId});
+  }
 };
 // Editor states (contract §6, Phase 4N). Spec name -> state here:
 //   READY -> idle/typing · PLANNING -> planning (the edit request is with
@@ -957,7 +1055,12 @@ const EDITOR_BUSY_STATES=['planning','applying','publishing'];
 const websiteEditor={state:'idle',edit:null,error:null,sentToTeam:null,sending:false,published:null};
 const EDITOR_DEV_REQUESTED=new URLSearchParams(location.search).get('editor')==='dev';
 function editorDevMode(){return EDITOR_DEV_REQUESTED&&state.user?.role==='owner';}
-const websiteView={device:null,frameSrc:'',projectId:null};
+// selectedGeneratorProjectId: Phase 9's project switcher -- null means "the
+// default/canonical SiteRemade website" (unchanged behavior); a real
+// generator project id means the customer explicitly picked a different
+// one of their connected websites. Distinct from projectId below, which is
+// the unrelated legacy delivery-record (website_projects) selection.
+const websiteView={device:null,frameSrc:'',projectId:null,selectedGeneratorProjectId:null};
 const EDIT_MAX_CHARS=600;
 
 // Only ever hand http(s) URLs to an <iframe>/<a>: these are free-text
@@ -1000,6 +1103,7 @@ function setChip(el,text,tone){if(!el)return;el.textContent=text;el.className=`c
 function renderWebsite(){
   const view=qs('#view-website');if(!view)return;
   if(canonicalWebsite.status==='idle'&&state.user)loadCanonicalWebsite();
+  renderProjectSwitcher('websiteProjectSwitcher',websiteView.selectedGeneratorProjectId||(canonicalWebsite.status==='ready'?canonicalWebsite.project.projectId:null));
   const s=websiteSnapshot(),copy=WEBSITE_STATE_COPY[s.key],p=s.project,c=s.canonical;
   const name=(c&&c.businessName)||state.workspace.businessName||'Your website';
   qs('#websiteTitle').textContent=name;
