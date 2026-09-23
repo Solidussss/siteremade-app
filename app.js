@@ -2,6 +2,8 @@ const state={workspace:{},workspaces:[],user:null,locked:false,integrations:{},l
 let liveRefreshing=false,lastLiveCounts={leads:0,unread:0},toastTimer=null;
 const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
 const money=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',maximumFractionDigits:0}).format(Number(n)||0);
+const subscriptionMoney=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
+const isSubscriptionLocked=()=>state.user?.role!=='owner'&&!!state.locked;
 const esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const initials=(n='')=>n.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'•';
 const relative=iso=>{const d=Math.max(0,(Date.now()-new Date(iso))/1000);if(d<60)return'now';if(d<3600)return`${Math.floor(d/60)}m`;if(d<86400)return`${Math.floor(d/3600)}h`;return`${Math.floor(d/86400)}d`;};
@@ -167,10 +169,10 @@ async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onRespons
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
-  const locked=state.user?.role!=='owner'&&!!state.locked;
+  const locked=isSubscriptionLocked();
   lock.hidden=!locked;document.body.classList.toggle('subscription-locked',locked);
-  const cents=Number(state.billing?.monthlyCents||3900),status=String(state.billing?.status||'inactive');
-  if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=money(cents/100);
+  const cents=Number(state.billing?.monthlyCents||3999),status=String(state.billing?.status||'inactive');
+  if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=subscriptionMoney(cents/100);
   if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
 }
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
@@ -262,7 +264,7 @@ function renderPayments(){
   // journey with no way back to the customer record at all.
   qs('#transactionList').innerHTML=state.invoices.length?state.invoices.map(i=>{const lead=i.leadId?state.leads.find(l=>l.id===i.leadId):null;const nameHtml=lead?`<button type="button" class="customer-id customer-id-link" data-open-invoice-lead="${lead.id}"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></button>`:`<div class="customer-id"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></div>`;return `<div>${nameHtml}<span>${esc(i.description)}</span><em>${money(i.amount)}</em><select class="invoice-status ${i.status.toLowerCase()}" data-invoice="${i.id}">${['Draft','Pending','Paid','Void'].map(x=>`<option ${x===i.status?'selected':''}>${x}</option>`).join('')}</select><button class="transaction-delete" data-delete-invoice="${i.id}" title="Delete invoice">×</button></div>`}).join(''):'<div class="empty-state">No customer invoices yet.</div>';qsa('[data-invoice]').forEach(sel=>sel.onchange=()=>updateInvoice(sel.dataset.invoice,sel.value));qsa('[data-delete-invoice]').forEach(btn=>btn.onclick=()=>deleteInvoice(btn.dataset.deleteInvoice));qsa('[data-open-invoice-lead]').forEach(btn=>btn.onclick=()=>{switchView('leads');setTimeout(()=>openLead(btn.dataset.openInvoiceLead),50)});
   const monthly=(Number(state.billing?.monthlyCents)||0)/100,status=state.billing?.status||state.workspace.siteRemadeSubscriptionStatus||'inactive';
-  qs('#subscriptionPrice').textContent=money(monthly);const ss=qs('#subscriptionStatus');ss.textContent=String(status).replace('_',' ').toUpperCase();ss.classList.toggle('neutral',!['active','trialing'].includes(status));
+  qs('#subscriptionPrice').textContent=subscriptionMoney(monthly);const ss=qs('#subscriptionStatus');ss.textContent=String(status).replace('_',' ').toUpperCase();ss.classList.toggle('neutral',!['active','trialing'].includes(status));
   qs('#startSubscriptionButton').textContent=['active','trialing'].includes(status)?'Subscription active':'Start monthly plan';qs('#startSubscriptionButton').disabled=['active','trialing'].includes(status);
   const funded=(state.adFunds||[]).filter(f=>f.status==='Funded').reduce((x,f)=>x+Number(f.amount||0),0),spent=(state.adSpend||[]).reduce((x,a)=>x+Number(a.spend||0),0),available=Math.max(0,funded-spent);
   qs('#adFundedTotal').textContent=money(funded);qs('#adFundSpent').textContent=money(spent);qs('#adFundAvailable').textContent=money(available);
@@ -886,6 +888,7 @@ function renderDrawerProject(l){
 // way, since both endpoints return the same summary shape.
 const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null,scopedProjectId:null};
 async function loadCanonicalWebsite(force){
+  if(isSubscriptionLocked())return;
   if(canonicalWebsite.inflight)return canonicalWebsite.inflight;
   if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
   if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';
@@ -976,6 +979,7 @@ function renderProjectSwitcher(hostId,current){
 // real 0/1/many "Connect a website" action instead of a dead end.
 const websiteCandidates={status:'idle',list:[],loadedAt:0,inflight:null,connecting:null,error:null};
 async function loadWebsiteCandidates(force){
+  if(isSubscriptionLocked())return;
   if(websiteCandidates.inflight)return websiteCandidates.inflight;
   if(!force&&websiteCandidates.status!=='idle'&&Date.now()-websiteCandidates.loadedAt<60000)return;
   if(websiteCandidates.status==='idle')websiteCandidates.status='loading';
@@ -1629,13 +1633,14 @@ if(qs('#settingsManageBilling'))qs('#settingsManageBilling').onclick=async()=>{c
 // open Settings → Connections and say what happened. (Google Ads returns
 // are still handled by v44, which opens Admin.)
 function handleConnectionReturn(){
-  const q=new URLSearchParams(location.search),mb=q.get('mailbox'),sp=q.get('stripe');if(!mb&&!sp)return;
-  switchView('settings');setTimeout(()=>qs('#st-connections')?.scrollIntoView({block:'start'}),80);
+  const q=new URLSearchParams(location.search),mb=q.get('mailbox'),sp=q.get('stripe'),billing=q.get('billing');if(!mb&&!sp&&!billing)return;
+  if(mb||sp){switchView('settings');setTimeout(()=>qs('#st-connections')?.scrollIntoView({block:'start'}),80);}
   if(mb==='connected')showToast('Gmail connected','Enquiry replies can now come from your inbox.');
   else if(mb==='error')showToast('Gmail wasn’t connected',q.get('reason')||'Please try again.');
   if(sp==='connected')showToast('Stripe','Returned from Stripe setup.');
+  if(billing==='canceled'){showToast('Subscription checkout canceled','Nothing was charged. You can activate Workplace whenever you’re ready.');q.delete('billing');}
   ['mailbox','reason','stripe'].forEach(k=>q.delete(k));const rest=q.toString();history.replaceState({},'',location.pathname+(rest?'?'+rest:''));
-  loadConnections(true);
+  if(mb||sp)loadConnections(true);
 }
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
 function fillLeadSelects(){for(const id of ['appointmentLead','invoiceLead','conversationLead']){const el=qs('#'+id);if(!el)continue;const current=el.value;el.innerHTML='<option value="">Choose a lead</option>'+state.leads.map(l=>`<option value="${l.id}">${esc(l.name)} — ${esc(l.service)}</option>`).join('');if(current)el.value=current;}}

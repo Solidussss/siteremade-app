@@ -19,7 +19,7 @@ const generatorBridge = require('./lib/generator-bridge');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
-const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3900));
+const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3999));
 const ADS_FEATURE_ENABLED = false; // V13: preserve ad data/code, but block new ad actions until integrations are ready.
 const hasSiteRemadeAccess=c=>c.owner||['active','trialing'].includes(String(c.workspace?.siteremade_subscription_status||'inactive').toLowerCase());
 const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
@@ -556,7 +556,7 @@ async function api(req,res,u){
     if(m==='POST'&&p==='/api/app/billing/subscription/start'){
       try{
         const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;
-        const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Growth','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid});
+        const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Workplace','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid});
         return json(res,200,{ok:true,url:session.url});
       }catch(e){return json(res,400,{ok:false,message:e.message});}
     }
@@ -745,7 +745,7 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   if(m==='POST'&&p==='/api/app/billing/subscription/start'){
     try{
       const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;
-      const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Growth','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid});
+      const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Workplace','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid});
       return json(res,200,{ok:true,url:session.url});
     }catch(e){return json(res,400,{ok:false,message:e.message});}
   }

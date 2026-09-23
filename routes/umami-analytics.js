@@ -28,7 +28,7 @@
 // throw the moment a second row exists for that workspace. See this
 // file's own projectFilter() helper, used everywhere workspace_id used to
 // appear alone.
-const { db } = require('../lib/context');
+const { db, requireSiteRemadeAccess } = require('../lib/context');
 const websiteLinks = require('../lib/website-links');
 
 function normalizeBase(raw) { let v = String(raw || '').trim().replace(/\/$/, ''); if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; return v; }
@@ -137,6 +137,7 @@ async function analytics(c, url, projectId = null) {
 
 function registerUmamiAnalyticsRoutes(router) {
   const analyticsHandler = async (req, res, { c, u: url, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     try {
       return json(res, 200, { ok: true, ...await analytics(c, url) });
     } catch (e) {
@@ -149,6 +150,7 @@ function registerUmamiAnalyticsRoutes(router) {
   router.get('/api/app/analytics/website', { auth: 'user' }, analyticsHandler);
 
   router.post('/api/app/analytics/website', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     try {
       const b = await readBody(req), domain = domainOf(b.domain);
       if (!domain || !umamiDomainOk(domain)) return json(res, 400, { ok: false, message: 'Enter a valid website domain.' });

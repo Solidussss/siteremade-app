@@ -50,7 +50,7 @@
 // 402 stays a 402, etc. Every non-success carries a stable `code`.
 // `appliedOperations` (internal, structured) is stripped before anything
 // reaches the browser -- customers only ever see `changeSummary`.
-const { readJsonBody, db } = require('../lib/context');
+const { readJsonBody, db, requireSiteRemadeAccess } = require('../lib/context');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
 const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
@@ -203,6 +203,7 @@ async function forWorkspaceProject(c, projectId) {
 
 module.exports = function registerWebsiteBridgeRoutes(router) {
   router.get('/api/app/website', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
@@ -226,6 +227,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // exactly like every other route below, because "whose purchases are
   // these" is exactly as ambiguous for them as "whose website is this".
   router.get('/api/app/website/candidates', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const r = await bridge.getCandidates(c.access);
@@ -255,6 +257,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // request's token, so what actually gets linked is always something the
   // builder just re-confirmed this signed-in person purchased.
   router.post('/api/app/website/connect', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
@@ -292,6 +295,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // is still listed, flagged unavailable, rather than silently dropped --
   // losing a row here would look like "this project disappeared."
   router.get('/api/app/website/projects', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let links;
@@ -306,6 +310,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
@@ -314,6 +319,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId/deployment', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
@@ -334,6 +340,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // the same two-layer ownership check as every other project route above
   // before either handler touches website_analytics.
   router.get('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, u: url, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
@@ -346,6 +353,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.post('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
@@ -364,6 +372,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.post('/api/app/website/projects/:projectId/edits', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
@@ -387,6 +396,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.post('/api/app/website/projects/:projectId/publish', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
@@ -402,6 +412,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
@@ -416,6 +427,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.post('/api/app/website/edits', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
@@ -462,6 +474,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.post('/api/app/website/publish', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!requireSiteRemadeAccess(c, json, res)) return;
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
