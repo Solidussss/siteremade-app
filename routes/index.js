@@ -23,7 +23,8 @@ const registerers = [
   require('./google-calendar'),
   require('./legacy-twilio-inbound'),
   require('./daily-workflow'),
-  require('./website-builder-handoff')
+  require('./website-builder-handoff'),
+  require('./website-bridge')
 ];
 
 function buildRouter() {
