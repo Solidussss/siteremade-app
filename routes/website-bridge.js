@@ -180,16 +180,21 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const r = await bridge.getCandidates(c.access);
     if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.candidates)) return passThroughError(json, res, r);
-    let linkedProjectId = null;
-    try { const existing = await websiteLinks.getLinkForWorkspace(c.wid); linkedProjectId = existing ? existing.generator_project_id : null; } catch (e) { console.warn('[website-links] candidates: could not read existing link:', e && e.message); }
+    // Phase 9: a workspace can have SEVERAL linked projects now -- checking
+    // against just one (getLinkForWorkspace's "most recent") silently
+    // reported every other already-connected project as unlinked, which
+    // would make the "Connect a website" picker offer to reconnect
+    // something the customer already connected. Use the full set instead.
+    let linkedProjectIds = new Set();
+    try { const links = await websiteLinks.listLinksForWorkspace(c.wid); linkedProjectIds = new Set(links.map(l => l.generator_project_id)); } catch (e) { console.warn('[website-links] candidates: could not read existing links:', e && e.message); }
     const candidates = r.data.candidates.map(x => ({
       projectId: x.projectId, name: x.name || null, businessName: x.businessName || null, status: x.status || 'purchased',
       revision: Number.isInteger(x.revision) ? x.revision : null, purchasedAt: x.purchasedAt || null,
       domains: Array.isArray(x.domains) ? x.domains.map(d => ({ domain: d.domain, state: d.state, verifiedAt: d.verifiedAt || null })) : [],
       deploymentStatus: x.deploymentStatus || 'not_deployed', hasUnpublishedChanges: !!x.hasUnpublishedChanges,
-      alreadyLinked: !!linkedProjectId && x.projectId === linkedProjectId,
+      alreadyLinked: linkedProjectIds.has(x.projectId),
     }));
-    return json(res, 200, { ok: true, candidates, alreadyConnected: !!linkedProjectId });
+    return json(res, 200, { ok: true, candidates, alreadyConnected: linkedProjectIds.size > 0 });
   });
 
   // Phase 8: the explicit connect action. Only creates a NEW link (a

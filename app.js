@@ -1660,7 +1660,15 @@ const BUILDER_BRIDGE_COPY={on:'Builder connection: on.',off:'Builder connection:
 function renderAdminWebsite(d){const host=qs('#adminWebsiteList');if(!host)return;const short=id=>{const s=String(id||'');return s.length>14?`${s.slice(0,9)}…${s.slice(-4)}`:s;};
   const bridgeLine=d.builderBridge&&BUILDER_BRIDGE_COPY[d.builderBridge]?`<p class="helper-copy admin-bridge-state" id="adminBuilderBridge" data-state="${esc(d.builderBridge)}">${esc(BUILDER_BRIDGE_COPY[d.builderBridge])}</p>`:'';
   if(d.websiteLinksAvailable===false){host.innerHTML=bridgeLine+'<p class="helper-copy">Website links aren’t available yet — the V52 migration hasn’t been applied.</p>';}
-  else host.innerHTML=bridgeLine+(d.websiteLinkCandidatesAvailable===false?'<p class="helper-copy">Reviewing a link needs the V53 migration, which hasn’t been applied yet.</p>':'')+d.workspaces.map(w=>{const x=w.website||{linked:false};const detail=x.linked?`${esc(short(x.projectId))}${x.lastSeenRevision!==null?` · version ${esc(String(x.lastSeenRevision))}`:''}${x.linkedAt?` · linked ${esc(dateLabel(x.linkedAt))}`:''} · ${x.analyticsReady?'Analytics site ready':'Analytics site not set up yet'}${x.needsReview?` · builder now reports ${esc(short(x.reportedProjectId))} — link left unchanged`:''}`:'The customer connects this themselves from their Website page — Admin has no way to see or choose their purchases without their own sign-in (see routes/website-bridge.js workspaceGate).';
+  else host.innerHTML=bridgeLine+(d.websiteLinkCandidatesAvailable===false?'<p class="helper-copy">Reviewing a link needs the V53 migration, which hasn’t been applied yet.</p>':'')+d.workspaces.map(w=>{
+    // Phase 9: a workspace can have several linked SiteRemade projects now
+    // (websites, plural) — one admin-row per project, so staff can see and
+    // manage each one, not just whichever happened to load first. A
+    // workspace with none yet still gets exactly the one "not linked" row
+    // it always did.
+    const websites=Array.isArray(w.websites)&&w.websites.length?w.websites:[{linked:false}];
+    return websites.map((x,i)=>{
+    const detail=x.linked?`${esc(short(x.projectId))}${x.lastSeenRevision!==null?` · version ${esc(String(x.lastSeenRevision))}`:''}${x.linkedAt?` · linked ${esc(dateLabel(x.linkedAt))}`:''} · ${x.analyticsReady?'Analytics site ready':'Analytics site not set up yet'}${x.needsReview?` · builder now reports ${esc(short(x.reportedProjectId))} — link left unchanged`:''}`:'The customer connects this themselves from their Website page — Admin has no way to see or choose their purchases without their own sign-in (see routes/website-bridge.js workspaceGate).';
     const open=x.needsReview&&adminRelink.open===w.id;
     const resolveBtn=x.needsReview?`<button type="button" class="secondary-button" data-relink-open="${esc(w.id)}" aria-expanded="${open?'true':'false'}">${open?'Close':'Resolve'}</button>`:'';
     let panel='';
@@ -1677,7 +1685,14 @@ function renderAdminWebsite(d){const host=qs('#adminWebsiteList');if(!host)retur
       }
       if(adminRelink.status)panel=panel.replace(/<\/div>$/,`<p class="modal-status" role="status" data-relink-status>${esc(adminRelink.status)}</p></div>`);
     }
-    return `<div class="admin-row admin-link-row"><div><strong>${esc(w.businessName)}</strong><span>${detail}</span></div><div class="admin-actions"><span class="status-pill ${x.linked&&!x.needsReview?'':'neutral'}">${x.linked?(x.needsReview?'REVIEW':'LINKED'):'NOT LINKED'}</span>${resolveBtn}</div></div>${panel}`;}).join('');
+    // Business name only labels the FIRST row per workspace; additional
+    // projects for the same business are shown under a plain "also linked"
+    // label so multiple rows for one workspace don't read as separate
+    // customers.
+    const label=i===0?esc(w.businessName):'Also linked';
+    return `<div class="admin-row admin-link-row"><div><strong>${label}</strong><span>${detail}</span></div><div class="admin-actions"><span class="status-pill ${x.linked&&!x.needsReview?'':'neutral'}">${x.linked?(x.needsReview?'REVIEW':'LINKED'):'NOT LINKED'}</span>${resolveBtn}</div></div>${panel}`;
+    }).join('');
+  }).join('');
   qsa('[data-relink-open]').forEach(b=>b.onclick=()=>{const wid=b.dataset.relinkOpen;Object.assign(adminRelink,{open:adminRelink.open===wid?null:wid,choice:null,confirming:false,status:''});renderAdminWebsite(d);});
   qsa('.admin-relink input[type=radio]').forEach(r=>r.onchange=()=>{Object.assign(adminRelink,{choice:r.value,confirming:false,status:''});renderAdminWebsite(d);});
   qsa('[data-relink-next]').forEach(b=>b.onclick=()=>{adminRelink.confirming=true;renderAdminWebsite(d);});
