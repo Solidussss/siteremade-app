@@ -151,6 +151,27 @@ async function canonical(c) {
   return { ok: false, r };
 }
 
+// Phase 9: resolves a SPECIFIC project's live summary (not "canonical" --
+// the generator's resolveCanonicalProjectId is still singular, "most
+// recently purchased"), for the new project-scoped routes below. Two
+// checks, not one, before anything is returned: the app's OWN link table
+// confirms this workspace has actually connected that project (never trust
+// the id alone -- a URL param is not authorization), and the generator's
+// getWebsiteById re-confirms real OWNERSHIP from the signed-in person's
+// own token on every call, exactly like every other bridge route in this
+// file. A project id that's real but not linked to THIS workspace gets the
+// same not_found shape as one that doesn't exist at all.
+async function forWorkspaceProject(c, projectId) {
+  if (!websiteLinks.PROJECT_ID_RE.test(String(projectId || ''))) return { ok: false, status: 404, code: 'not_found', message: 'Website not found.' };
+  let link;
+  try { link = await websiteLinks.getLinkForWorkspaceAndProject(c.wid, projectId); }
+  catch (e) { console.warn('[website-links] project lookup failed:', e && e.message); return { ok: false, status: 503, code: 'unavailable', message: 'Couldn’t look up that website right now.' }; }
+  if (!link) return { ok: false, status: 404, code: 'not_found', message: 'That website isn’t connected to this workspace.' };
+  const r = await bridge.getWebsiteById(c.access, projectId);
+  if (r.status === 200 && r.data && r.data.ok && r.data.projectId) return { ok: true, summary: r.data, link };
+  return { ok: false, r };
+}
+
 module.exports = function registerWebsiteBridgeRoutes(router) {
   router.get('/api/app/website', { auth: 'user' }, async (req, res, { c, json }) => {
     const gate = workspaceGate(c);
@@ -224,6 +245,95 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     }
     if (!out.ok) return json(res, out.status, { ok: false, code: out.code, message: out.message });
     return json(res, 200, { ok: true, projectId: chosen.projectId, created: out.created });
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 9 (multi-project): additive, project-scoped siblings of the
+  // singular routes above. Those keep resolving "the canonical project"
+  // exactly as before (unchanged, still used by anything built against
+  // them); these let the Workplace address ANY of a workspace's linked
+  // projects explicitly, which the singular routes structurally can't do
+  // (the generator's own canonical resolution is still "most recently
+  // purchased" -- see lib/generator-bridge.js's getWebsiteById comment).
+  // ---------------------------------------------------------------------
+
+  // Every project this workspace has connected, each with its own live
+  // summary -- the data source for a project switcher/list. A project
+  // whose live bridge call fails (rare: e.g. a transient builder outage)
+  // is still listed, flagged unavailable, rather than silently dropped --
+  // losing a row here would look like "this project disappeared."
+  router.get('/api/app/website/projects', { auth: 'user' }, async (req, res, { c, json }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    let links;
+    try { links = await websiteLinks.listLinksForWorkspace(c.wid); }
+    catch (e) { console.warn('[website-links] projects list failed:', e && e.message); return json(res, 503, { ok: false, code: 'unavailable', message: 'Couldn’t load your websites right now.' }); }
+    const projects = await Promise.all(links.map(async (link) => {
+      const r = await bridge.getWebsiteById(c.access, link.generator_project_id);
+      if (r.status === 200 && r.data && r.data.ok && r.data.projectId) return { ...summaryFrom(r.data), linkedAt: link.linked_at };
+      return { ok: true, source: 'generator', hasCanonicalProject: false, projectId: link.generator_project_id, linkedAt: link.linked_at, unavailable: true };
+    }));
+    return json(res, 200, { ok: true, projects });
+  });
+
+  router.get('/api/app/website/projects/:projectId', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    return json(res, 200, summaryFrom(got.summary));
+  });
+
+  router.get('/api/app/website/projects/:projectId/deployment', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    const r = await bridge.getDeployment(c.access, got.summary.projectId);
+    if (r.status !== 200 || !r.data || !r.data.ok) return passThroughError(json, res, r);
+    return json(res, 200, {
+      ok: true, projectId: r.data.projectId, deploymentStatus: r.data.deploymentStatus, automaticHosting: false,
+      deployments: (r.data.deployments || []).map(d => ({ state: d.state, target: d.target, projectRevision: d.projectRevision, deployedUrl: d.deployedUrl || null, failureReason: d.failureReason || null, createdAt: d.createdAt })),
+      domains: (r.data.domains || []).map(x => ({ domain: x.domain, state: x.state, verifiedAt: x.verifiedAt || null })),
+    });
+  });
+
+  router.post('/api/app/website/projects/:projectId/edits', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    let body;
+    try { body = await readJsonBody(req, 20000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
+    const request = typeof body.request === 'string' ? body.request.trim() : '';
+    if (!request) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Describe the change you want to make.' });
+    if (request.length > MAX_REQUEST_CHARS) return json(res, 400, { ok: false, code: 'request_too_long', message: `Please keep automatic updates under ${MAX_REQUEST_CHARS} characters — or send longer requests to the SiteRemade team.` });
+    if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before applying this update.' });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request });
+    if (r.status === 200 && r.data && r.data.ok) {
+      return json(res, 200, {
+        ok: true, projectId: got.summary.projectId, revision: r.data.revision,
+        changeSummary: Array.isArray(r.data.changeSummary) ? r.data.changeSummary.filter(s => typeof s === 'string').slice(0, 20) : [],
+        creditsCharged: Number.isFinite(r.data.creditsCharged) ? r.data.creditsCharged : null,
+        creditsRemaining: Number.isFinite(r.data.creditsRemaining) ? r.data.creditsRemaining : null,
+      });
+    }
+    return passThroughError(json, res, r);
+  });
+
+  router.post('/api/app/website/projects/:projectId/publish', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    let body;
+    try { body = await readJsonBody(req, 20000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
+    if (!Number.isInteger(body.revision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before publishing.' });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    const r = await bridge.publish(c.access, got.summary.projectId, { revision: body.revision });
+    if (r.status === 200 && r.data && r.data.ok) {
+      return json(res, 200, { ok: true, published: true, alreadyPublished: !!r.data.alreadyPublished, revision: r.data.revision, publishedAt: r.data.publishedAt, automaticHosting: false });
+    }
+    return passThroughError(json, res, r);
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {
