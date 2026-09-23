@@ -72,7 +72,7 @@ function loadDashboardFeatureScripts(){
     l.rel='stylesheet';l.href=href;
     document.head.appendChild(l);
   });
-  ['/v40-existing-number-client.js?v=4','/v45-ad-intelligence-client.js','/v29-bootstrap.js?v=37','/v17-client.js?v=17','/v18-client.js?v=18'].forEach(src=>{
+  ['/v40-existing-number-client.js?v=4','/v45-ad-intelligence-client.js','/v29-bootstrap.js?v=38','/v17-client.js?v=17','/v18-client.js?v=18'].forEach(src=>{
     const s=document.createElement('script');
     s.src=src;s.async=false;
     document.body.appendChild(s);
@@ -1014,12 +1014,12 @@ function renderWebsiteDelivery(s){
   const canReview=!!p&&(!!safeSiteUrl(p.previewUrl)||p.status==='Review')&&p.status!=='Delivered'&&p.clientReviewStatus!=='approved';
   const sig=JSON.stringify([p?.id,p?.status,p?.clientReviewStatus,p?.clientReviewFeedback,p?.updatedAt,rows.length,owner,canReview]);
   if(host.dataset.sig===sig)return;host.dataset.sig=sig;
-  if(!p){host.innerHTML=`<p class="eyebrow">BUILD &amp; HANDOVER</p><h3>No website project on file</h3><p>When SiteRemade starts building your site, its progress shows up here.</p>`;return;}
+  if(!p){host.innerHTML=`<p class="eyebrow">BUILD &amp; HANDOVER</p><h3>Nothing on file yet</h3><p>When SiteRemade starts building your site, its progress shows up here.</p>`;return;}
   const review=p.clientReviewStatus==='approved'?'<p class="site-support-note">You approved this version.</p>':p.clientReviewStatus==='changes_requested'?`<p class="site-support-note">You asked for changes${p.clientReviewFeedback?`: “${esc(p.clientReviewFeedback)}”`:''}. SiteRemade is on it.</p>`:'';
   host.innerHTML=`
     <p class="eyebrow">BUILD &amp; HANDOVER</p>
     <h3>${esc(p.status==='Delivered'?'Delivered':`In progress · ${p.status}`)}</h3>
-    ${rows.length>1?`<label class="site-project-pick">Showing<select id="websiteProjectPick">${rows.map(r=>`<option value="${esc(r.id)}" ${r.id===p.id?'selected':''}>${esc(r.businessName||'Website project')}</option>`).join('')}</select></label>`:''}
+    ${rows.length>1?`<label class="site-project-pick">Showing<select id="websiteProjectPick">${rows.map(r=>`<option value="${esc(r.id)}" ${r.id===p.id?'selected':''}>${esc(r.businessName||'Your website')}</option>`).join('')}</select></label>`:''}
     ${projectStepper(p.status)}
     <p>From your SiteRemade delivery record — this tracks the build and handover of your site, not live edits.</p>
     ${review}
