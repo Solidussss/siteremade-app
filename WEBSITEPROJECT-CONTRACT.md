@@ -485,7 +485,8 @@ review needs V53 and relink answers 503.
 | `SUPABASE_PUBLISHABLE_KEY` (or legacy `SUPABASE_ANON_KEY`) | That same project's publishable/anon key (token verification only — never a service key). |
 | `SITEREMADE_IDENTITY_BRIDGE_MODE` | `internal` (with `SITEREMADE_IDENTITY_BRIDGE_ALLOWLIST` = the test emails) for staging, later `opt_in`/`full`. Needed so a customer's Supabase user gets an `identity_links` row → builder account. Without it `/api/app/website` answers `identity_not_linked` and nothing links. |
 | `SITEREMADE_APP_BRIDGE_ENABLED` | `true` — turns on `/api/app-bridge/*` (404 while unset). Flip last, after everything else checks out. |
-| `SITEREMADE_RATE_LIMIT_APP_BRIDGE_MAX` / `_WINDOW_MS` | Optional. Default 120/min **per caller IP** — and every bridge call comes from the app server's egress IP, so this is effectively a shared ceiling for all customers; raise it before real traffic (see §11.5). |
+| `SITEREMADE_RATE_LIMIT_APP_BRIDGE_MAX` / `_WINDOW_MS` | Optional. Default 600/min **per caller IP** — a pre-auth abuse guard against token-guessing floods only, not any one customer's real budget (Phase 7). |
+| `SITEREMADE_RATE_LIMIT_APP_BRIDGE_ACCOUNT_MAX` / `_WINDOW_MS` | Optional. Default 60/min **per authenticated builder account** (Phase 7) — the real per-customer ceiling, applied after token verification on every bridge route except `edits` (which already had its own via `SITEREMADE_RATE_LIMIT_GENERATION_MAX`). One customer's traffic can no longer 429 another customer sharing the app server's egress IP. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | The builder's own Stripe config — a project only becomes `purchased` (and therefore linkable) through the signed webhook. |
 | `SITEREMADE_DB_PATH`, `SITEREMADE_ASSET_STORE_DIR`, `SITEREMADE_EXPORTS_DIR` | On the builder's persistent volume (unchanged requirement; the deployment-safety guard refuses to start without them in production). |
 | `ANTHROPIC_API_KEY` (+ `ANTHROPIC_MODEL`), `OPENAI_API_KEY`, `SITEREMADE_PAID_IMAGES` | Unchanged — plain-language edits need Anthropic; image edits need OpenAI **and** `SITEREMADE_PAID_IMAGES=true` (off by default, not changed by this work). |
@@ -536,9 +537,12 @@ never by editing any repo default. The step-by-step staging run is
   `X-Forwarded-For` entry, then the socket (Phase 6; no longer the
   client-controllable first entry). **Scaling trigger:** move the counters
   to shared storage before running more than one app replica.
-- The builder's app-bridge limit keys on the caller IP, which for bridge
-  traffic is always the app server — one shared bucket for all customers
-  (tune `SITEREMADE_RATE_LIMIT_APP_BRIDGE_MAX`).
+- ~~The builder's app-bridge limit keys on the caller IP...~~ **Fixed in
+  Phase 7.** The per-IP limiter is now a pre-auth abuse guard only
+  (raised to 600/min); the real per-customer ceiling is a second limiter
+  keyed by the verified `accountId`, applied after auth
+  (`SITEREMADE_RATE_LIMIT_APP_BRIDGE_ACCOUNT_MAX`, default 60/min). Both
+  are still in-process/single-replica — same scaling trigger as above.
 
 ### 11.6 Multi-purchase resolution (Phase 6)
 
