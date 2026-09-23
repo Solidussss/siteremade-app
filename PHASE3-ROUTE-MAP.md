@@ -8,7 +8,7 @@ require chain.
 
 ## Routes on the router (routes/*.js, registered via routes/index.js)
 
-52 routes across 15 modules, dispatched by `lib/router.js`'s `Router` before
+59 routes across 18 modules (count re-verified against `buildRouter()` in Phase 5), dispatched by `lib/router.js`'s `Router` before
 `server.js`'s legacy `api()` dispatcher or static file serving ever run
 (see `server.js`'s top-level request handler).
 
@@ -17,11 +17,11 @@ require chain.
 | integrations.js | GET /api/app/integrations/status | user |
 | twilio-provisioning.js | POST /api/app/integrations/twilio/number/search | user |
 | twilio-provisioning.js | POST /api/app/integrations/twilio/number/purchase | user |
-| google-ads.js | GET /api/app/google-ads/start | user |
-| google-ads.js | GET /api/app/google-ads/callback | user |
+| google-ads.js | GET /api/app/google-ads/start | none (own getContext + inline owner-only 403; redirects when signed out) |
+| google-ads.js | GET /api/app/google-ads/callback | none (HMAC-signed state) |
 | google-ads.js | GET /api/app/google-ads/status | user |
-| google-ads.js | GET /api/app/google-ads/accounts | user |
-| google-ads.js | POST /api/app/google-ads/select | user |
+| google-ads.js | GET /api/app/google-ads/accounts | owner |
+| google-ads.js | POST /api/app/google-ads/select | owner |
 | google-ads.js | GET /api/app/google-ads/campaigns | owner |
 | ad-intelligence.js | GET /api/app/ad-control/settings | owner |
 | ad-intelligence.js | POST /api/app/ad-control/settings | owner |
@@ -66,6 +66,19 @@ require chain.
 | daily-workflow.js | PUT /api/app/workflow/followups/:leadId | user |
 | daily-workflow.js | DELETE /api/app/workflow/followups/:leadId | user |
 | daily-workflow.js | PUT /api/app/workflow/prospect-stages | user |
+| password-recovery.js | POST /api/auth/forgot-password | none (5/hour/IP) |
+| password-recovery.js | POST /api/auth/reset-password | none (10/hour/IP; recovery session required) |
+| website-builder-handoff.js | GET /handoff/website-builder | session |
+| website-bridge.js | GET /api/app/website | user (+ single-workspace, non-staff gate; writes website_project_links — Phase 5) |
+| website-bridge.js | GET /api/app/website/deployment | user (same gate) |
+| website-bridge.js | POST /api/app/website/edits | user (same gate) |
+| website-bridge.js | POST /api/app/website/publish | user (same gate) |
+
+Public intake routes still in `server.js`'s legacy `api()` dispatcher (not
+on the router), rate limited since Phase 5 (`lib/public-rate-limit.js`):
+`POST /api/public/lead`, `POST /api/public/chat`, `POST
+/api/public/chat/history`, and the Phase 5 `POST /api/public/site-submission`
+(workspace resolved from `website_project_links`, never from the body).
 
 Not part of this migration but worth tracking here since it's just as
 security-relevant: `POST /api/webhooks/stripe`, still in `server.js`'s
