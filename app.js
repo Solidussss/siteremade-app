@@ -160,7 +160,23 @@ function renderAll(){
     ['admin',()=>renderAdmin()],['badges',renderBadges]
   ].forEach(([name,fn])=>safeRender(name,fn));
 }
-function renderBadges(){const newLeads=state.leads.filter(l=>l.status==='New').length,unread=state.conversations.reduce((s,c)=>s+Math.max(0,Number(c.unread)||0),0),total=newLeads+unread;const lb=qs('#leadBadge'),ib=qs('#inboxBadge'),nc=qs('#notificationCount'),dot=qs('#notificationDot');if(lb){lb.textContent=newLeads;lb.style.display=newLeads?'grid':'none';}if(ib){ib.textContent=unread;ib.style.display=unread?'grid':'none';}if(nc){nc.textContent=total>99?'99+':String(total);nc.hidden=!total;}if(dot)dot.style.display=total?'block':'none';return{newLeads,unread,total};}
+// Contact (website-first shell). "Who contacted me through my website?" is
+// answered from the real leads table, minus records nobody submitted
+// (typed in by hand, or imported from Market Finder / by SiteRemade staff).
+// A submission is unread while its linked conversation still has unread
+// messages — the same counter POST /api/public/lead sets to 1 and the
+// existing PATCH /api/app/conversations/:id {read:true} clears. No new
+// column, no new route.
+const CONTACT_EXCLUDED_SOURCES=new Set(['manual','market finder','siteremade']);
+function isContactSubmission(l){return !CONTACT_EXCLUDED_SOURCES.has(String(l?.source||'').trim().toLowerCase());}
+function contactConversation(l){return (state.conversations||[]).find(c=>c.leadId===l.id)||null;}
+function isContactUnread(l){return Number(contactConversation(l)?.unread||0)>0;}
+function contactSubmissions(){return (state.leads||[]).filter(isContactSubmission).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));}
+function renderBadges(){const newLeads=state.leads.filter(l=>l.status==='New').length,unread=state.conversations.reduce((s,c)=>s+Math.max(0,Number(c.unread)||0),0),total=newLeads+unread;const lb=qs('#leadBadge'),ib=qs('#inboxBadge'),nc=qs('#notificationCount'),dot=qs('#notificationDot');if(lb){lb.textContent=newLeads;lb.style.display=newLeads?'grid':'none';}if(ib){ib.textContent=unread;ib.style.display=unread?'grid':'none';}if(nc){nc.textContent=total>99?'99+':String(total);nc.hidden=!total;}if(dot)dot.style.display=total?'block':'none';
+  const contactUnread=contactSubmissions().filter(isContactUnread).length,cb=qs('#contactBadge'),md=qs('#mobileContactDot');
+  if(cb){cb.textContent=contactUnread>99?'99+':String(contactUnread);cb.hidden=!contactUnread;cb.style.display=contactUnread?'grid':'none';}
+  if(md)md.hidden=!contactUnread;
+  return{newLeads,unread,total,contactUnread};}
 function showToast(title,detail=''){let t=qs('#appToast');if(!t){t=document.createElement('div');t.id='appToast';t.className='app-toast';document.body.appendChild(t);}t.innerHTML=`<strong>${esc(title)}</strong><span>${esc(detail)}</span>`;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3600);}
 function renderWorkspace(){const n=state.workspace.businessName||'Your business';qs('#workspaceName').textContent=n;qs('#homeGreeting').textContent=`${n.split(/\s+/)[0]} overview`;qs('.workspace-mark').textContent=(n[0]||'S').toUpperCase();qs('#todayLabel').textContent=new Intl.DateTimeFormat('en-CA',{weekday:'long',month:'long',day:'numeric'}).format(new Date()).toUpperCase();const uc=qs('.user-card strong');if(uc&&state.user)uc.textContent=state.user.name;const us=qs('.user-card small');if(us&&state.user)us.textContent=state.user.role==='owner'?'SiteRemade owner':'Administrator';const isOwner=state.user?.role==='owner';qs('#adminNav').style.display=isOwner?'grid':'none';
 // V2 redesign: the sidebar's Admin group is now its own labeled section
@@ -170,7 +186,10 @@ function renderWorkspace(){const n=state.workspace.businessName||'Your business'
 // hidden too, or a non-owner sees an empty "Admin" section heading with
 // nothing under it.
 const adminDivider=qs('#adminDivider'),adminLabel=qs('#adminLabel');if(adminDivider)adminDivider.style.display=isOwner?'block':'none';if(adminLabel)adminLabel.style.display=isOwner?'block':'none';
-const man=qs('#mobileAdminNav');if(man)man.style.display=isOwner?'block':'none';const mal=qs('#mobileAdminLabel');if(mal)mal.style.display=isOwner?'block':'none';}
+// Website-first shell: the mobile bar's Admin slot uses the `hidden`
+// attribute (not an inline display value) so the bar's grid only reserves a
+// sixth column for SiteRemade staff.
+const man=qs('#mobileAdminNav');if(man)man.hidden=!isOwner;const mwn=qs('#mobileWorkspaceName');if(mwn)mwn.textContent=n;}
 function greeting(){const h=new Date().getHours();return h<12?'morning':h<18?'afternoon':'evening';}
 function inRange(iso){return Date.now()-new Date(iso).getTime()<=state.rangeDays*86400000;}
 function renderDashboard(){
@@ -703,7 +722,13 @@ async function askAssistant(prompt){
 }
 
 async function refreshLight(){const d=await api('/api/app/bootstrap');Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});renderAll();}
-function switchView(v){qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});if(v==='leads')setTimeout(()=>{},0);}
+// Website-first shell: views that load their own data (Analytics, Ads,
+// Settings → Connections) do it when they are opened, not on every 5-second
+// live-refresh tick. Each hook is looked up lazily so it can be defined
+// anywhere in this file.
+const VIEW_SHOWN_HOOKS={analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
+function loadWebsiteAnalytics(){}function loadAds(){}function loadConnections(){} // filled in by the Analytics / Ads / Settings passes
+function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
 qsa('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
@@ -713,11 +738,16 @@ if(mobileMoreClose)mobileMoreClose.onclick=()=>{if(mobileMoreSheet)mobileMoreShe
 qsa('[data-jump]').forEach(b=>b.onclick=()=>switchView(b.dataset.jump));
 qs('#leadFilters').onclick=e=>{const b=e.target.closest('button');if(!b)return;state.filter=b.dataset.status;qsa('#leadFilters button').forEach(x=>x.classList.toggle('active',x===b));renderLeads();};
 qs('#leadSearch').oninput=e=>{state.search=e.target.value.trim().toLowerCase();renderLeads();};
-qs('#globalSearchButton').onclick=()=>{switchView('leads');setTimeout(()=>qs('#leadSearch').focus(),100)};
-qs('#notificationButton').onclick=()=>{const p=qs('#notificationPopover');p.hidden=!p.hidden;};qs('#closeNotifications').onclick=()=>qs('#notificationPopover').hidden=true;
+// Website-first shell: the topbar's search / notification bell / "+ Add
+// lead" buttons were removed from index.html (CRM actions, not website
+// actions). Every binding below is null-guarded so a missing element can
+// never throw here — this is top-level code, and one TypeError would stop
+// the rest of app.js from wiring anything at all.
+if(qs('#globalSearchButton'))qs('#globalSearchButton').onclick=()=>{switchView('leads');setTimeout(()=>qs('#leadSearch').focus(),100)};
+if(qs('#notificationButton'))qs('#notificationButton').onclick=()=>{const p=qs('#notificationPopover');p.hidden=!p.hidden;};if(qs('#closeNotifications'))qs('#closeNotifications').onclick=()=>qs('#notificationPopover').hidden=true;
 qs('#rangeControl').onclick=e=>{const b=e.target.closest('button');if(!b)return;state.rangeDays=Number(b.dataset.days)||30;qsa('#rangeControl button').forEach(x=>x.classList.toggle('active',x===b));renderDashboard();};
 
-['#newLeadButton','#newLeadButton2'].forEach(s=>qs(s).onclick=()=>showModal('leadModal'));qs('#closeLeadModal').onclick=()=>hideModal('leadModal');qs('#cancelLeadModal').onclick=()=>hideModal('leadModal');
+['#newLeadButton','#newLeadButton2'].forEach(s=>{const b=qs(s);if(b)b.onclick=()=>showModal('leadModal');});qs('#closeLeadModal').onclick=()=>hideModal('leadModal');qs('#cancelLeadModal').onclick=()=>hideModal('leadModal');
 qs('#manualLeadForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const out=qs('#manualLeadStatus');out.textContent='Creating…';try{const d=await api('/api/app/leads',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});state.leads.unshift(d.lead);form.reset();hideModal('leadModal');await refreshLight();switchView('leads');}catch(err){out.textContent=err.message;}};
 
 qs('#closeDrawer').onclick=()=>qs('#leadDrawer').hidden=true;qs('#leadDetailForm').onsubmit=async e=>{e.preventDefault();if(!state.selectedLeadId)return;const fd=Object.fromEntries(new FormData(e.currentTarget));qs('#drawerStatusText').textContent='Saving…';await updateLead(state.selectedLeadId,fd);qs('#drawerStatusText').textContent='Saved.';setTimeout(()=>qs('#drawerStatusText').textContent='',1200)};
@@ -763,7 +793,7 @@ qsa('[data-close]').forEach(b=>b.onclick=()=>hideModal(b.dataset.close));qsa('.m
 
 
 function renderWorkspaceMenu(){const menu=qs('#workspaceMenu');if(!menu)return;menu.innerHTML=(state.workspaces||[]).map(w=>`<button data-workspace="${w.id}" class="workspace-option ${w.id===state.workspace.id?'active':''}"><span>${esc(w.businessName)}</span><small>${esc(w.plan||'Client')}</small></button>`).join('');qsa('[data-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.workspace})});menu.hidden=true;await refreshLight();});}
-async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><span class="status-pill ${['active','trialing'].includes(w.siteRemadeSubscriptionStatus)?'':'neutral'}">${esc((w.siteRemadeSubscriptionStatus||'inactive').toUpperCase())}</span><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('home');});}catch{}}
+async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><span class="status-pill ${['active','trialing'].includes(w.siteRemadeSubscriptionStatus)?'':'neutral'}">${esc((w.siteRemadeSubscriptionStatus||'inactive').toUpperCase())}</span><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('website');});}catch{}}
 qs('#loginForm').onsubmit=async e=>{e.preventDefault();const out=qs('#loginStatus');out.style.color='';out.textContent='Signing in…';try{await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});out.textContent='';if(await bootstrap())startLiveSync();}catch(err){out.style.color='#c54747';out.textContent=err.message}};
 // Extended for the password-recovery pass to cover 4 states instead of 2
 // ('forgot' and 'reset' alongside the original 'login'/'signup'). The tab

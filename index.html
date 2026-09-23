@@ -19,7 +19,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SiteRemade — Client App</title>
-  <meta name="description" content="SiteRemade client dashboard for leads, conversations, scheduling and payments." />
+  <meta name="description" content="Your SiteRemade website: see it, check how it's doing, and see who contacted you." />
   <link rel="icon" type="image/png" href="favicon.png?v=2" />
   <link rel="apple-touch-icon" href="favicon.png?v=2" />
   <link rel="stylesheet" href="app.css?v=23" />
@@ -44,7 +44,7 @@
       </div>
 
       <form id="loginForm">
-        <p class="eyebrow">CLIENT APP</p><h1>Sign in</h1><p>Access leads, conversations, bookings and payments.</p>
+        <p class="eyebrow">CLIENT APP</p><h1>Sign in</h1><p>Your website, its visitors, and everyone who's contacted you.</p>
         <label>Email<input name="email" type="email" placeholder="you@business.com" autocomplete="email" required /></label>
         <label>Password<input name="password" type="password" placeholder="Password" autocomplete="current-password" required /></label>
         <button class="primary-action auth-submit" type="submit">Sign in</button>
@@ -106,7 +106,7 @@
       <img src="siteremade-logo-black.png?v=14" alt="SiteRemade" />
       <p class="eyebrow">ACCOUNT ACTIVATION</p>
       <h1>Activate SiteRemade</h1>
-      <p class="subscription-lock-copy">Your workspace is ready. Start your monthly SiteRemade plan to unlock leads, AI conversations, bookings, payments, analytics and automations.</p>
+      <p class="subscription-lock-copy">Your workspace is ready. Start your monthly SiteRemade plan to unlock your website workspace: your site, its analytics, contact form submissions and ads reporting.</p>
       <div class="subscription-lock-price"><strong id="lockSubscriptionPrice">$250</strong><span>/ month</span></div>
       <span class="status-pill neutral" id="lockSubscriptionStatus">INACTIVE</span>
       <button class="primary-action subscription-lock-primary" id="lockStartSubscriptionButton" type="button">Activate SiteRemade</button>
@@ -129,67 +129,29 @@
       </div>
       <div class="workspace-menu" id="workspaceMenu" hidden></div>
 
-      <!-- V2 redesign: sidebar regrouped into 5 labeled sections matching
-           the product's real structure (see DESIGN-SYSTEM-V2.md §3), in
-           place of the previous two unlabeled groups. data-view wiring is
-           unchanged (switchView() matches by attribute, not position/
-           order), so this is a pure IA/markup change — no JS behavior
-           differs. -->
-      <nav class="side-nav" aria-label="App navigation">
-        <button class="nav-item active" data-view="home"><span>⌂</span><strong>Overview</strong></button>
-      </nav>
-
-      <div class="side-divider"></div>
-      <p class="nav-group-label">Operations</p>
-      <nav class="side-nav">
-        <button class="nav-item" data-view="leads"><span>◎</span><strong>Leads</strong><em id="leadBadge">0</em></button>
-        <button class="nav-item" data-view="inbox"><span>◌</span><strong>Inbox</strong><em id="inboxBadge">0</em></button>
-        <button class="nav-item" data-view="calendar"><span>□</span><strong>Calendar</strong></button>
-        <button class="nav-item" data-view="payments"><span>◇</span><strong>Payments</strong></button>
-      </nav>
-
-      <div class="side-divider"></div>
-      <p class="nav-group-label">Delivery</p>
-      <nav class="side-nav">
-        <button class="nav-item" data-view="website-projects"><span>✎</span><strong>Website Projects</strong><em id="websiteProjectBadge">0</em></button>
-        <!-- Unified-login pass: same account, other surface. A plain link
-             (no data-view -- switchView()'s delegated click wiring only
-             binds elements that have one, so this is never intercepted),
-             same minimum bar as the generator's own "Client Login" link
-             back to this app. It goes through the authenticated
-             GET /handoff/website-builder round trip (routes/
-             website-builder-handoff.js), so arriving there is already
-             recognized as the same account -- never a second sign-in. -->
-        <a class="nav-item" href="/handoff/website-builder"><span>⚏</span><strong>Website Builder</strong></a>
-      </nav>
-
-      <div class="side-divider"></div>
-      <p class="nav-group-label">Growth</p>
-      <nav class="side-nav">
-        <button class="nav-item" data-view="prospecting"><span>⌖</span><strong>Market Finder</strong></button>
+      <!-- Website-first shell (Phase 3B): five customer destinations, in
+           this order, and nothing else. The old CRM/business-OS entries
+           (Overview, Leads, Inbox, Calendar, Payments, Website Projects,
+           Website Builder, Market Finder, Automations, Integrations) are no
+           longer customer navigation. Their <section class="view"> markup
+           and backend routes are intentionally still here: SiteRemade staff
+           reach them from Admin → "Internal tools" (owner-only), and nothing
+           a customer can click leads to them. See PHASE3-ROUTE-MAP.md
+           "Website-first shell". data-view wiring is unchanged
+           (switchView() matches by attribute). -->
+      <nav class="side-nav primary-nav" aria-label="App navigation">
+        <button class="nav-item active" data-view="website"><span>◱</span><strong>Website</strong></button>
         <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
-      </nav>
-
-      <div class="side-divider"></div>
-      <p class="nav-group-label">Configuration</p>
-      <nav class="side-nav secondary-nav">
-        <button class="nav-item" data-view="automations"><span>✦</span><strong>Automations</strong></button>
-        <button class="nav-item" data-view="integrations"><span>⌘</span><strong>Integrations</strong><em id="integrationBadge" hidden>0</em></button>
+        <button class="nav-item" data-view="ads"><span>◈</span><strong>Ads</strong></button>
+        <button class="nav-item" data-view="contact"><span>✉</span><strong>Contact</strong><em id="contactBadge" hidden>0</em></button>
         <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
       </nav>
 
+      <!-- Admin stays separate and owner-only (gated in renderWorkspace()). -->
       <div class="side-divider admin-divider" id="adminDivider"></div>
-      <p class="nav-group-label admin-label" id="adminLabel">Admin</p>
-      <nav class="side-nav admin-nav">
+      <nav class="side-nav admin-nav" aria-label="SiteRemade staff">
         <button class="nav-item" data-view="admin" id="adminNav"><span>▦</span><strong>Admin</strong></button>
       </nav>
-
-      <div class="plan-card">
-        <div class="plan-orb"></div>
-        <small>SITEREMADE GROWTH</small>
-        <strong>Your customer system is live.</strong>
-        <span>Website · Leads · Scheduling</span>
-      </div>
 
       <div class="user-card">
         <div class="avatar">JF</div>
@@ -199,17 +161,35 @@
     </aside>
 
     <main class="main-panel">
+      <!-- Website-first shell: the topbar no longer carries CRM actions
+           (global lead search, the leads/messages notification bell, "+ Add
+           lead"). On desktop it is hidden entirely (design-system.css §20);
+           on phones it is just the brand + workspace name. #systemStatus is
+           kept because bootstrap() writes to it. -->
       <header class="topbar">
-        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=14" alt="SiteRemade" /></div>
+        <div class="mobile-brand"><img src="siteremade-logo-black.png?v=14" alt="SiteRemade" /><strong id="mobileWorkspaceName"></strong></div>
         <div class="topbar-status"><span class="live-dot"></span><span id="systemStatus">All systems live</span></div>
-        <div class="topbar-actions">
-          <button class="icon-button" id="globalSearchButton" aria-label="Search">⌕</button>
-          <button class="icon-button notification-button" id="notificationButton" aria-label="Notifications">♢<i id="notificationDot"></i></button>
-          <button class="primary-action" id="newLeadButton">+ Add lead</button>
-        </div>
       </header>
 
-      <section class="view active" id="view-home">
+      <!-- ===== Customer views (Website-first shell) ===== -->
+      <section class="view active" id="view-website" aria-labelledby="websiteTitle">
+        <div class="page-head"><div><p class="eyebrow">YOUR WEBSITE</p><h1 id="websiteTitle">Your website</h1></div></div>
+      </section>
+
+      <section class="view" id="view-ads" aria-labelledby="adsTitle">
+        <div class="page-head"><div><p class="eyebrow">ADVERTISING</p><h1 id="adsTitle">Ads</h1></div></div>
+      </section>
+
+      <section class="view" id="view-contact" aria-labelledby="contactTitle">
+        <div class="page-head"><div><p class="eyebrow">CONTACT</p><h1 id="contactTitle">Who contacted you</h1></div></div>
+      </section>
+
+      <!-- ===== Internal (owner-only) legacy views =====
+           Not reachable from customer navigation any more. Kept intact —
+           markup, render functions and backend routes — for SiteRemade
+           staff via Admin → Internal tools, and so nothing that still
+           references these ids breaks. -->
+      <section class="view" id="view-home">
         <div class="page-head">
           <div>
             <p class="eyebrow" id="todayLabel">TODAY</p>
@@ -472,48 +452,46 @@
 
       <section class="view" id="view-automations"><div class="page-head compact-head"><div><p class="eyebrow">AUTOMATION</p><h1>Automations</h1><p>Follow-ups and internal actions triggered automatically.</p></div><span class="coming-badge">CONFIGURABLE</span></div><div class="automation-list" id="automationList"></div></section>
       <section class="view" id="view-settings"><div class="page-head compact-head"><div><p class="eyebrow">WORKSPACE</p><h1>Settings</h1><p>Configure the business once. SiteRemade uses it everywhere.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">BUSINESS</p><form id="settingsForm"><label>Business name<input name="businessName" id="settingsBusiness" /></label><label>Lead notification email<input name="email" id="settingsEmail" type="email" /></label><label>Phone<input name="phone" id="settingsPhone" /></label><label>Timezone<input name="timezone" id="settingsTimezone" /></label><button class="primary-action" type="submit">Save changes</button><p class="modal-status" id="settingsStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">ACTIVE MODULES</p><div class="setting-row"><div><strong>Website</strong><span>SiteRemade website</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>Lead System</strong><span>Capture + pipeline</span></div><span class="status-pill">LIVE</span></div><div class="setting-row"><div><strong>AI Receptionist</strong><span>Chat + qualification</span></div><span class="status-pill neutral" id="aiReceptionistBadge">OFF</span></div><div class="setting-row"><div><strong>Advertising</strong><span>Google + Meta</span></div><span class="status-pill neutral">OFF</span></div></div></div><div class="settings-grid settings-extra"><div class="panel settings-card"><p class="eyebrow">AI RECEPTIONIST</p><form id="aiSettingsForm"><label>Services<textarea name="services" id="aiServices" rows="3"></textarea></label><label>Service area<textarea name="serviceArea" id="aiServiceArea" rows="2"></textarea></label><label>Tone / instructions<textarea name="tone" id="aiTone" rows="2"></textarea></label><div class="settings-actions"><button class="primary-action">Save AI settings</button><button class="secondary-button" id="testAiButton" type="button">Test receptionist</button></div><p class="helper-copy" id="aiSettingsStatus">The bot uses these instructions on your website chat.</p></form></div><div class="panel settings-card"><p class="eyebrow">INTEGRATIONS</p><div class="integration-list" id="integrationList"></div><p class="helper-copy">External services become live automatically when their environment keys are configured on the server.</p></div></div></section>
-      <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div></section>
+      <section class="view" id="view-admin"><div class="page-head compact-head"><div><p class="eyebrow">SITEREMADE OWNER</p><h1>Growth Admin</h1><p>Create clients, open their workspace, deliver leads and manage advertising from one owner account.</p></div></div><div class="settings-grid"><div class="panel settings-card"><p class="eyebrow">NEW CLIENT</p><form id="workspaceForm"><label>Business name<input name="businessName" required /></label><label>Email<input name="email" type="email" /></label><button class="primary-action">Create workspace</button><p class="modal-status" id="workspaceFormStatus"></p></form></div><div class="panel settings-card"><p class="eyebrow">NEW USER</p><form id="userForm"><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Temporary password<input name="password" required /></label><label>Workspace<select name="workspaceId" id="adminWorkspaceSelect"></select></label><button class="primary-action">Create user</button><p class="modal-status" id="userFormStatus"></p></form></div></div><div class="panel admin-panel"><div class="panel-head"><div><p class="eyebrow">MANAGED CLIENTS</p><h2>Growth workspaces</h2></div><span class="coming-badge">OWNER CONTROL</span></div><div id="adminWorkspaceList"></div></div>
+        <!-- Website-first shell: the old CRM/business-OS screens are no
+             longer customer navigation. They still work (same markup,
+             render functions and backend routes) and stay reachable for
+             SiteRemade staff from here — most importantly Website Projects,
+             which is still where staff set a client's preview/live URL
+             (the only real site-address data the new Website view has until
+             the generator contract lands; see WEBSITEPROJECT-CONTRACT.md). -->
+        <div class="panel internal-tools" id="internalTools">
+          <div class="panel-head"><div><p class="eyebrow">INTERNAL TOOLS</p><h2>Legacy workspace screens</h2><p class="helper-copy">Not visible to customers. Kept working while the website-first app replaces them.</p></div></div>
+          <div class="internal-tools-grid">
+            <button type="button" data-view="website-projects"><strong>Website Projects</strong><span>Delivery records: intake, brief, preview &amp; live URL</span></button>
+            <button type="button" data-view="home"><strong>Business overview</strong><span>Old dashboard + AI business assistant</span></button>
+            <button type="button" data-view="leads"><strong>Leads</strong><span>CRM pipeline and lead records</span></button>
+            <button type="button" data-view="inbox"><strong>Inbox</strong><span>Conversations, email and SMS threads</span></button>
+            <button type="button" data-view="calendar"><strong>Calendar</strong><span>Appointments</span></button>
+            <button type="button" data-view="payments"><strong>Payments</strong><span>Invoices and ad funding</span></button>
+            <button type="button" data-view="prospecting"><strong>Market Finder</strong><span>Google Places prospecting</span></button>
+            <button type="button" data-view="automations"><strong>Automations</strong><span>Also in Settings → Advanced</span></button>
+          </div>
+        </div>
+      </section>
     
       <section class="view" id="view-integrations"><div class="page-head compact-head"><div><p class="eyebrow">CONNECTED APPS</p><h1>Integrations</h1><p>Connect the tools your business already uses and run them from SiteRemade.</p></div><span class="coming-badge" id="integrationSummary">0 connected</span></div><div class="v34-feature"><strong>One customer system.</strong><p>Email, calls, bookings, payments, ads, accounting and documents all stay connected to the same lead.</p></div><div id="v34Grid" class="v34-grid"></div></section>
 </main>
   </div>
 
+  <!-- Website-first shell: the five customer destinations are all one tap
+       away, so the old "More" sheet is gone. Admin is a sixth slot shown
+       only to SiteRemade staff (renderWorkspace()); the bar lays out with
+       grid-auto-flow:column so it fits five or six items without a
+       breakpoint-specific column count. -->
   <nav class="mobile-nav" aria-label="Mobile navigation">
-    <button class="active" data-view="home"><span>⌂</span><small>Home</small></button>
-    <button data-view="leads"><span>◎</span><small>Leads</small></button>
-    <button data-view="inbox"><span>◌</span><small>Inbox</small></button>
-    <button data-view="calendar"><span>□</span><small>Calendar</small></button>
-    <button data-view="payments"><span>◇</span><small>Payments</small></button>
-    <button type="button" id="mobileMoreButton" aria-expanded="false"><span>•••</span><small>More</small></button>
+    <button class="active" data-view="website"><span>◱</span><small>Website</small></button>
+    <button data-view="analytics"><span>↗</span><small>Analytics</small></button>
+    <button data-view="ads"><span>◈</span><small>Ads</small></button>
+    <button data-view="contact"><span>✉</span><small>Contact</small><i class="mobile-nav-dot" id="mobileContactDot" hidden></i></button>
+    <button data-view="settings"><span>⚙</span><small>Settings</small></button>
+    <button data-view="admin" id="mobileAdminNav" hidden><span>▦</span><small>Admin</small></button>
   </nav>
-
-  <div class="mobile-more-sheet" id="mobileMoreSheet" hidden>
-    <div class="mobile-more-head"><div><p class="eyebrow">SITEREMADE</p><strong>More tools</strong></div><button type="button" id="mobileMoreClose" aria-label="Close menu">×</button></div>
-    <!-- V2 redesign: regrouped into the same 5 labeled sections as the
-         desktop sidebar (DESIGN-SYSTEM-V2.md §3), instead of one flat
-         grid. Same buttons/data-view values, so switchView() wiring is
-         unaffected. -->
-    <p class="nav-group-label mobile-group-label">Delivery</p>
-    <div class="mobile-more-grid">
-      <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
-      <a href="/handoff/website-builder"><span>⚏</span><strong>Website Builder</strong><small>Open the SiteRemade site builder</small></a>
-    </div>
-    <p class="nav-group-label mobile-group-label">Growth</p>
-    <div class="mobile-more-grid">
-      <button data-view="prospecting"><span>⌖</span><strong>Market Finder</strong><small>Find businesses and opportunities</small></button>
-      <button data-view="analytics"><span>↗</span><strong>Analytics</strong><small>See performance and conversion</small></button>
-    </div>
-    <p class="nav-group-label mobile-group-label">Configuration</p>
-    <div class="mobile-more-grid">
-      <button data-view="automations"><span>✦</span><strong>Automations</strong><small>Manage follow-up workflows</small></button>
-      <button data-view="integrations"><span>⌘</span><strong>Integrations</strong><small>Connect the tools you already use</small></button>
-      <button data-view="settings"><span>⚙</span><strong>Settings</strong><small>Workspace and integrations</small></button>
-    </div>
-    <p class="nav-group-label mobile-group-label admin-label" id="mobileAdminLabel">Admin</p>
-    <div class="mobile-more-grid" id="mobileAdminGroup">
-      <button data-view="admin" id="mobileAdminNav"><span>▦</span><strong>Admin</strong><small>Owner controls</small></button>
-    </div>
-  </div>
 
   <div class="modal-backdrop" id="leadModal" hidden>
     <form class="lead-modal" id="manualLeadForm">
