@@ -26,7 +26,9 @@ const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
 const clean = (v,n=2000) => String(v ?? '').trim().slice(0,n);
 const signupAttempts=new Map();
-function signupAllowed(req){const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();const t=Date.now(),windowMs=3600000,max=5;const recent=(signupAttempts.get(ip)||[]).filter(x=>t-x<windowMs);if(recent.length>=max)return false;recent.push(t);signupAttempts.set(ip,recent);return true;}
+// Phase 6: client IP comes from lib/public-rate-limit.js's clientIp() (Railway's
+// edge-set X-Real-IP first) instead of trusting the first X-Forwarded-For entry.
+function signupAllowed(req){const ip=publicLimits.clientIp(req);const t=Date.now(),windowMs=3600000,max=5;const recent=(signupAttempts.get(ip)||[]).filter(x=>t-x<windowMs);if(recent.length>=max)return false;recent.push(t);signupAttempts.set(ip,recent);return true;}
 
 
 async function q(promise){const {data,error}=await promise;if(error)throw error;return data;}

@@ -68,10 +68,14 @@ function publicOrigin(req) {
 // the tighter cap; submitting a password against an already-issued
 // recovery session is mostly just a real person occasionally mistyping,
 // so it gets a more generous one.
+// Phase 6: the client IP now comes from lib/public-rate-limit.js's shared
+// clientIp() (Railway's edge-set X-Real-IP first; never the client-rotatable
+// leftmost X-Forwarded-For entry). Limits and flow are otherwise unchanged.
+const { clientIp } = require('../lib/public-rate-limit');
 function makeLimiter(windowMs, max) {
   const hits = new Map();
   return function allowed(req) {
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    const ip = clientIp(req);
     const t = Date.now();
     const recent = (hits.get(ip) || []).filter(x => t - x < windowMs);
     if (recent.length >= max) return false;
