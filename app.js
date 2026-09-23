@@ -965,10 +965,10 @@ function renderWebsite(){
 function renderWebsiteBuilderBlock(){
   const host=qs('#websiteBuilder');if(!host)return;
   const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null,code=canonicalWebsite.code,st=canonicalWebsite.status;
-  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt]]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt,c.link&&c.link.status]]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
   const link='<a class="site-support-link" href="/handoff/website-builder">Open the SiteRemade builder ↗</a>';
   if(c){
-    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connected</h3><p>Version ${esc(String(c.revision))}${c.updatedAt?` · last edited ${esc(dateLabel(c.updatedAt))}`:''}. ${c.status==='purchased'?(c.lastPublishedAt?`Last published ${esc(dateLabel(c.lastPublishedAt))}.`:'Not re-published since purchase.'):'Not purchased yet — edits are saved as drafts.'} Updates you ask for above are saved straight to this project.</p>${link}`;
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connected</h3><p>Version ${esc(String(c.revision))}${c.updatedAt?` · last edited ${esc(dateLabel(c.updatedAt))}`:''}. ${c.status==='purchased'?(c.lastPublishedAt?`Last published ${esc(dateLabel(c.lastPublishedAt))}.`:'Not re-published since purchase.'):'Not purchased yet — edits are saved as drafts.'} Updates you ask for above are saved straight to this project.</p>${c.link&&(c.link.status==='mismatch'||c.link.status==='conflict')?`<p class="site-support-note" id="websiteLinkNote">${c.link.status==='mismatch'?'This business is linked to a different builder website than the one your account shows now. Nothing was changed — contact SiteRemade if that isn’t expected.':'This builder website is already linked to another business on SiteRemade. Contact SiteRemade if that isn’t expected.'}</p>`:''}${link}`;
     return;
   }
   const why={identity_not_linked:'Your SiteRemade account isn’t linked to the builder yet, so live editing, publishing and deployment status can’t be shown or changed from here.',no_project:'There’s no website in the SiteRemade builder for your account yet.',workspace_mismatch:canonicalWebsite.message||'Builder data isn’t shown for this workspace.'}[code];

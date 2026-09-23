@@ -20,14 +20,20 @@
 // land on another); it is never used to pick or authorize anything.
 //
 // Workspace rule (the canonical project belongs to a PERSON -- the
-// Supabase user -- not to a workspace; there is no workspace<->project
-// mapping table on either side yet): generator data is only shown when the
-// request is unambiguous -- a non-staff user with exactly one workspace.
+// Supabase user -- not to a workspace): generator data is only shown when
+// the request is unambiguous -- a non-staff user with exactly one workspace.
 // SiteRemade staff (profile.role 'owner', who can open every customer's
 // workspace) and multi-workspace users get `workspace_mismatch`, and the
 // UI keeps the honest delivery-record fallback, rather than ever showing
 // the signed-in person's own generator project as some other workspace's
 // website.
+//
+// Phase 5: that same unambiguous GET /api/app/website is also the ONE place
+// the workspace <-> project reference link (public.website_project_links,
+// lib/website-links.js) is written -- once, for a PURCHASED project -- and
+// kept current (last seen revision). The link never replaces the fresh
+// builder call above: every route still resolves the project from the
+// builder, with the user's own token, on every request.
 //
 // Responses are passed through faithfully: a generator 409 stays a 409, a
 // 402 stays a 402, etc. Every non-success carries a stable `code`.
@@ -35,6 +41,7 @@
 // reaches the browser -- customers only ever see `changeSummary`.
 const { readJsonBody } = require('../lib/context');
 const bridge = require('../lib/generator-bridge');
+const websiteLinks = require('../lib/website-links');
 
 const MAX_REQUEST_CHARS = 600; // the generator's own ceiling for an edit request
 
@@ -77,6 +84,17 @@ function summaryFrom(d) {
   };
 }
 
+// Link bookkeeping must never break the Website view: any failure (e.g. the
+// V52 migration not applied yet) is logged and reported as status 'unknown'.
+async function recordLink(c, summary) {
+  try {
+    return await websiteLinks.recordBridgeSummary(c.wid, summary);
+  } catch (e) {
+    console.warn('[website-links] could not record link:', e && e.message);
+    return { status: 'unknown', link: null, created: false };
+  }
+}
+
 async function canonical(c) {
   const r = await bridge.getWebsite(c.access);
   if (r.status === 200 && r.data && r.data.ok && r.data.projectId) return { ok: true, summary: r.data };
@@ -89,7 +107,11 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
     if (!got.ok) return passThroughError(json, res, got.r);
-    return json(res, 200, summaryFrom(got.summary));
+    const linked = await recordLink(c, got.summary);
+    // Only the link STATUS reaches the browser (linked / not_linked /
+    // mismatch / conflict / unknown) -- no ids beyond the projectId the
+    // summary already carries.
+    return json(res, 200, { ...summaryFrom(got.summary), link: { status: linked.status } });
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {
