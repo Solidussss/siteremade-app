@@ -53,7 +53,7 @@
 const { readJsonBody } = require('../lib/context');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
-const { provisionWorkspaceSite } = require('./umami-analytics');
+const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
 
 // Phase 5: a linked workspace gets its analytics site set up server-side,
 // without the customer typing a domain first. Runs in the background (never
@@ -64,15 +64,35 @@ const PROVISION_RETRY_MS = 10 * 60 * 1000;
 const provisioning = new Map(); // workspace id -> last attempt (ms) / in-flight marker
 function provisionAnalyticsInBackground(c, summary, link) {
   if (!link || link.analytics_site_id) return;
-  const last = provisioning.get(c.wid);
+  // Phase 9: this is the SINGULAR/legacy path (triggered only from the
+  // canonical GET /api/app/website, which -- like the generator's own
+  // canonical resolution -- deals with exactly one project at a time) and
+  // it deliberately keeps provisioning the legacy, workspace-level row
+  // (project_id IS NULL, projectId omitted below) -- the exact same row
+  // GET/POST /api/app/analytics/website and GET/POST /api/app/umami/
+  // analytics have always read. Passing link.generator_project_id through
+  // here was tried and reverted: it made this call write a project-scoped
+  // row while those legacy read endpoints kept reading the NULL row,
+  // breaking analytics for every existing single-project workspace (caught
+  // by analytics-connect-e2e-test.js E7). A NEW project's own analytics
+  // identity is provisioned through the project-scoped routes below
+  // instead (GET/POST /api/app/website/projects/:projectId/analytics),
+  // which read/write project_id-scoped rows from the start.
+  //
+  // Keyed by (workspace, project) rather than just workspace: harmless and
+  // forward-looking now that a workspace can have several links, each with
+  // its own analytics_site_id/backoff state, even though every provision
+  // call below still targets the one shared legacy row.
+  const key = c.wid + ':' + link.generator_project_id;
+  const last = provisioning.get(key);
   if (last === 'inflight' || (typeof last === 'number' && Date.now() - last < PROVISION_RETRY_MS)) return;
-  provisioning.set(c.wid, 'inflight');
+  provisioning.set(key, 'inflight');
   // The Umami site is named after the business; a domain is only passed if
   // the builder reports one as verified -- display metadata, never identity.
   const verified = (Array.isArray(summary.domains) ? summary.domains : []).find(d => d && d.verifiedAt && typeof d.domain === 'string');
   provisionWorkspaceSite(c.wid, { name: summary.businessName || (c.workspace && c.workspace.business_name) || summary.name || '', domain: verified ? verified.domain : '' })
-    .then(r => { if (r.ok) provisioning.delete(c.wid); else provisioning.set(c.wid, Date.now()); })
-    .catch(() => provisioning.set(c.wid, Date.now()));
+    .then(r => { if (r.ok) provisioning.delete(key); else provisioning.set(key, Date.now()); })
+    .catch(() => provisioning.set(key, Date.now()));
 }
 
 const MAX_REQUEST_CHARS = 600; // the generator's own ceiling for an edit request
@@ -296,6 +316,42 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
       deployments: (r.data.deployments || []).map(d => ({ state: d.state, target: d.target, projectRevision: d.projectRevision, deployedUrl: d.deployedUrl || null, failureReason: d.failureReason || null, createdAt: d.createdAt })),
       domains: (r.data.domains || []).map(x => ({ domain: x.domain, state: x.state, verifiedAt: x.verifiedAt || null })),
     });
+  });
+
+  // Phase 9: this project's own analytics -- the project-scoped sibling of
+  // GET/POST /api/app/analytics/website (routes/umami-analytics.js), which
+  // stays pinned to the legacy, workspace-level row (project_id IS NULL) so
+  // it is completely unaffected by any of this. forWorkspaceProject gives
+  // the same two-layer ownership check as every other project route above
+  // before either handler touches website_analytics.
+  router.get('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, u: url, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    try {
+      return json(res, 200, { ok: true, projectId: got.summary.projectId, ...await analytics(c, url, got.summary.projectId) });
+    } catch (e) {
+      return json(res, 502, { ok: false, message: e.message || 'Analytics unavailable' });
+    }
+  });
+
+  router.post('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    let body;
+    try { body = await readJsonBody(req, 2000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
+    const domain = domainOf(body.domain);
+    if (!domain || !umamiDomainOk(domain)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Enter a valid website domain.' });
+    if (!umamiConfigured()) return json(res, 503, { ok: false, code: 'analytics_not_configured', message: 'Visitor analytics isn’t available on SiteRemade yet, so your address wasn’t saved. Nothing on your website has changed.' });
+    try {
+      const id = await ensureWorkspaceSite(c.wid, c.workspace && c.workspace.business_name, domain, body.businessName, got.summary.projectId);
+      return json(res, 200, { ok: true, projectId: got.summary.projectId, connected: true, domain, websiteAnalytics: { domain, provider: 'umami', connected: true, websiteId: id } });
+    } catch (e) {
+      return json(res, 502, { ok: false, message: e.message || 'Analytics unavailable' });
+    }
   });
 
   router.post('/api/app/website/projects/:projectId/edits', { auth: 'user' }, async (req, res, { c, json, params }) => {

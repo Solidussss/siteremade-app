@@ -14,7 +14,22 @@
 // domain (cross-workspace bug -- see its comment), and
 // provisionWorkspaceSite() is exported for routes/website-bridge.js to set
 // up a workspace's site when it is first linked to its builder project.
+//
+// Phase 9 (V55-WEBSITE-ANALYTICS-MULTI-PROJECT-MIGRATION.sql): every core
+// function below (ensureWorkspaceSite/provisionWorkspaceSite/analytics)
+// gained an OPTIONAL trailing `projectId` parameter, default null. Every
+// call site that predates Phase 9 never passes one, so it keeps reading/
+// writing the exact same legacy row (project_id IS NULL) it always did --
+// byte-identical behavior, not just "should be." A real projectId is only
+// ever passed by the new project-scoped routes at the bottom of this file.
+// Once a workspace can hold more than one website_analytics row (a legacy
+// one plus any project-scoped ones), every lookup MUST filter on
+// project_id too -- `.eq('workspace_id', wid).maybeSingle()` alone would
+// throw the moment a second row exists for that workspace. See this
+// file's own projectFilter() helper, used everywhere workspace_id used to
+// appear alone.
 const { db } = require('../lib/context');
+const websiteLinks = require('../lib/website-links');
 
 function normalizeBase(raw) { let v = String(raw || '').trim().replace(/\/$/, ''); if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v; return v; }
 const BASE = normalizeBase(process.env.UMAMI_BASE_URL), USER = process.env.UMAMI_USERNAME || '', PASS = process.env.UMAMI_PASSWORD || '';
@@ -51,42 +66,71 @@ const UMAMI_DOMAIN_RE = /^(localhost(:[1-9]\d{0,4})?|((?=[a-z0-9-_]{1,63}\.)(xn-
 const umamiDomainOk = d => typeof d === 'string' && d.length <= 500 && UMAMI_DOMAIN_RE.test(d);
 const umamiName = v => String(v || '').trim().slice(0, 100).trim();
 const storedUmamiId = row => (String(row?.provider || '').startsWith('umami:') ? String(row.provider).slice(6) : '');
-async function ensureWebsite(c, domain, name) { return ensureWorkspaceSite(c.wid, c.workspace.business_name, domain, name); }
-async function ensureWorkspaceSite(wid, businessName, domain, name) {
-  const current = (await db.from('website_analytics').select('*').eq('workspace_id', wid).maybeSingle()).data;
+// Phase 9: applies the "legacy row" (project_id IS NULL) or "this specific
+// project's row" (project_id = projectId) filter consistently -- the one
+// thing every website_analytics query must do once a workspace can hold
+// more than one row (see this file's header and V55's own comment on why
+// workspace_id alone is no longer safe to filter by).
+function projectFilter(query, projectId) { return projectId ? query.eq('project_id', projectId) : query.is('project_id', null); }
+// Mirrors a provisioned Umami site id onto website_project_links.
+// analytics_site_id. When projectId is known, scoped to exactly that link
+// row (the only correct target once a workspace can have several).
+// Legacy (no projectId) callers only mirror when the workspace has
+// EXACTLY ONE link -- with several, "which one" is genuinely ambiguous,
+// and writing the same id onto every linked project's row would silently
+// claim they all share one Umami site, which is exactly the bug this
+// migration exists to prevent. Never throws; a skipped mirror doesn't
+// fail provisioning (website_analytics itself is the source of truth).
+async function mirrorAnalyticsSiteId(wid, projectId, umamiId, t) {
+  try {
+    if (projectId) { await db.from('website_project_links').update({ analytics_site_id: umamiId, updated_at: t }).eq('workspace_id', wid).eq('generator_project_id', projectId); return; }
+    const links = await websiteLinks.listLinksForWorkspace(wid);
+    if (links.length === 1) await db.from('website_project_links').update({ analytics_site_id: umamiId, updated_at: t }).eq('workspace_id', wid).eq('generator_project_id', links[0].generator_project_id);
+  } catch (e) { console.warn('[umami] could not mirror analytics_site_id onto link:', e && e.message); }
+}
+async function ensureWebsite(c, domain, name, projectId = null) { return ensureWorkspaceSite(c.wid, c.workspace.business_name, domain, name, projectId); }
+async function ensureWorkspaceSite(wid, businessName, domain, name, projectId = null) {
+  const current = (await projectFilter(db.from('website_analytics').select('*').eq('workspace_id', wid), projectId).maybeSingle()).data;
   let id = storedUmamiId(current);
   if (!umamiDomainOk(domain)) domain = ''; // never send Umami a value its schema refuses
   const label = umamiName(name) || umamiName(businessName) || umamiName(domain) || 'SiteRemade website';
   if (id) { try { const old = await u('/api/websites/' + id); if (domain && (old.domain !== domain || old.name !== label)) await u('/api/websites/' + id, { method: 'POST', body: JSON.stringify({ name: label, domain }) }); } catch (e) { if (e.status !== 404) throw e; id = ''; } }
   if (!id) { const site = await u('/api/websites', { method: 'POST', body: JSON.stringify({ name: label, domain: domain || PENDING_DOMAIN }) }); id = site.id; }
   const t = new Date().toISOString();
-  await db.from('website_analytics').upsert({ workspace_id: wid, domain: domain || current?.domain || '', provider: 'umami:' + id, connected: true, updated_at: t }, { onConflict: 'workspace_id' });
+  if (current) await projectFilter(db.from('website_analytics').update({ domain: domain || current?.domain || '', provider: 'umami:' + id, connected: true, updated_at: t }).eq('workspace_id', wid), projectId);
+  else await db.from('website_analytics').insert({ workspace_id: wid, project_id: projectId, domain: domain || '', provider: 'umami:' + id, connected: true, updated_at: t });
   // Mirror onto the workspace's builder-project link, if it has one (no-op otherwise).
-  await db.from('website_project_links').update({ analytics_site_id: id, updated_at: t }).eq('workspace_id', wid);
+  await mirrorAnalyticsSiteId(wid, projectId, id, t);
   return id;
 }
 // Phase 5: server-side provisioning when a workspace is first linked to its
 // builder project (routes/website-bridge.js) -- no domain needed up front.
 // Never touches a site the workspace already has: an existing stored uuid is
 // just mirrored onto the link. Resolves {ok, id?, reason?}; never throws.
-async function provisionWorkspaceSite(wid, { name, domain } = {}) {
+//
+// Phase 9: projectId (optional, default null for legacy callers) scopes
+// which website_analytics row is read/written -- see ensureWorkspaceSite.
+async function provisionWorkspaceSite(wid, { name, domain } = {}, projectId = null) {
   try {
     if (!db || !wid) return { ok: false, reason: 'not_configured' };
-    const current = (await db.from('website_analytics').select('*').eq('workspace_id', wid).maybeSingle()).data;
+    const current = (await projectFilter(db.from('website_analytics').select('*').eq('workspace_id', wid), projectId).maybeSingle()).data;
     const existing = storedUmamiId(current);
     if (existing) {
-      await db.from('website_project_links').update({ analytics_site_id: existing, updated_at: new Date().toISOString() }).eq('workspace_id', wid);
+      await mirrorAnalyticsSiteId(wid, projectId, existing, new Date().toISOString());
       return { ok: true, id: existing, reused: true };
     }
     if (!BASE || !USER || !PASS) return { ok: false, reason: 'not_configured' };
-    return { ok: true, id: await ensureWorkspaceSite(wid, name, domain || '', name), reused: false };
+    return { ok: true, id: await ensureWorkspaceSite(wid, name, domain || '', name, projectId), reused: false };
   } catch (e) {
     console.warn('[umami] provisioning failed:', e && e.message);
     return { ok: false, reason: 'error' };
   }
 }
 async function safeMetric(id, q, type, limit = 8) { try { return await u('/api/websites/' + id + '/metrics?' + q + '&type=' + encodeURIComponent(type) + '&limit=' + limit); } catch { return []; } }
-async function analytics(c, url) { const row = (await db.from('website_analytics').select('*').eq('workspace_id', c.wid).maybeSingle()).data, id = String(row?.provider || '').startsWith('umami:') ? String(row.provider).slice(6) : ''; if (!id) return { connected: false, domain: row?.domain || '' }; const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30)), endAt = Date.now(), startAt = endAt - days * 86400000, q = 'startAt=' + startAt + '&endAt=' + endAt;
+// Phase 9: projectId (optional, default null) selects which
+// website_analytics row this reads -- see this file's header.
+async function analytics(c, url, projectId = null) {
+  const row = (await projectFilter(db.from('website_analytics').select('*').eq('workspace_id', c.wid), projectId).maybeSingle()).data, id = String(row?.provider || '').startsWith('umami:') ? String(row.provider).slice(6) : ''; if (!id) return { connected: false, domain: row?.domain || '' }; const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30)), endAt = Date.now(), startAt = endAt - days * 86400000, q = 'startAt=' + startAt + '&endAt=' + endAt;
   const core = await Promise.all([u('/api/websites/' + id + '/stats?' + q), u('/api/websites/' + id + '/pageviews?' + q + '&unit=day'), u('/api/websites/' + id + '/active')]);
   const types = ['path', 'referrer', 'device', 'country', 'browser', 'os', 'entry', 'exit', 'channel', 'event']; const vals = await Promise.all(types.map(t => safeMetric(id, q, t, 10))); const [pages, referrers, devices, countries, browsers, os, entryPages, exitPages, channels, events] = vals;
   return { connected: true, domain: row.domain, days, stats: core[0], series: core[1], active: core[2], pages, referrers, devices, countries, browsers, os, entryPages, exitPages, channels, events }; }
@@ -125,3 +169,12 @@ function registerUmamiAnalyticsRoutes(router) {
 
 module.exports = registerUmamiAnalyticsRoutes;
 module.exports.provisionWorkspaceSite = provisionWorkspaceSite;
+// Phase 9: exported so routes/website-bridge.js's project-scoped analytics
+// routes can call the same project-aware core directly, after doing its own
+// forWorkspaceProject ownership check -- rather than duplicating this file's
+// Umami-request/DB logic there.
+module.exports.analytics = analytics;
+module.exports.ensureWorkspaceSite = ensureWorkspaceSite;
+module.exports.umamiDomainOk = umamiDomainOk;
+module.exports.domainOf = domainOf;
+module.exports.umamiConfigured = () => !!(BASE && USER && PASS);
