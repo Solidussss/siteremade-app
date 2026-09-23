@@ -176,7 +176,7 @@ async function workspaceSnapshot(c){
 //     so that column alone is the fingerprint, no extra columns needed.
 async function workspaceFingerprint(wid){
   const countLatest=(table,ts)=>qc(db.from(table).select(`id,${ts}`,{count:'exact'}).eq('workspace_id',wid).order(ts,{ascending:false}).limit(1),`bootstrap fingerprint ${table}.${ts}`);
-  const countOnly=(table)=>qc(db.from(table).select('id',{count:'exact',head:true}).eq('workspace_id',wid),`bootstrap fingerprint ${table}.count`);
+  const countOnly=(table)=>qc(db.from(table).select('*',{count:'exact',head:true}).eq('workspace_id',wid),`bootstrap fingerprint ${table}.count`);
   const latestFundedAt=qc(db.from('ad_funds').select('id,funded_at',{count:'exact'}).eq('workspace_id',wid).not('funded_at','is',null).order('funded_at',{ascending:false}).limit(1),'bootstrap fingerprint ad_funds.funded_at');
   const [leads,convs,msgs,apps,activities,adSpend,adFunds,fundedAt,prospectViews,websiteUpdates,websiteProjects,invoices,autos,websiteAnalytics]=await Promise.all([
     countLatest('leads','updated_at'),
