@@ -8,7 +8,7 @@ require chain.
 
 ## Routes on the router (routes/*.js, registered via routes/index.js)
 
-59 routes across 18 modules (count re-verified against `buildRouter()` in Phase 5), dispatched by `lib/router.js`'s `Router` before
+61 routes across 18 modules (count re-verified against `buildRouter()` in Phase 6), dispatched by `lib/router.js`'s `Router` before
 `server.js`'s legacy `api()` dispatcher or static file serving ever run
 (see `server.js`'s top-level request handler).
 
@@ -53,6 +53,7 @@ require chain.
 | gmail-direct.js | GET /api/app/gmail/start | none (redirects on error, own try/catch) |
 | analytics-bootstrap.js | GET /siteremade-analytics.js | none |
 | analytics-bootstrap.js | GET /api/public/analytics-config | none |
+| analytics-bootstrap.js | GET /api/public/analytics-config-by-project | none (Phase 6; workspace resolved from website_project_links by project id; 300/10 min/IP) |
 | umami-analytics.js | GET /api/app/umami/analytics | user |
 | umami-analytics.js | POST /api/app/umami/analytics | user |
 | umami-analytics.js | GET /api/app/analytics/website | user |
@@ -73,6 +74,7 @@ require chain.
 | website-bridge.js | GET /api/app/website/deployment | user (same gate) |
 | website-bridge.js | POST /api/app/website/edits | user (same gate) |
 | website-bridge.js | POST /api/app/website/publish | user (same gate) |
+| website-bridge.js | POST /api/app/admin/website-links/:workspaceId/relink | owner (Phase 6; only ids from the stored, customer-captured candidate list; audit_logs) |
 
 Public intake routes still in `server.js`'s legacy `api()` dispatcher (not
 on the router), rate limited since Phase 5 (`lib/public-rate-limit.js`):
