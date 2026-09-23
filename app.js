@@ -176,7 +176,7 @@ function renderSubscriptionGate(){
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
 function renderAll(){
   [
-    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['dashboard',renderDashboard],
+    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['ads',renderAds],['dashboard',renderDashboard],
     ['leads',renderLeads],['inbox',renderInbox],['calendar',renderCalendar],['payments',renderPayments],
     ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],['website-projects',renderWebsiteProjects],
     ['automations',renderAutomations],['settings',renderSettings],['notifications',renderNotifications],
@@ -1089,6 +1089,87 @@ async function toggleContact(id){
 }
 qsa('[data-ct-filter]').forEach(b=>b.onclick=()=>{contactState.filter=b.dataset.ctFilter==='unread'?'unread':'all';renderContact();});
 
+// ===========================================================================
+// Ads — Phase 3G
+// ===========================================================================
+// Read-only. Everyone: Google Ads connection status (GET
+// /api/app/google-ads/status) and the spend SiteRemade has reported
+// (state.adSpend, from the ad_spend table in bootstrap). SiteRemade staff
+// additionally get live campaign numbers (GET /api/app/google-ads/campaigns)
+// and the persisted recommendations (GET /api/app/ad-recommendations) —
+// both routes are owner-only on the server and stay that way. There is no
+// approve/apply/execute control anywhere in this view.
+const adsState={status:null,campaigns:null,recs:null,loading:false,error:null,at:0};
+async function loadAds(force){
+  if(!force&&adsState.at&&Date.now()-adsState.at<60000){renderAds();return;}
+  adsState.loading=true;adsState.error=null;renderAds();
+  try{
+    adsState.status=await api('/api/app/google-ads/status');
+    const owner=state.user?.role==='owner',st=adsState.status;
+    adsState.campaigns=null;adsState.recs=null;
+    if(owner&&st.connected&&st.scopeReady&&st.selectedCustomerId){
+      const [c,r]=await Promise.allSettled([api('/api/app/google-ads/campaigns?customerId='+encodeURIComponent(st.selectedCustomerId)),api('/api/app/ad-recommendations?customerId='+encodeURIComponent(st.selectedCustomerId))]);
+      if(c.status==='fulfilled')adsState.campaigns=c.value;else adsState.error=c.reason?.message||'Could not load campaigns.';
+      if(r.status==='fulfilled')adsState.recs=r.value.recommendations||[];
+    }
+  }catch(e){adsState.error=e.message;}
+  finally{adsState.loading=false;adsState.at=Date.now();renderAds();}
+}
+function adsObservations(rows){
+  // Plain, factual observations from reported spend — arithmetic on real
+  // rows, not predictions and not instructions.
+  const by={};rows.forEach(r=>{const k=`${r.platform} · ${r.campaign||'Campaign'}`;by[k]=by[k]||{name:k,spend:0,leads:0};by[k].spend+=Number(r.spend)||0;by[k].leads+=Number(r.leads)||0;});
+  const list=Object.values(by),out=[],spend=list.reduce((n,c)=>n+c.spend,0),leads=list.reduce((n,c)=>n+c.leads,0);
+  if(spend>0&&leads>0)out.push(`Across reported campaigns you've paid about ${money(spend/leads)} per lead.`);
+  const withLeads=list.filter(c=>c.leads>0&&c.spend>0).sort((a,b)=>a.spend/a.leads-b.spend/b.leads);
+  if(withLeads.length>=2){const a=withLeads[0],b=withLeads[withLeads.length-1];if(b.spend/b.leads>a.spend/a.leads*1.2)out.push(`${a.name} brings in leads for less (${money(a.spend/a.leads)} each) than ${b.name} (${money(b.spend/b.leads)} each).`);}
+  list.filter(c=>c.spend>0&&!c.leads).forEach(c=>out.push(`${c.name} has spent ${money(c.spend)} without a reported lead yet.`));
+  return out.slice(0,4);
+}
+function renderAds(){
+  const host=qs('#adsBody');if(!host)return;
+  const owner=state.user?.role==='owner',st=adsState.status,rows=state.adSpend||[];
+  const sig=JSON.stringify([adsState.at,adsState.loading,adsState.error,owner,rows.map(r=>[r.id,r.spend,r.leads])]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  if(!st&&adsState.loading){host.innerHTML='<div class="an-skeleton"><div class="skeleton"></div><div class="skeleton an-skeleton-chart"></div></div>';return;}
+  const fmtId=id=>String(id||'').replace(/\D/g,'').replace(/(\d{3})(\d{3})(\d{4})/,'$1-$2-$3');
+  // Connected account
+  let acct,acctTone='neutral',acctLabel='Not connected',acctAction='';
+  if(!st){acct='Couldn’t check the Google Ads connection right now.';}
+  else if(!st.connected){acct=owner?(st.configured?'Google Ads isn’t connected for this workspace yet.':'Google Ads credentials aren’t set up on the server yet.'):'No ad account is connected yet. SiteRemade connects it for you when your ads start.';if(owner&&st.configured)acctAction='<a class="secondary-button" href="/api/app/google-ads/start">Connect Google Ads</a>';}
+  else if(!st.scopeReady){acctTone='warning';acctLabel='Needs permission';acct='Google is connected, but Ads access wasn’t granted yet.';if(owner)acctAction='<a class="secondary-button" href="/api/app/google-ads/start">Grant Ads access</a>';}
+  else{acctTone='success';acctLabel='Connected';acct=st.selectedCustomerId?`Google Ads account ${esc(fmtId(st.selectedCustomerId))}`:'Connected — no ad account chosen yet.';if(owner)acctAction=`<button type="button" class="secondary-button" data-ads-admin data-view="admin">${st.selectedCustomerId?'Manage in Admin':'Choose account in Admin'}</button>`;}
+  const account=`<section class="ads-block ads-account"><div><p class="eyebrow">CONNECTED ACCOUNT</p><h2>Google Ads <span class="chip chip-${acctTone}">${acctLabel}</span></h2><p>${acct}</p></div>${acctAction?`<div class="ads-account-actions">${acctAction}</div>`:''}</section>`;
+  // Performance
+  let perf='';
+  const stat=(l,v,n)=>`<div class="an-stat"><dt>${l}</dt><dd>${v}</dd><p>${n}</p></div>`;
+  const camp=adsState.campaigns;
+  if(camp&&owner){
+    const s=camp.summary||{},list=camp.campaigns||[],cpa=s.conversions?s.spend/s.conversions:0;
+    perf=`<section class="ads-block"><p class="eyebrow">CAMPAIGN PERFORMANCE · LAST 30 DAYS</p><p class="ads-source">Live from Google Ads (visible to SiteRemade staff).</p>
+      <dl class="an-stats ads-stats">${stat('Spend',money(s.spend),'Total ad spend')}${stat('Clicks',anFmt(s.clicks),s.impressions?`${(s.clicks/s.impressions*100).toFixed(1)}% of ${anFmt(s.impressions)} views`:'People who clicked an ad')}${stat('Conversions',anFmt(Math.round((s.conversions||0)*10)/10),'Calls, forms and bookings Google counted')}${stat('Cost per conversion',cpa?money(cpa):'—',cpa?'Spend ÷ conversions':'No conversions yet')}</dl>
+      ${list.length?`<ul class="ads-campaigns">${list.slice(0,12).map(c=>`<li><div><strong>${esc(c.name)}</strong><span>${esc(String(c.status||'').toLowerCase())}${c.channel?` · ${esc(String(c.channel).toLowerCase().replace(/_/g,' '))}`:''}</span></div><span>${anFmt(c.clicks)} clicks</span><span>${anFmt(Math.round((c.conversions||0)*10)/10)} conv.</span><b>${money(c.spend)}</b></li>`).join('')}</ul>`:'<p class="ads-muted">No campaign activity in the last 30 days.</p>'}</section>`;
+  }
+  const spend=rows.reduce((n,r)=>n+(Number(r.spend)||0),0),leads=rows.reduce((n,r)=>n+(Number(r.leads)||0),0);
+  if(rows.length){
+    perf+=`<section class="ads-block"><p class="eyebrow">REPORTED BY SITEREMADE</p><p class="ads-source">Spend and results SiteRemade has recorded for your campaigns.</p>
+      <dl class="an-stats ads-stats ads-stats-3">${stat('Spend',money(spend),`${rows.length} report${rows.length===1?'':'s'}`)}${stat('Leads',anFmt(leads),'Enquiries from ads')}${stat('Cost per lead',leads?money(spend/leads):'—',leads?'Spend ÷ leads':'No leads reported yet')}</dl>
+      <ul class="ads-campaigns">${rows.slice(0,12).map(r=>`<li><div><strong>${esc(r.platform)} · ${esc(r.campaign||'Campaign')}</strong><span>${esc(dateLabel(r.createdAt))}</span></div><span></span><span>${anFmt(r.leads)} leads</span><b>${money(r.spend)}</b></li>`).join('')}</ul></section>`;
+  }
+  if(!perf)perf=`<div class="an-empty ads-empty"><strong>No ads running yet.</strong><span>When SiteRemade runs ads for you, what you spent, how many people clicked and how many got in touch will show up here.</span></div>`;
+  // Recommendations (advisory)
+  const obs=adsObservations(rows),recs=(adsState.recs||[]).filter(r=>r.status!=='dismissed').slice(0,6);
+  let rec='';
+  if(recs.length||obs.length){
+    rec=`<section class="ads-block"><p class="eyebrow">RECOMMENDATIONS</p><h2>Things worth a look</h2><p class="ads-source">Suggestions only — a person at SiteRemade decides and makes any change.</p><ul class="ads-recs">`+
+      recs.map(r=>`<li><strong>${esc(r.title)}</strong><span>${esc(r.reason||'')}</span>${r.proposed_action?`<em>${esc(r.proposed_action)}</em>`:''}${r.status==='approved'?'<span class="chip chip-success">Approved for later · not applied</span>':''}</li>`).join('')+
+      obs.map(o=>`<li><span>${esc(o)}</span></li>`).join('')+`</ul>${owner&&recs.length?'<button type="button" class="text-link" data-ads-admin data-view="admin">Review in Admin</button>':''}</section>`;
+  }
+  const err=adsState.error?`<p class="ads-muted">${esc(adsState.error)}</p>`:'';
+  host.innerHTML=account+err+perf+rec;
+  qsa('#adsBody [data-ads-admin]').forEach(b=>b.onclick=()=>switchView('admin'));
+}
+
 function renderAutomations(){qs('#automationList').innerHTML=state.automations.map(a=>`<button class="automation-card automation-toggle" data-auto="${a.id}"><span class="automation-icon">${a.id==='lead-confirmation'?'✦':a.id==='lead-alert'?'↗':'□'}</span><div><strong>${esc(a.name)}</strong><p>${esc(a.description)}</p></div><span class="toggle ${a.enabled?'on':''}"></span></button>`).join('');qsa('[data-auto]').forEach(b=>b.onclick=()=>toggleAutomation(b.dataset.auto));}
 function renderSettings(){qs('#settingsBusiness').value=state.workspace.businessName||'';qs('#settingsEmail').value=state.workspace.email||'';qs('#settingsPhone').value=state.workspace.phone||'';qs('#settingsTimezone').value=state.workspace.timezone||'';qs('#aiServices').value=state.workspace.ai?.services||'';qs('#aiServiceArea').value=state.workspace.ai?.serviceArea||'';qs('#aiTone').value=state.workspace.ai?.tone||'';const labels={supabase:'Database + Auth',openai:'AI engine',googlePlaces:'Google Places',resend:'Email',twilio:'SMS',stripe:'Stripe payments'};qs('#integrationList').innerHTML=Object.entries(labels).map(([k,l])=>`<div class="setting-row"><div><strong>${l}</strong><span>${state.integrations[k]?'Connected / configured':'Needs server credentials'}</span></div>${k==='stripe'&&state.integrations.stripe?`<button class="text-button" id="connectStripeButton">${state.workspace.stripeAccountId?'Reconnect':'Connect'}</button>`:`<span class="status-pill ${state.integrations[k]?'':'neutral'}">${state.integrations[k]?'LIVE':'OFF'}</span>`}</div>`).join('');const aiBadge=qs('#aiReceptionistBadge');if(aiBadge){const live=!!state.integrations.openai&&state.workspace.ai?.enabled!==false;aiBadge.textContent=live?'LIVE':'OFF';aiBadge.classList.toggle('neutral',!live);}const sb=qs('#connectStripeButton');if(sb)sb.onclick=async()=>{try{const d=await api('/api/app/integrations/stripe/connect',{method:'POST'});if(d.url)location.href=d.url}catch(e){alert(e.message)}};}
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
@@ -1138,7 +1219,7 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
 const VIEW_SHOWN_HOOKS={analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
-function loadAds(){}function loadConnections(){} // filled in by the Ads / Settings passes
+function loadConnections(){} // filled in by the Settings pass
 function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
@@ -1330,7 +1411,7 @@ if(qs('#adSpendForm'))qs('#adSpendForm').onsubmit=async e=>{e.preventDefault();c
 // response's ETag too (see the api() call above), so that first poll can
 // actually 304 like every one after it already could.
 let lastBootstrapETag=null;
-async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderWebsite();renderContact();renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
+async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderWebsite();renderContact();renderAds();renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
 let liveSyncStarted=false;
 function startLiveSync(){if(liveSyncStarted||!state.user)return;liveSyncStarted=true;const c=renderBadges();lastLiveCounts={leads:c.newLeads,unread:c.unread};setInterval(liveRefresh,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveRefresh();});window.addEventListener('focus',liveRefresh);}
 if('serviceWorker' in navigator){

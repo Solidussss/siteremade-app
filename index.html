@@ -268,8 +268,16 @@
         </div>
       </section>
 
+      <!-- Ads (Phase 3G). Read-only and advisory. Uses the real Google Ads
+           read integration (routes/google-ads.js: status for everyone;
+           campaigns + persisted recommendations are owner-only routes, so
+           clients see the spend SiteRemade reports into ad_spend). No
+           budget/campaign actions exist here: ADS_FEATURE_ENABLED=false and
+           execution_locked:true are untouched. -->
       <section class="view" id="view-ads" aria-labelledby="adsTitle">
-        <div class="page-head"><div><p class="eyebrow">ADVERTISING</p><h1 id="adsTitle">Ads</h1></div></div>
+        <div class="page-head"><div><p class="eyebrow">ADVERTISING</p><h1 id="adsTitle">Your ads</h1><p>What your advertising is doing, in plain terms.</p></div></div>
+        <p class="ads-advisory"><span class="chip chip-info">Advisory only</span><span>SiteRemade reviews every change by hand. Nothing in your campaigns or budget changes automatically from this app.</span></p>
+        <div id="adsBody" class="ads-body" aria-live="polite"></div>
       </section>
 
       <!-- Contact (Phase 3F): "Who contacted me through my website?"
