@@ -4,7 +4,10 @@
 @media(max-width:410px){.metric-grid{grid-template-columns:1fr 1fr}.metric-card{min-height:128px}.metric-value strong{font-size:30px}.topbar-actions .primary-action{display:none}}
 
 /* V2 — utility-first client app chrome */
-:root{--sidebar:224px;--radius:14px;--bg:#f5f6f8;--line:#e6e8ec}
+/* (Its second :root token block — --sidebar/--radius/--bg/--line — was
+   removed in the website-first design reset: design-system.css §1 has
+   always redeclared all four, so it was dead weight and one of the three
+   competing token sets DESIGN-SYSTEM-V2.md §1 documents.) */
 .sidebar{padding:16px 12px 12px;background:#0a0b0d}.app-brand{height:42px;padding:0 8px}.app-brand img{width:36px;height:36px;object-fit:contain;filter:invert(1)}
 .workspace-card{margin:10px 0 14px;border-radius:10px;padding:8px}.workspace-mark{width:34px;height:34px;border-radius:9px}.side-nav{gap:2px}.nav-item{height:38px;border-radius:8px;padding:0 10px}.nav-item strong{font-size:12px}.nav-item span{font-size:15px}.side-divider{margin:12px 8px}.plan-card{border-radius:12px;padding:14px;margin-top:12px}.user-card{margin-top:8px}
 .topbar{height:58px;padding:0 22px;background:rgba(245,246,248,.94)}.icon-button{width:34px;height:34px;border-radius:9px;font-size:15px}.primary-action,.secondary-button,.light-button{min-height:36px;padding:0 14px;font-size:10px}

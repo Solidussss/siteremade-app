@@ -718,7 +718,7 @@ body .site-request-list span{display:flex;align-items:center;gap:8px;font-size:1
   body .site-chrome-dots{display:none}
   body .site-device button{padding:6px 9px}
   body .site-stage{border-radius:var(--radius-md)}
-  body .site-stage[data-device="mobile"] .site-canvas{height:min(600px,68vh)}
+  body .site-stage[data-device="mobile"] .site-canvas{height:min(540px,64vh)}
   body .site-editor-examples{flex-wrap:nowrap;overflow-x:auto;margin-left:-20px;margin-right:-20px;padding:0 20px;scrollbar-width:none}
   body .site-editor-examples::-webkit-scrollbar{display:none}
   body .site-editor-examples button{flex:none}

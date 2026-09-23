@@ -1126,3 +1126,86 @@ during an actual live occurrence of it on `app.siteremade.com`. That
 recording's call stack is the only way to identify the exact function
 responsible if the cause is something outside what this sandbox can
 reproduce.
+
+## Website-first shell (Phase 3B–3K)
+
+The customer app was repositioned from a 13-screen CRM/business OS into a
+website-first product with five destinations: **Website** (home),
+**Analytics**, **Ads**, **Contact**, **Settings**, plus owner-only
+**Admin**. The generator↔app contract this depends on is specified in
+`WEBSITEPROJECT-CONTRACT.md` (not implemented on either side yet).
+
+### Old customer screens — where they went
+| Old nav item | Now |
+|---|---|
+| Overview (`#view-home`) | Removed from customer nav. Markup, `renderDashboard()` and the AI business assistant (`/api/app/assistant`) kept; staff-only via Admin → Internal tools. Website is the new home. |
+| Leads (`#view-leads`) | Removed from customer nav; staff-only. Customers see website submissions in **Contact** (same `leads` table, read-only presentation). |
+| Inbox (`#view-inbox`) | Removed from customer nav; staff-only. Gmail connection moved to Settings → Connections. |
+| Calendar (`#view-calendar`) | Removed from customer nav; staff-only. Google Calendar connection moved to Settings → Connections. |
+| Payments (`#view-payments`) | Removed from customer nav; staff-only. SiteRemade plan billing moved to Settings → Billing; Stripe (customer payments) to Settings → Connections. |
+| Website Projects (`#view-website-projects`) | Removed from customer nav; staff-only. Still where staff set a client's preview/live URL — the Website view reads those as the "delivery record". Client review (approve / request changes) moved into the Website view. |
+| Website Builder (link to `/handoff/website-builder`) | No longer a nav item. The route is unchanged and linked from the Website view's "Builder project" block. |
+| Market Finder (`#view-prospecting`) | Removed from customer nav; staff-only. |
+| Automations (`#view-automations`) | Removed from nav. The same toggles (real `automations` rows) appear in Settings → Advanced as notifications. |
+| Integrations (`#view-integrations`) | Removed. Replaced by Settings → Connections, which lists only providers with a real backend (Gmail, Google Calendar, Business texting/Twilio, Stripe, Google Ads). QuickBooks, Xero, Slack, Teams, DocuSign, PandaDoc (no backend at all) plus Meta Ads, Google Business Profile, GA4 service-account and Zapier (env-var presence checks / placeholder buttons only) are not shown to customers. `routes/integrations.js` is unchanged. |
+
+No backend route or `lib/` module was deleted or changed in behavior.
+
+### Dynamic script/CSS chain — disconnected vs kept
+Disconnected (still on disk, no longer loaded):
+- From `app.js` `loadDashboardFeatureScripts()`: `v22-client.js` + `v22.css`
+  (Overview/Analytics hero bands, nav relabeling, a third token/shell
+  theme), `v24-umami-client.js` + `v24.css` (old Analytics renderer — and,
+  transitively, the only loader of `v28-market-client.js` +
+  `v28-market.css`), `v20-client.js` + `v20.css` (old traffic panel),
+  `v19-client.js` (CRM setup checklist, pipeline board, next-action
+  column, prospect fit scores), `v18.css` (styles nothing that still
+  renders).
+- From `v29-bootstrap.js`: `v34-integrations.js` + `.css` (Integrations
+  screen), `v35-calendar-client.js` and `v36-connectors-client.js` (buttons
+  that only existed on v34 cards), `v38-safe.js` (read connection state out
+  of v34 cards' DOM — would misreport without them), and
+  `v39-phone-setup-client.js` (duplicate Business SMS bar in the old Inbox).
+
+Kept, for compatibility (verified harmless to the new views; the only
+two that touch a new view id, v42 and v43, probe `#view-analytics` for
+classes the new markup deliberately doesn't use — see the coupling rules
+below):
+- `v18-client.js` — Google sign-in fragment handling; auth-adjacent, left
+  untouched. It still imports `v19-agency.js` (Admin overview),
+  `v19-updates.js` (targets a view that no longer exists — no-op),
+  `v19-market.js` (staff Market Finder search) and `v29-lead-fix.js`
+  (legacy lead drawer).
+- `v17-client.js` + `v17.css`, `v19.css` (styles v19-agency),
+  `v29-mail-client.js` + `v29-mail.css`, `v41-experience.js` + `.css`,
+  `v42-daily-workflow.js` + `.css` — legacy Inbox/Calendar/lead-drawer/
+  Overview behaviour for the staff-only internal screens.
+- `v43-ad-control.js` + `.css`, `v44-google-ads-client.js`,
+  `v45-ad-intelligence-client.js`, `v46-google-ads-account-fallback.js` —
+  Admin ad control room, Google Ads account selection, persisted
+  recommendations. The execution lock (`execution_locked:true`) and
+  `ADS_FEATURE_ENABLED=false` are unchanged.
+- `v40-existing-number-client.js` — Business SMS number wizard, now opened
+  from Settings → Connections through a small `window.srOpenBusinessNumberSetup`
+  hook.
+
+Two coupling rules the new views rely on: the new Analytics view must not
+contain a `.metric-grid` or `.traffic-panel` (v43 and v42 still look for
+those inside `#view-analytics` to inject old panels), and the new Settings
+view must not reuse `data-v34` attributes (the capture-phase click handlers
+that used them are disconnected, but the inline Gmail handler at the bottom
+of `index.html` still listens for `data-v29-provider="gmail"`).
+
+### Verification (local only)
+`scratchpad/website-first-check.js` (sandbox test harness, not in this
+repo) boots the real server against the in-memory fake Supabase and drives
+Chromium as a client and as an owner at 1440/1280px and 390px: nav
+contents, default view, preview iframe source, editor states (including
+staff `?editor=dev` ending in "nothing was changed"), send-to-team,
+Contact read/unread through the real PATCH, Settings saves/toggles,
+Connections list, Ads with fixture Google Ads responses, Analytics with a
+fixture Umami response, no horizontal scroll on phones, and no page
+errors. The pre-existing `ui-test.js` in that sandbox asserts the old
+"Website Projects" sidebar item and is expected to fail against this
+shell.
+

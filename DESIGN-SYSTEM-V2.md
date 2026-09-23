@@ -157,6 +157,11 @@ decorative, nothing on page load, everything gated behind
 
 ## 3. Information architecture
 
+> **Superseded by the website-first IA (Phase 3B, see §6 below).** The
+> five-group CRM sidebar described here is kept for history only; the
+> customer app now has five destinations — Website, Analytics, Ads,
+> Contact, Settings — plus owner-only Admin.
+
 Sidebar nav becomes five labeled groups instead of two unlabeled ones,
 matching the product structure directly:
 
@@ -329,3 +334,36 @@ changes at any step — this is the presentation layer only.
 
 (This checklist is updated in place as each step lands, and each step is
 committed separately so the work stays reviewable and revertible.)
+
+## 6. Website-first reset (Phase 3J)
+
+The product was repositioned around one idea — *your website, editable
+through plain language* — so the visual system was re-pointed at that,
+using the same tokens and components rather than a new layer:
+
+- **IA:** Website (home) · Analytics · Ads · Contact · Settings, Admin
+  separate and owner-only. The mobile bar holds all five (six for staff);
+  the "More" sheet is gone. The old screens are staff-only internal tools
+  (see PHASE3-ROUTE-MAP.md "Website-first shell").
+- **One token set, actually one:** v22.css (the third token/shell theme)
+  is no longer loaded, and app.css's duplicate V2 `:root` block was
+  deleted. design-system.css §1 is the only live token definition.
+- **Quieter chrome so the site is the loudest thing:** light sidebar rail
+  (was near-black), no desktop topbar, larger 10px eyebrows instead of
+  7–8px micro-labels, 48px page gutters.
+- **Fewer boxes:** the new views put numbers and lists on the canvas with
+  hairlines (`.an-stats`, `.ct-list`, `.st-rows`, `.site-support`). Only
+  two surfaces are elevated on purpose: the website preview frame and the
+  dark "Update My Website" panel (the dominant action).
+- **`.chip` shipped:** the one-base-plus-modifiers status chip from §2
+  (`.chip-success/-warning/-danger/-info/-neutral`) now exists as a real
+  class; new views use it directly, old `.status-pill` aliases remain.
+- **Display type** stays the system serif stack (`--font-display`), not a
+  Fraunces webfont — the earlier decision not to add a pre-auth network
+  dependency still holds.
+- New CSS lives in design-system.css §20–26, all on §1 tokens.
+
+Still not done: the legacy staff-only screens keep their older, denser
+styling (they were not redesigned), and v40/v44's inline-styled markup
+(Step 6 above) is unchanged.
+
