@@ -119,6 +119,15 @@
       <p class="nav-group-label">Delivery</p>
       <nav class="side-nav">
         <button class="nav-item" data-view="website-projects"><span>✎</span><strong>Website Projects</strong><em id="websiteProjectBadge">0</em></button>
+        <!-- Unified-login pass: same account, other surface. A plain link
+             (no data-view -- switchView()'s delegated click wiring only
+             binds elements that have one, so this is never intercepted),
+             same minimum bar as the generator's own "Client Login" link
+             back to this app. It goes through the authenticated
+             GET /handoff/website-builder round trip (routes/
+             website-builder-handoff.js), so arriving there is already
+             recognized as the same account -- never a second sign-in. -->
+        <a class="nav-item" href="/handoff/website-builder"><span>⚏</span><strong>Website Builder</strong></a>
       </nav>
 
       <div class="side-divider"></div>
@@ -454,6 +463,7 @@
     <p class="nav-group-label mobile-group-label">Delivery</p>
     <div class="mobile-more-grid">
       <button data-view="website-projects"><span>✎</span><strong>Website Projects</strong><small>Track builds, briefs and reviews</small></button>
+      <a href="/handoff/website-builder"><span>⚏</span><strong>Website Builder</strong><small>Open the SiteRemade site builder</small></a>
     </div>
     <p class="nav-group-label mobile-group-label">Growth</p>
     <div class="mobile-more-grid">

@@ -54,7 +54,36 @@ function loadDashboardFeatureScripts(){
     document.body.appendChild(s);
   });
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
+// Unified-login pass: the SiteRemade generator (a separate codebase/
+// deployment) sends a visitor here with ?handoff_return=<generator
+// url>&handoff_mode=session|link when they click "Continue with
+// SiteRemade" / "Connect your SiteRemade account" there. This app has no
+// idea yet whether that visitor already has a session here or is about to
+// create one (email/password sign-in, signup, or the existing Google
+// OAuth round trip, which itself leaves and returns to this exact origin
+// before finishing with a plain page reload) -- so the intent is parked in
+// sessionStorage the instant it arrives (surviving all three of those
+// paths, all same-origin), and only acted on from bootstrap()'s own single
+// "a real session now exists" success path below, whichever of those three
+// ways got it there. See routes/website-builder-handoff.js for what
+// actually mints the return trip once we act on it.
+(function captureWebsiteBuilderHandoffIntent(){
+  const qp=new URLSearchParams(location.search),ret=qp.get('handoff_return');
+  if(!ret)return;
+  try{sessionStorage.setItem('sr_pending_handoff',JSON.stringify({ret,mode:qp.get('handoff_mode')==='link'?'link':'session'}));}catch(e){}
+  qp.delete('handoff_return');qp.delete('handoff_mode');
+  const rest=qp.toString();
+  history.replaceState({},'',location.pathname+(rest?'?'+rest:''));
+})();
+function maybeRedirectForWebsiteBuilderHandoff(){
+  let pending=null;
+  try{pending=JSON.parse(sessionStorage.getItem('sr_pending_handoff')||'null');}catch(e){}
+  if(!pending||!pending.ret)return false;
+  try{sessionStorage.removeItem('sr_pending_handoff');}catch(e){}
+  location.href='/handoff/website-builder?return='+encodeURIComponent(pending.ret)+'&mode='+encodeURIComponent(pending.mode||'session');
+  return true;
+}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;

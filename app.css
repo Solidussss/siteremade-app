@@ -135,10 +135,14 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   .mobile-more-head strong{display:block;font-size:17px;letter-spacing:-.03em;margin-top:4px}
   .mobile-more-head button{width:38px;height:38px;border:1px solid var(--line);border-radius:11px;background:#fff;font-size:22px}
   .mobile-more-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px}
-  .mobile-more-grid>button{border:1px solid var(--line);background:#fafbfc;border-radius:14px;padding:13px;text-align:left;color:#111;min-height:88px}
-  .mobile-more-grid>button>span{display:block;font-size:17px;margin-bottom:10px}
-  .mobile-more-grid>button strong{display:block;font-size:11px}
-  .mobile-more-grid>button small{display:block;color:var(--muted);font-size:8px;line-height:1.4;margin-top:4px}
+  /* Unified-login pass: the "Website Builder" entry is a plain <a> (a real
+     link to another origin, not a switchView() button), so these were
+     widened from `>button` to `>button,>a` -- same visual treatment,
+     no behavior change for the existing buttons. */
+  .mobile-more-grid>button,.mobile-more-grid>a{border:1px solid var(--line);background:#fafbfc;border-radius:14px;padding:13px;text-align:left;color:#111;min-height:88px;text-decoration:none;display:block}
+  .mobile-more-grid>button>span,.mobile-more-grid>a>span{display:block;font-size:17px;margin-bottom:10px}
+  .mobile-more-grid>button strong,.mobile-more-grid>a strong{display:block;font-size:11px}
+  .mobile-more-grid>button small,.mobile-more-grid>a small{display:block;color:var(--muted);font-size:8px;line-height:1.4;margin-top:4px}
   .notification-popover{left:10px;right:10px;top:68px;width:auto;max-height:calc(100dvh - 150px)}
   .lead-drawer{width:100vw;padding:20px 16px 96px;border-left:0}
   .modal-backdrop{padding:12px;align-items:flex-end}
