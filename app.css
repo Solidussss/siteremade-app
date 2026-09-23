@@ -592,3 +592,5 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   .list-editor-row.two-field{grid-template-columns:1fr;}
   .list-editor-row{grid-template-columns:1fr auto}
 }
+/* Phase 6: Admin "Resolve" for a website link that needs review (staff only) */
+.admin-relink{display:grid;gap:8px;padding:0 0 16px}.admin-relink .helper-copy{margin-top:0}.admin-relink-list{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}.admin-relink-option{display:flex;gap:9px;align-items:flex-start;font-size:11px;line-height:1.45;cursor:pointer}.admin-relink-option input{margin-top:2px;flex:none}.admin-relink-option span{min-width:0;overflow-wrap:anywhere}.admin-relink-option em{font-style:normal;color:var(--muted)}.admin-relink-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.admin-relink-actions .helper-copy{flex-basis:100%}.admin-relink-actions button{min-height:34px;padding:0 12px}.admin-bridge-state{margin:0 0 6px}

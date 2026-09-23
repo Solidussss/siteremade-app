@@ -35,6 +35,15 @@
 // builder call above: every route still resolves the project from the
 // builder, with the user's own token, on every request.
 //
+// Phase 6: when that same GET finds a recorded MISMATCH (the builder now
+// reports a different project than the linked one -- e.g. a second
+// purchase), it also asks the builder, with this same customer's token, for
+// every project the customer has purchased and stores that metadata-only
+// list on the link (lib/website-links.js recordMismatchCandidates). The
+// link itself is still never re-pointed here. Staff resolve it later with
+// POST /api/app/admin/website-links/:workspaceId/relink (auth 'owner'),
+// which only accepts an id from that stored, builder-verified list.
+//
 // Responses are passed through faithfully: a generator 409 stays a 409, a
 // 402 stays a 402, etc. Every non-success carries a stable `code`.
 // `appliedOperations` (internal, structured) is stripped before anything
@@ -116,6 +125,24 @@ async function recordLink(c, summary) {
   }
 }
 
+// Phase 6: capture the candidate list for a recorded mismatch, once per
+// mismatch, with the customer's own token. Never fails the Website view:
+// any problem just leaves the list uncaptured (Admin says so) for the next
+// visit to retry.
+async function captureMismatchCandidates(c, linked) {
+  if (linked.status !== 'mismatch' || !websiteLinks.needsCandidateCapture(linked.link)) return;
+  try {
+    const r = await bridge.getCandidates(c.access);
+    if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.candidates)) {
+      console.warn('[website-links] candidate capture skipped: builder answered', r.status);
+      return;
+    }
+    await websiteLinks.recordMismatchCandidates(c.wid, linked.link, r.data.candidates);
+  } catch (e) {
+    console.warn('[website-links] candidate capture failed:', e && e.message);
+  }
+}
+
 async function canonical(c) {
   const r = await bridge.getWebsite(c.access);
   if (r.status === 200 && r.data && r.data.ok && r.data.projectId) return { ok: true, summary: r.data };
@@ -130,6 +157,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!got.ok) return passThroughError(json, res, got.r);
     const linked = await recordLink(c, got.summary);
     if (linked.status === 'linked') provisionAnalyticsInBackground(c, got.summary, linked.link);
+    await captureMismatchCandidates(c, linked);
     // Only the link STATUS reaches the browser (linked / not_linked /
     // mismatch / conflict / unknown) -- no ids beyond the projectId the
     // summary already carries.
@@ -174,6 +202,26 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
       });
     }
     return passThroughError(json, res, r);
+  });
+
+  // Phase 6: staff-only resolution of a link that needs review. The
+  // workspace comes from the URL (staff can act on any workspace -- that's
+  // what auth 'owner' means in this app), the chosen project must be one of
+  // the candidates captured for that workspace's CURRENT mismatch.
+  router.post('/api/app/admin/website-links/:workspaceId/relink', { auth: 'owner' }, async (req, res, { params, c, json }) => {
+    let body;
+    try { body = await readJsonBody(req, 4000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
+    const wid = String(params.workspaceId || '').slice(0, 80);
+    if (!Array.isArray(c.workspaces) || !c.workspaces.some(w => w.id === wid)) return json(res, 404, { ok: false, code: 'not_found', message: 'Workspace not found.' });
+    let out;
+    try {
+      out = await websiteLinks.relinkWorkspace(wid, typeof body.generatorProjectId === 'string' ? body.generatorProjectId.trim() : '', { actorUserId: c.user && c.user.id });
+    } catch (e) {
+      console.warn('[website-links] relink failed:', e && e.message);
+      return json(res, 503, { ok: false, code: 'unavailable', message: 'The link couldn’t be updated right now. Nothing was changed.' });
+    }
+    if (!out.ok) return json(res, out.status, { ok: false, code: out.code, message: out.message });
+    return json(res, 200, { ok: true, workspaceId: wid, projectId: out.to, previousProjectId: out.from, changed: out.changed });
   });
 
   router.post('/api/app/website/publish', { auth: 'user' }, async (req, res, { c, json }) => {
