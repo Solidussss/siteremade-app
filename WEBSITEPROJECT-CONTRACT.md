@@ -1,6 +1,12 @@
 # WebsiteProject contract (generator ↔ app) — app-side specification
 
 **Status: DRAFT — nothing in this document is implemented yet.**
+
+> **Later note (Phase 5):** parts of this contract now exist (the Phase 4
+> `/api/app-bridge/*` bridge and the Phase 5 workspace ↔ project link).
+> §11 at the end describes what is actually implemented and the exact
+> environment needed to turn it on; §1–§10 are kept as the original
+> requirements record.
 This is the app's statement of what it needs from the SiteRemade generator
 (the separate `landing/siteremade` codebase/deployment) before the customer
 app can show, edit, or publish a customer's real website. It was written
@@ -401,3 +407,106 @@ app's own editor service stub when no canonical project is linked.
    subscription (§3.2 R-ID-4)?
 9. Rate limits and quotas per project/user.
 10. Retention: how long are revisions, previews and edit records kept?
+
+## 11. Phase 5 — what is implemented, and how to turn it on
+
+### 11.1 Identity model (as built)
+
+- **The website's identity is the builder project id** (`projects.id`,
+  `proj_` + 18 random bytes, base64url — generator `lib/project-store.js`).
+  It is stable, opaque, and never reused.
+- **Workspace ↔ project:** `public.website_project_links`
+  (`V52-WEBSITE-PROJECT-LINK-MIGRATION.sql`), one row per workspace:
+  `workspace_id` (PK) → `generator_project_id` (unique), plus
+  `purchase_ref`, `analytics_site_id`, `last_seen_revision`,
+  `mismatch_project_id`/`mismatch_seen_at`, `linked_at`, `updated_at`.
+  Ids and timestamps only — never site content.
+- **Created** by `GET /api/app/website` (`routes/website-bridge.js` →
+  `lib/website-links.js`) the first time the builder returns a
+  **purchased** project for a non-staff user with exactly one workspace.
+  Drafts are never linked. A project already linked to another workspace
+  is never linked twice (`conflict`). If the builder later reports a
+  different project for the same person, the link is left alone and the
+  new id is recorded for staff (`mismatch`).
+- **Not an authorization shortcut:** every bridge route still asks the
+  builder for the signed-in user's project with that user's own token on
+  every request; the builder re-checks ownership each time.
+- **Domain is display metadata only.** Builder `project_domains` rows are
+  shown in the Website/Settings views and may seed the Umami site's display
+  domain if verified; no lookup, link, or authorization uses a domain.
+
+### 11.2 What hangs off the link
+
+| Concern | Resolved by | Notes |
+|---|---|---|
+| Analytics | `website_analytics.provider = 'umami:<uuid>'` (unchanged read path), mirrored to `website_project_links.analytics_site_id` | Site is provisioned server-side when the link is created. A workspace only ever reuses a uuid it stored itself (no domain search/adopt). |
+| Contact from a generated site | `POST /api/public/site-submission` → `website_project_links.generator_project_id` → `workspace_id` | Body names only `projectId`; any workspace id in the body is ignored. Rate limited. |
+| Contact from the widget | `POST /api/public/lead` / `chat` with `workspaceId` + `publicKey` | Unchanged auth model (`public_key` is a publishable key by design); now rate limited. |
+| Ads | `workspace_id` (all ad tables) | Associated with the website transitively through the link; no ad table references a project or domain. |
+
+### 11.3 Ads capability matrix (from code, Phase 5)
+
+| Capability | Status (and where) |
+|---|---|
+| READ | Implemented — staff: live campaigns (last 30 days) + account list via Google Ads `searchStream` / `listAccessibleCustomers` (`routes/google-ads.js`, owner-only). Customers: connection status (`GET /api/app/google-ads/status`) and SiteRemade-reported spend (`ad_spend` rows in bootstrap), read-only. |
+| RECOMMEND | Implemented, advisory only — `ad_recommendations` sync/list/review (`routes/ad-intelligence.js`, owner-only). "Approve" only changes the row's status; nothing executes. |
+| Guardrail settings | Stored only — `ad_control_settings`; `execution_locked` forced `true` on every save. The "autopilot" mode value is a stored preference with no executor behind it. |
+| Record spend / fund ads | Gated — `POST /api/app/ad-spend`, `POST /api/app/ad-funds` return 503 while `ADS_FEATURE_ENABLED = false` (`server.js`). |
+| PAUSE / RESUME / BUDGET CHANGE / CREATE / EDIT / DELETE | **Missing** — no route, and no Google Ads `:mutate` call anywhere in the codebase. |
+
+### 11.4 Environment needed for the whole chain (nothing here is turned on by default)
+
+This pass changes **no shipped default**. `SITEREMADE_APP_BRIDGE_ENABLED`
+stays unset (off) in the builder, and nothing in either repo's config sets
+the variables below. Turning the chain on is a deliberate, later step:
+
+**Builder (generator) deployment**
+- `SITEREMADE_APP_BRIDGE_ENABLED=true` — enables `/api/app-bridge/*`
+  (404 otherwise).
+- `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or `SUPABASE_ANON_KEY`) —
+  **must be the same Supabase project as the app's**. The bridge verifies
+  the app user's access token against this project; a different project
+  means every call fails as unauthenticated (or, worse, a shared `sub`
+  collision across projects). This was the main risk flagged in the Phase 4
+  audit and still is.
+- `SITEREMADE_IDENTITY_BRIDGE_MODE` other than `disabled` (with
+  `SITEREMADE_IDENTITY_BRIDGE_ALLOWLIST` if `internal`) — needed so customers
+  can create the `identity_links` row that maps their Supabase user to a
+  builder account. Without a link, `/api/app/website` answers
+  `identity_not_linked` and no workspace link is ever created.
+
+**App deployment**
+- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` (as today).
+- `WEBSITE_BUILDER_URL` — the builder's real origin (server-to-server calls
+  go there).
+- Apply `V52-WEBSITE-PROJECT-LINK-MIGRATION.sql` (without it the Website
+  view still works; linking, site submissions and Admin's link list report
+  "unavailable").
+- `UMAMI_BASE_URL`, `UMAMI_USERNAME`, `UMAMI_PASSWORD` — for automatic
+  analytics provisioning (without them linking still works; analytics
+  stays unprovisioned and is retried on later visits).
+- `PUBLIC_BASE_URL` — the app's public origin (used by the analytics
+  bootstrap script embedded via the widget).
+
+**Each generated (exported) site that should deliver to Contact**
+- `SUBMISSION_BACKEND=webhook`
+- `SUBMISSION_WEBHOOK_URL=<app origin>/api/public/site-submission`
+  The export already embeds its project id in every submission; the app
+  maps it to the workspace. Default exports stay `local` (nothing sent).
+
+Verified locally only by setting these in the test harness's own process
+environment (`phase5/app-phase5-extra.js` in the engagement scratchpad),
+never by editing any repo default.
+
+### 11.5 Known limits carried forward
+
+- The builder still resolves "the account's most recent purchased
+  project" — an account with two purchases only ever sees the latest one;
+  the app surfaces this as a link `mismatch` instead of re-linking.
+- Generated sites do not embed the analytics tracker; visits are only
+  counted on pages that carry the SiteRemade widget/analytics snippet.
+- Builder domain verification is reachability only, not ownership proof;
+  nothing in the app relies on it.
+- Rate limits are in-process (per instance, reset on restart) and key on
+  the first `X-Forwarded-For` entry, same as the existing signup limiter;
+  the per-workspace ceilings are the part a client can't sidestep.
