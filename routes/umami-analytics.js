@@ -34,12 +34,29 @@ async function u(path, options = {}) { let t = await authToken(); let r = await 
 // abandoned when Umami itself answers 404 for it; any other Umami error is
 // passed up (nothing is overwritten on a transient failure).
 const PENDING_DOMAIN = 'pending.siteremade.invalid'; // RFC 2606 reserved name: an honest "no domain yet", never a real host
+// Phase 6 (Umami compatibility, checked against Umami's own source): its
+// website create/update API validates `domain` with
+//   z.string().trim().regex(DOMAIN_REGEX).max(500)      (src/app/api/websites/request-schema.ts)
+// and `name` with z.string().trim().min(1).max(100). DOMAIN_REGEX (src/lib/
+// constants.ts) is copied verbatim below: lowercase hostname labels plus a
+// 2-63 char TLD (or localhost[:port]). So an EMPTY domain is refused, a
+// placeholder is required until a real domain exists, and
+// 'pending.siteremade.invalid' passes (three lowercase labels, TLD
+// "invalid"). Umami's collect endpoint (/api/send) looks the site up by
+// website id only and never compares the page's hostname to the stored
+// domain; the tracker only filters by hostname when a page opts in with
+// data-domains (ours never does). So the stored domain is display metadata:
+// changing it later keeps the same website id, and tracking continues.
+const UMAMI_DOMAIN_RE = /^(localhost(:[1-9]\d{0,4})?|((?=[a-z0-9-_]{1,63}\.)(xn--)?[a-z0-9-_]+(-[a-z0-9-_]+)*\.)+(xn--)?[a-z0-9-_]{2,63})$/;
+const umamiDomainOk = d => typeof d === 'string' && d.length <= 500 && UMAMI_DOMAIN_RE.test(d);
+const umamiName = v => String(v || '').trim().slice(0, 100).trim();
 const storedUmamiId = row => (String(row?.provider || '').startsWith('umami:') ? String(row.provider).slice(6) : '');
 async function ensureWebsite(c, domain, name) { return ensureWorkspaceSite(c.wid, c.workspace.business_name, domain, name); }
 async function ensureWorkspaceSite(wid, businessName, domain, name) {
   const current = (await db.from('website_analytics').select('*').eq('workspace_id', wid).maybeSingle()).data;
   let id = storedUmamiId(current);
-  const label = name || businessName || domain || 'SiteRemade website';
+  if (!umamiDomainOk(domain)) domain = ''; // never send Umami a value its schema refuses
+  const label = umamiName(name) || umamiName(businessName) || umamiName(domain) || 'SiteRemade website';
   if (id) { try { const old = await u('/api/websites/' + id); if (domain && (old.domain !== domain || old.name !== label)) await u('/api/websites/' + id, { method: 'POST', body: JSON.stringify({ name: label, domain }) }); } catch (e) { if (e.status !== 404) throw e; id = ''; } }
   if (!id) { const site = await u('/api/websites', { method: 'POST', body: JSON.stringify({ name: label, domain: domain || PENDING_DOMAIN }) }); id = site.id; }
   const t = new Date().toISOString();
@@ -90,7 +107,7 @@ function registerUmamiAnalyticsRoutes(router) {
   router.post('/api/app/analytics/website', { auth: 'user' }, async (req, res, { c, json }) => {
     try {
       const b = await readBody(req), domain = domainOf(b.domain);
-      if (!domain) return json(res, 400, { ok: false, message: 'Enter a valid website domain.' });
+      if (!domain || !umamiDomainOk(domain)) return json(res, 400, { ok: false, message: 'Enter a valid website domain.' });
       const id = await ensureWebsite(c, domain, b.businessName);
       return json(res, 200, { ok: true, connected: true, domain, tracker: { src: BASE + '/script.js', websiteId: id }, websiteAnalytics: { domain, provider: 'umami', connected: true } });
     } catch (e) {
