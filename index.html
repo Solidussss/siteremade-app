@@ -47,7 +47,9 @@
         <p class="eyebrow">CLIENT APP</p><h1>Sign in</h1><p>Access leads, conversations, bookings and payments.</p>
         <label>Email<input name="email" type="email" placeholder="you@business.com" autocomplete="email" required /></label>
         <label>Password<input name="password" type="password" placeholder="Password" autocomplete="current-password" required /></label>
-        <button class="primary-action auth-submit" type="submit">Sign in</button><small id="loginStatus">Supabase-secured account</small>
+        <button class="primary-action auth-submit" type="submit">Sign in</button>
+        <button type="button" class="auth-forgot-link" id="showForgotPassword">Forgot password?</button>
+        <small id="loginStatus">Supabase-secured account</small>
       </form>
 
       <form id="signupForm" hidden>
@@ -64,6 +66,37 @@
         </div>
         <label>Password<input name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="new-password" required /></label>
         <button class="primary-action auth-submit" type="submit">Create my workspace</button><small id="signupStatus">Your account is isolated to your business workspace.</small>
+      </form>
+
+      <!-- Password recovery pass: "Forgot password?" collects an email and
+           always shows the same generic confirmation (POST
+           /api/auth/forgot-password never reveals whether the address has
+           an account -- see that route's own header comment). Reached only
+           from the login screen's link above; never shown as a third tab,
+           since it isn't a peer of "sign in"/"create account" the way the
+           existing two tabs are. -->
+      <form id="forgotForm" hidden>
+        <p class="eyebrow">RESET PASSWORD</p><h1>Forgot password?</h1><p>Enter your email and we'll send you a reset link.</p>
+        <label>Email<input name="email" type="email" placeholder="you@business.com" autocomplete="email" required /></label>
+        <button class="primary-action auth-submit" type="submit">Send reset link</button>
+        <button type="button" class="auth-forgot-link" id="showLoginFromForgot">Back to sign in</button>
+        <small id="forgotStatus"></small>
+      </form>
+
+      <!-- Reached only by arriving through a real Supabase recovery link
+           (never by clicking anything in this screen) -- app.js detects
+           the #access_token=...&type=recovery fragment (or the
+           #error=...&error_code=otp_expired fragment Supabase's own
+           redirect uses for an already-expired link) at load and switches
+           here itself; see app.js's own recovery-detection comment for the
+           full mechanism. -->
+      <form id="resetForm" hidden>
+        <p class="eyebrow">RESET PASSWORD</p><h1 id="resetFormTitle">Choose a new password</h1><p id="resetFormCopy">This link is valid -- set a new password to finish.</p>
+        <label>New password<input name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="new-password" required /></label>
+        <label>Confirm new password<input name="confirmPassword" type="password" minlength="8" placeholder="Retype your new password" autocomplete="new-password" required /></label>
+        <button class="primary-action auth-submit" type="submit" id="resetFormSubmit">Set new password</button>
+        <button type="button" class="auth-forgot-link" id="showForgotFromReset" hidden>Request a new link</button>
+        <small id="resetStatus"></small>
       </form>
     </div>
   </div>

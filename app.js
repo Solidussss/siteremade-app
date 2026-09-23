@@ -75,6 +75,62 @@ function loadDashboardFeatureScripts(){
   const rest=qp.toString();
   history.replaceState({},'',location.pathname+(rest?'?'+rest:''));
 })();
+// Password-recovery pass: clicking the link in Supabase's own recovery
+// email lands the visitor back here with a URL FRAGMENT (never a query
+// param -- fragments never reach the server), the same implicit-flow
+// mechanism the existing Google sign-in round trip already relies on
+// (installGoogleLogin() in v18-client.js parses access_token/refresh_token
+// off location.hash the same way). There is no flowType override anywhere
+// in this codebase (grepped), and supabase-js defaults to implicit when
+// none is set, so this -- not PKCE, not a `code` query param -- is the
+// real mechanism in this app, confirmed rather than assumed. A successful
+// recovery link arrives as
+// #access_token=...&refresh_token=...&type=recovery&expires_in=...; an
+// already-expired or already-used one instead arrives as
+// #error=access_denied&error_code=otp_expired&error_description=...
+// (Supabase's own documented behavior). Nothing else in this app ever
+// puts an `error` key in the URL fragment (the Google flow's own failure
+// path redirects with a *query* param, ?auth_error=..., see
+// routes/google-signin.js), so any fragment carrying one here is
+// unambiguously a dead recovery link.
+//
+// The token pair is held ONLY in this module-scope variable, never in
+// localStorage/sessionStorage, and the fragment is scrubbed from the
+// visible URL immediately below -- before bootstrap() or anything else
+// in this file runs -- so a reload, a shared screenshot, or browser
+// history never carries the recovery tokens.
+let pendingRecoverySession=null;
+(function detectPasswordRecoveryFragment(){
+  const raw=location.hash.replace(/^#/,'');
+  if(!raw)return;
+  const h=new URLSearchParams(raw);
+  const errorCode=h.get('error_code')||h.get('error');
+  const type=h.get('type');
+  const accessToken=h.get('access_token'),refreshToken=h.get('refresh_token');
+  const isRecovery=type==='recovery'&&accessToken&&refreshToken;
+  if(!isRecovery&&!errorCode)return; // not recovery-shaped (e.g. the Google OAuth flow's own #access_token fragment) -- leave it untouched for that flow to consume
+  history.replaceState({},'',location.pathname+location.search);
+  if(isRecovery){
+    pendingRecoverySession={accessToken,refreshToken};
+    setAuthMode('reset');
+  }else{
+    setAuthMode('reset');
+    const title=qs('#resetFormTitle'),copy=qs('#resetFormCopy'),retry=qs('#showForgotFromReset');
+    if(title)title.textContent='Link expired';
+    if(copy)copy.textContent='This password reset link is invalid or has expired.';
+    qsa('#resetForm input').forEach(i=>i.disabled=true);
+    if(qs('#resetFormSubmit'))qs('#resetFormSubmit').hidden=true;
+    if(retry)retry.hidden=false;
+  }
+  // setAuthMode() is declared further down in this same script, but
+  // function declarations hoist with their full body in JS, so this
+  // earlier call already resolves to the real implementation -- and the
+  // DOM elements it touches already exist, since app.js runs as a plain
+  // synchronous script placed after the auth markup in index.html, same
+  // as every other qs('#...') call elsewhere in this file that runs
+  // unconditionally at top level (e.g. captureWebsiteBuilderHandoffIntent
+  // above).
+})();
 function maybeRedirectForWebsiteBuilderHandoff(){
   let pending=null;
   try{pending=JSON.parse(sessionStorage.getItem('sr_pending_handoff')||'null');}catch(e){}
@@ -709,10 +765,96 @@ qsa('[data-close]').forEach(b=>b.onclick=()=>hideModal(b.dataset.close));qsa('.m
 function renderWorkspaceMenu(){const menu=qs('#workspaceMenu');if(!menu)return;menu.innerHTML=(state.workspaces||[]).map(w=>`<button data-workspace="${w.id}" class="workspace-option ${w.id===state.workspace.id?'active':''}"><span>${esc(w.businessName)}</span><small>${esc(w.plan||'Client')}</small></button>`).join('');qsa('[data-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.workspace})});menu.hidden=true;await refreshLight();});}
 async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><span class="status-pill ${['active','trialing'].includes(w.siteRemadeSubscriptionStatus)?'':'neutral'}">${esc((w.siteRemadeSubscriptionStatus||'inactive').toUpperCase())}</span><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('home');});}catch{}}
 qs('#loginForm').onsubmit=async e=>{e.preventDefault();const out=qs('#loginStatus');out.style.color='';out.textContent='Signing in…';try{await api('/api/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});out.textContent='';if(await bootstrap())startLiveSync();}catch(err){out.style.color='#c54747';out.textContent=err.message}};
-function setAuthMode(mode){const login=qs('#loginForm'),signup=qs('#signupForm'),a=qs('#showLogin'),b=qs('#showSignup');const isSignup=mode==='signup';login.hidden=isSignup;signup.hidden=!isSignup;a.classList.toggle('active',!isSignup);b.classList.toggle('active',isSignup);a.setAttribute('aria-selected',String(!isSignup));b.setAttribute('aria-selected',String(isSignup));}
+// Extended for the password-recovery pass to cover 4 states instead of 2
+// ('forgot' and 'reset' alongside the original 'login'/'signup'). The tab
+// row above the forms is only ever a choice between "Sign in" and "Create
+// account" -- forgot/reset are reached from a link, not a tab -- so it's
+// hidden outright for those two rather than left showing neither tab
+// active. display is set directly (not the `hidden` attribute) since
+// .auth-tabs already carries an author `display:grid` rule that would
+// otherwise beat the UA [hidden] rule's display:none.
+function setAuthMode(mode){
+  const forms={login:qs('#loginForm'),signup:qs('#signupForm'),forgot:qs('#forgotForm'),reset:qs('#resetForm')};
+  Object.keys(forms).forEach(k=>{ if(forms[k]) forms[k].hidden=(k!==mode); });
+  const tabs=qs('.auth-tabs');
+  if(tabs) tabs.style.display=(mode==='login'||mode==='signup')?'':'none';
+  const a=qs('#showLogin'),b=qs('#showSignup');
+  a.classList.toggle('active',mode==='login');b.classList.toggle('active',mode==='signup');
+  a.setAttribute('aria-selected',String(mode==='login'));b.setAttribute('aria-selected',String(mode==='signup'));
+}
 qs('#showLogin').onclick=()=>setAuthMode('login');
 qs('#showSignup').onclick=()=>setAuthMode('signup');
 qs('#signupForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#signupStatus');out.className='';out.textContent='Creating your workspace…';try{const d=await api('/api/auth/signup',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});out.className='success';out.textContent='Account created. Loading your workspace…';if(await bootstrap())startLiveSync();}catch(err){out.className='error';out.textContent=err.message;}};
+// "Forgot password?" -- carries over whatever email the visitor already
+// typed into the login form, if any, as a convenience only (never
+// required, never validated here; the server does its own validation and
+// never reveals whether the address has an account).
+qs('#showForgotPassword').onclick=()=>{
+  const le=qs('#loginForm [name=email]'),fe=qs('#forgotForm [name=email]');
+  if(le&&fe&&le.value) fe.value=le.value;
+  const out=qs('#forgotStatus'); out.style.color=''; out.textContent='';
+  setAuthMode('forgot');
+};
+qs('#showLoginFromForgot').onclick=()=>setAuthMode('login');
+qs('#forgotForm').onsubmit=async e=>{
+  e.preventDefault();
+  const out=qs('#forgotStatus'); out.style.color=''; out.textContent='Sending…';
+  try{
+    const d=await api('/api/auth/forgot-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});
+    out.style.color='#14865d';
+    out.textContent=d.message||'If an account exists for that email, we sent a password reset link.';
+    e.currentTarget.reset();
+  }catch(err){
+    // A 400 (malformed email) or 429 (rate limited) surfaces here as a
+    // real, specific error -- neither one reveals account existence, so
+    // there's nothing unsafe about showing it plainly.
+    out.style.color='#c54747';
+    out.textContent=err.message;
+  }
+};
+// Reached only by arriving through a real recovery link (see the
+// detectPasswordRecoveryFragment IIFE near the top of this file, which
+// populates pendingRecoverySession and switches to this form before any
+// of this runs) or by clicking "Request a new link" from an
+// already-expired one.
+qs('#resetForm').onsubmit=async e=>{
+  e.preventDefault();
+  const out=qs('#resetStatus'); out.style.color='';
+  const fd=Object.fromEntries(new FormData(e.currentTarget));
+  const password=String(fd.password||''),confirmPassword=String(fd.confirmPassword||'');
+  if(password.length<8){ out.style.color='#c54747'; out.textContent='Password must be at least 8 characters.'; return; }
+  if(password!==confirmPassword){ out.style.color='#c54747'; out.textContent='Passwords do not match.'; return; }
+  if(!pendingRecoverySession){
+    out.style.color='#c54747';
+    out.textContent='This reset link is invalid or has expired. Request a new one.';
+    qs('#showForgotFromReset').hidden=false;
+    return;
+  }
+  out.textContent='Setting your new password…';
+  try{
+    await api('/api/auth/reset-password',{method:'POST',body:JSON.stringify({accessToken:pendingRecoverySession.accessToken,refreshToken:pendingRecoverySession.refreshToken,password})});
+    pendingRecoverySession=null;
+    out.style.color='#14865d';
+    out.textContent='Password updated. Signing you in…';
+    if(await bootstrap()){
+      startLiveSync();
+    }else{
+      // Extremely unlikely given the route only returns success once real
+      // session cookies are already set, but a clean fallback rather than
+      // leaving the visitor stuck on a "signing you in…" message forever.
+      setAuthMode('login');
+      const ls=qs('#loginStatus'); ls.style.color='#14865d'; ls.textContent='Password updated. Sign in with your new password.';
+    }
+  }catch(err){
+    out.style.color='#c54747';
+    out.textContent=err.message;
+    qs('#showForgotFromReset').hidden=false;
+  }
+};
+qs('#showForgotFromReset').onclick=()=>{
+  pendingRecoverySession=null;
+  setAuthMode('forgot');
+};
 qs('#logoutButton').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload()};
 qs('#workspaceSwitchButton').onclick=()=>{const m=qs('#workspaceMenu');m.hidden=!m.hidden};
 qs('#aiSettingsForm').onsubmit=async e=>{e.preventDefault();await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});await refreshLight();};

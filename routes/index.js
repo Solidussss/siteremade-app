@@ -16,6 +16,7 @@ const registerers = [
   require('./market-finder'),
   require('./mailbox'),
   require('./google-signin'),
+  require('./password-recovery'),
   require('./gmail-direct'),
   require('./analytics-bootstrap'),
   require('./umami-analytics'),
