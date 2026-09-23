@@ -1154,7 +1154,8 @@ function renderWebsiteBuilderBlock(){
     return;
   }
   if(code==='identity_not_linked'){
-    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>${st==='loading'?'Checking…':'Not connected yet'}</h3><p>Your SiteRemade account isn’t linked to the builder yet, so live editing, publishing and deployment status can’t be shown or changed from here.</p>${link}`;
+    const connectAccount='<a class="primary-action" href="/handoff/website-builder?mode=link&return='+encodeURIComponent('https://www.siteremade.com/')+'">Connect your SiteRemade account</a>';
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>${st==='loading'?'Checking…':'Connect your account'}</h3><p>Your Workplace account and SiteRemade builder account need to be linked once before your purchased websites can appear here.</p><div class="admin-relink-actions">${connectAccount}</div>`;
     return;
   }
   // Every other case (no_project, or the canonical lookup simply hasn't
