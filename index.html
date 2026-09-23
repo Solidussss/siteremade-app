@@ -272,8 +272,22 @@
         <div class="page-head"><div><p class="eyebrow">ADVERTISING</p><h1 id="adsTitle">Ads</h1></div></div>
       </section>
 
+      <!-- Contact (Phase 3F): "Who contacted me through my website?"
+           Read-only presentation of the real leads that came in through the
+           site's contact form / chat widget (POST /api/public/lead,
+           /api/public/chat) or a text to the business number. No pipeline,
+           no Won/Lost, no deal value. Read/unread is the existing
+           conversation.unread counter. -->
       <section class="view" id="view-contact" aria-labelledby="contactTitle">
-        <div class="page-head"><div><p class="eyebrow">CONTACT</p><h1 id="contactTitle">Who contacted you</h1></div></div>
+        <div class="page-head ct-head">
+          <div><p class="eyebrow">CONTACT</p><h1 id="contactTitle">Who contacted you</h1><p>Messages and requests people sent through your website.</p></div>
+          <div class="an-range" role="group" aria-label="Show" id="contactFilter">
+            <button type="button" data-ct-filter="all" class="active" aria-pressed="true">All</button>
+            <button type="button" data-ct-filter="unread" aria-pressed="false">Unread<span id="contactUnreadCount"></span></button>
+          </div>
+        </div>
+        <div id="contactList" class="ct-list"></div>
+        <p class="ct-footnote" id="contactFootnote" hidden>Records added by hand or imported as prospects aren't listed here.</p>
       </section>
 
       <!-- ===== Internal (owner-only) legacy views =====

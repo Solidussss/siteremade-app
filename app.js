@@ -176,7 +176,7 @@ function renderSubscriptionGate(){
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
 function renderAll(){
   [
-    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['dashboard',renderDashboard],
+    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['dashboard',renderDashboard],
     ['leads',renderLeads],['inbox',renderInbox],['calendar',renderCalendar],['payments',renderPayments],
     ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],['website-projects',renderWebsiteProjects],
     ['automations',renderAutomations],['settings',renderSettings],['notifications',renderNotifications],
@@ -1027,6 +1027,68 @@ if(qs('#siteEditorForm')){
   qsa('[data-edit-example]').forEach(b=>b.onclick=()=>{const input=qs('#siteEditorInput');const add=b.dataset.editExample;input.value=input.value.trim()?`${input.value.trim()}\n${add}`:add;input.focus();input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new Event('input'));});
 }
 
+// ===========================================================================
+// Contact — Phase 3F
+// ===========================================================================
+// Who contacted this business through its website. Rows are the real
+// leads (see contactSubmissions() near renderBadges for what's included),
+// shown as submissions: name, how to reach them, what they said, where it
+// came from, when. Opening one marks it read through the existing
+// PATCH /api/app/conversations/:id {read:true}. Nothing here edits a lead.
+const contactState={filter:'all',open:new Set()};
+const CONTACT_SOURCE_LABELS={'website':'Website form','ai chat':'Website chat','twilio sms':'Text message'};
+function contactSourceLabel(l){const k=String(l.source||'').trim().toLowerCase();return CONTACT_SOURCE_LABELS[k]||l.source||'Website';}
+function contactMessage(l){if(String(l.message||'').trim())return l.message;const c=contactConversation(l);const m=(c?.messages||[]).find(x=>x.from==='customer'&&String(x.text||'').trim());return m?m.text:'';}
+function contactWhen(iso){const t=new Date(iso).getTime();if(!Number.isFinite(t))return '';const m=Math.max(0,Math.round((Date.now()-t)/60000));if(m<1)return 'Just now';if(m<60)return `${m} min ago`;if(m<1440){const h=Math.round(m/60);return `${h} hour${h===1?'':'s'} ago`;}if(m<2880)return 'Yesterday';return dateLabel(iso);}
+function renderContact(){
+  const host=qs('#contactList');if(!host)return;
+  const all=contactSubmissions(),unread=all.filter(isContactUnread),rows=contactState.filter==='unread'?unread:all;
+  const uc=qs('#contactUnreadCount');if(uc)uc.textContent=unread.length?` · ${unread.length}`:'';
+  qsa('[data-ct-filter]').forEach(b=>{const on=b.dataset.ctFilter===contactState.filter;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
+  const excluded=(state.leads||[]).length-all.length,foot=qs('#contactFootnote');if(foot)foot.hidden=excluded<=0;
+  const sig=JSON.stringify([contactState.filter,[...contactState.open],rows.map(l=>[l.id,l.updatedAt,isContactUnread(l),contactMessage(l).length])]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  if(!rows.length){host.innerHTML=all.length?'<div class="ct-empty"><strong>You’re all caught up.</strong><span>Nothing unread right now.</span></div>':'<div class="ct-empty"><strong>Contact form submissions will appear here.</strong><span>When someone fills in the form or chats on your website, you’ll see who they are, how to reach them and what they asked — right here.</span></div>';return;}
+  host.innerHTML=rows.map(l=>{
+    const open=contactState.open.has(l.id),un=isContactUnread(l),msg=contactMessage(l);
+    const reach=[l.email,l.phone].filter(Boolean).join(' · ')||'No contact details left';
+    const asked=l.service&&!/^general inquiry$/i.test(l.service)?l.service:'';
+    return `<article class="ct-item${un?' is-unread':''}${open?' is-open':''}" data-contact="${esc(l.id)}">
+      <button type="button" class="ct-row" aria-expanded="${open}" aria-controls="ct-d-${esc(l.id)}">
+        <span class="ct-dot" aria-hidden="true"></span>
+        <span class="ct-who"><strong>${esc(l.name||'Someone')}</strong><span>${esc(reach)}</span></span>
+        <span class="ct-msg">${msg?esc(msg):'<em>No message — they left their details.</em>'}</span>
+        <span class="ct-meta"><span class="ct-source">${esc(contactSourceLabel(l))}</span><time datetime="${esc(l.createdAt)}" title="${esc(dateTimeLabel(l.createdAt))}">${esc(contactWhen(l.createdAt))}</time>${un?'<span class="sr-only">Unread</span>':''}</span>
+      </button>
+      <div class="ct-detail" id="ct-d-${esc(l.id)}" ${open?'':'hidden'}>
+        ${msg?`<p class="ct-full">${esc(msg)}</p>`:''}
+        <dl class="ct-facts">
+          ${l.email?`<div><dt>Email</dt><dd><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></dd></div>`:''}
+          ${l.phone?`<div><dt>Phone</dt><dd><a href="tel:${esc(l.phone)}">${esc(l.phone)}</a></dd></div>`:''}
+          ${asked?`<div><dt>Asked about</dt><dd>${esc(asked)}</dd></div>`:''}
+          <div><dt>Came from</dt><dd>${esc(contactSourceLabel(l))}</dd></div>
+          <div><dt>Received</dt><dd>${esc(dateTimeLabel(l.createdAt))}</dd></div>
+        </dl>
+        <div class="ct-actions">
+          ${l.email?`<a class="primary-action" href="mailto:${esc(l.email)}?subject=${encodeURIComponent('Re: your message to '+(state.workspace.businessName||'us'))}">Reply by email</a>`:''}
+          ${l.phone?`<a class="secondary-button" href="tel:${esc(l.phone)}">Call</a><a class="secondary-button" href="sms:${esc(l.phone)}">Text</a>`:''}
+        </div>
+      </div>
+    </article>`;}).join('');
+  qsa('#contactList .ct-row').forEach(b=>b.onclick=()=>toggleContact(b.closest('[data-contact]').dataset.contact));
+}
+async function toggleContact(id){
+  const l=(state.leads||[]).find(x=>x.id===id);if(!l)return;
+  if(contactState.open.has(id))contactState.open.delete(id);else contactState.open.add(id);
+  renderContact();
+  const c=contactConversation(l);
+  if(contactState.open.has(id)&&c&&Number(c.unread)>0){
+    try{const d=await api(`/api/app/conversations/${c.id}`,{method:'PATCH',body:JSON.stringify({read:true})});c.unread=0;if(d.conversation)Object.assign(c,d.conversation);}catch(e){console.warn('Could not mark as read:',e.message);}
+    renderContact();renderBadges();
+  }
+}
+qsa('[data-ct-filter]').forEach(b=>b.onclick=()=>{contactState.filter=b.dataset.ctFilter==='unread'?'unread':'all';renderContact();});
+
 function renderAutomations(){qs('#automationList').innerHTML=state.automations.map(a=>`<button class="automation-card automation-toggle" data-auto="${a.id}"><span class="automation-icon">${a.id==='lead-confirmation'?'✦':a.id==='lead-alert'?'↗':'□'}</span><div><strong>${esc(a.name)}</strong><p>${esc(a.description)}</p></div><span class="toggle ${a.enabled?'on':''}"></span></button>`).join('');qsa('[data-auto]').forEach(b=>b.onclick=()=>toggleAutomation(b.dataset.auto));}
 function renderSettings(){qs('#settingsBusiness').value=state.workspace.businessName||'';qs('#settingsEmail').value=state.workspace.email||'';qs('#settingsPhone').value=state.workspace.phone||'';qs('#settingsTimezone').value=state.workspace.timezone||'';qs('#aiServices').value=state.workspace.ai?.services||'';qs('#aiServiceArea').value=state.workspace.ai?.serviceArea||'';qs('#aiTone').value=state.workspace.ai?.tone||'';const labels={supabase:'Database + Auth',openai:'AI engine',googlePlaces:'Google Places',resend:'Email',twilio:'SMS',stripe:'Stripe payments'};qs('#integrationList').innerHTML=Object.entries(labels).map(([k,l])=>`<div class="setting-row"><div><strong>${l}</strong><span>${state.integrations[k]?'Connected / configured':'Needs server credentials'}</span></div>${k==='stripe'&&state.integrations.stripe?`<button class="text-button" id="connectStripeButton">${state.workspace.stripeAccountId?'Reconnect':'Connect'}</button>`:`<span class="status-pill ${state.integrations[k]?'':'neutral'}">${state.integrations[k]?'LIVE':'OFF'}</span>`}</div>`).join('');const aiBadge=qs('#aiReceptionistBadge');if(aiBadge){const live=!!state.integrations.openai&&state.workspace.ai?.enabled!==false;aiBadge.textContent=live?'LIVE':'OFF';aiBadge.classList.toggle('neutral',!live);}const sb=qs('#connectStripeButton');if(sb)sb.onclick=async()=>{try{const d=await api('/api/app/integrations/stripe/connect',{method:'POST'});if(d.url)location.href=d.url}catch(e){alert(e.message)}};}
 function renderNotifications(){const actionable=[];state.conversations.filter(c=>Number(c.unread)>0).forEach(c=>actionable.push({kind:'conversation',id:c.id,title:`${c.unread} unread · ${c.name}`,detail:c.messages?.[c.messages.length-1]?.text||'New customer message',createdAt:c.updatedAt}));state.leads.filter(l=>l.status==='New').forEach(l=>actionable.push({kind:'lead',id:l.id,title:`New lead · ${l.name}`,detail:`${l.service} · ${l.source}`,createdAt:l.createdAt}));const items=[...actionable.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),...(state.activities||[]).slice(0,8)].slice(0,12);qs('#notificationList').innerHTML=items.length?items.map(a=>`<button class="notification-item" ${a.kind?`data-notify-kind="${a.kind}" data-notify-id="${a.id}"`:''}><strong>${esc(a.title)}</strong><span>${esc(a.detail||'')}</span><small>${relative(a.createdAt)}</small></button>`).join(''):'<div class="empty-state padded">Nothing needs attention.</div>';qsa('[data-notify-kind]').forEach(b=>b.onclick=()=>{qs('#notificationPopover').hidden=true;if(b.dataset.notifyKind==='lead'){switchView('leads');openLead(b.dataset.notifyId);}else{state.selectedConversationId=b.dataset.notifyId;switchView('inbox');renderInbox();}});renderBadges();}
@@ -1268,7 +1330,7 @@ if(qs('#adSpendForm'))qs('#adSpendForm').onsubmit=async e=>{e.preventDefault();c
 // response's ETag too (see the api() call above), so that first poll can
 // actually 304 like every one after it already could.
 let lastBootstrapETag=null;
-async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderWebsite();renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
+async function liveRefresh(){if(liveRefreshing||document.hidden||!state.user)return;liveRefreshing=true;document.body.classList.add('live-syncing');try{const before=renderBadges();const selectedConversationId=state.selectedConversationId,selectedLeadId=state.selectedLeadId;const headers={'Content-Type':'application/json'};if(lastBootstrapETag)headers['If-None-Match']=lastBootstrapETag;const res=await fetch('/api/app/bootstrap',{headers});if(res.status===304)return;const etag=res.headers.get('ETag');const d=await res.json().catch(()=>({}));if(!res.ok||d.ok===false)throw new Error(d.message||`Request failed (${res.status})`);if(etag)lastBootstrapETag=etag;Object.assign(state,{workspace:d.workspace||state.workspace,workspaces:d.workspaces||state.workspaces,user:d.user||state.user,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});state.selectedConversationId=selectedConversationId;state.selectedLeadId=selectedLeadId;const after={newLeads:state.leads.filter(l=>l.status==='New').length,unread:state.conversations.reduce((sum,c)=>sum+Math.max(0,Number(c.unread)||0),0)};renderWebsite();renderContact();renderDashboard();renderLeads();renderInbox();renderCalendar();renderPayments();renderAnalytics();renderNotifications();renderWebsiteProjects();fillLeadSelects();if(after.newLeads>lastLiveCounts.leads&&lastLiveCounts.leads>=0){const newest=state.leads.find(l=>l.status==='New');if(newest)showToast('New lead',`${newest.name} · ${newest.service}`);}else if(after.unread>lastLiveCounts.unread&&lastLiveCounts.unread>=0){const newest=state.conversations.find(c=>Number(c.unread)>0);if(newest)showToast('New customer message',newest.name);}lastLiveCounts={leads:after.newLeads,unread:after.unread};}catch(e){console.warn('Live refresh:',e.message);}finally{liveRefreshing=false;document.body.classList.remove('live-syncing');}}
 let liveSyncStarted=false;
 function startLiveSync(){if(liveSyncStarted||!state.user)return;liveSyncStarted=true;const c=renderBadges();lastLiveCounts={leads:c.newLeads,unread:c.unread};setInterval(liveRefresh,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)liveRefresh();});window.addEventListener('focus',liveRefresh);}
 if('serviceWorker' in navigator){
