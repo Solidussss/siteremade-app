@@ -848,6 +848,14 @@ body .ct-facts dd{margin:0;font-size:14px;color:var(--ink-900);overflow-wrap:any
 body .ct-facts a{color:var(--ink-900);text-underline-offset:3px;text-decoration-color:var(--line-strong)}
 body .ct-actions{display:flex;gap:8px;flex-wrap:wrap}
 body .ct-actions a{min-height:42px;padding:0 18px;font-size:13px;display:inline-flex;align-items:center;text-decoration:none}
+/* Phase 8: read-only conversation thread inside an opened contact */
+body .ct-thread h3{margin:0 0 8px;font-size:12px;font-weight:650;color:var(--ink-500)}
+body .ct-thread ol{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+body .ct-thread li{padding:10px 12px;border-radius:var(--radius-sm);background:var(--surface-sunken);max-width:640px}
+body .ct-thread li.ct-thread-us{background:var(--surface);border:1px solid var(--line)}
+body .ct-thread-who{display:flex;gap:8px;font-size:12px;font-weight:650;color:var(--ink-700)}
+body .ct-thread-who time{font-weight:400;color:var(--ink-500)}
+body .ct-thread p{margin:4px 0 0;font-size:14px;line-height:1.55;color:var(--ink-900);white-space:pre-wrap;overflow-wrap:anywhere}
 body .ct-empty{display:grid;gap:10px;max-width:560px;padding:48px 0 16px}
 body .ct-empty strong{font-family:var(--font-display);font-weight:560;font-size:clamp(24px,2.4vw,30px);line-height:1.2;color:var(--ink-900)}
 body .ct-empty span{font-size:15px;line-height:1.6;color:var(--ink-500)}

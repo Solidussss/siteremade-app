@@ -294,7 +294,13 @@ async function loadWebsiteAnalytics(force){
   catch(e){analyticsState.error=e.message||'Analytics unavailable';}
   finally{analyticsState.loading=false;renderAnalytics();}
 }
-function analyticsSubmissions(days){const since=Date.now()-days*86400000;return contactSubmissions().filter(l=>String(l.source||'').toLowerCase()!=='twilio sms'&&new Date(l.createdAt).getTime()>=since).length;}
+// Phase 8: "Form submissions" / conversion rate count only enquiries made ON
+// the website. Texts to the business number arrive with source 'Twilio SMS'
+// (routes/twilio-stripe.js) or 'Business SMS' (v40-twilio-subaccounts.js,
+// hosted/ported numbers); only the first was excluded, so every text to a
+// hosted number was counted as a website form submission.
+const SMS_SOURCES=new Set(['twilio sms','business sms']);
+function analyticsSubmissions(days){const since=Date.now()-days*86400000;return contactSubmissions().filter(l=>!SMS_SOURCES.has(String(l.source||'').trim().toLowerCase())&&new Date(l.createdAt).getTime()>=since).length;}
 function renderAnalytics(){
   const body=qs('#analyticsBody');if(!body)return;
   qsa('[data-an-days]').forEach(b=>{const on=Number(b.dataset.anDays)===analyticsState.days;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
@@ -315,7 +321,16 @@ function renderAnalytics(){
   if(!d.connected){
     if(range)range.hidden=true;
     qs('#analyticsSubtitle').textContent='Visitors, what they look at, and how many get in touch.';
-    body.innerHTML=`<div class="an-empty"><strong>Analytics will appear once your site is live.</strong><span>${d.domain?`We have your address (${esc(d.domain)}) but aren't receiving visits from it yet. Once your live site is sending visits, they show up here — nothing else to install.`:'As soon as your website is live and connected, you’ll see visitors, popular pages and enquiries here.'}</span>${d.domain?'':'<button type="button" class="text-link" data-an-settings>Add your website address in Settings</button>'}</div>`;
+    // Phase 8: connected:false means no analytics site exists for this
+    // workspace at all (routes/umami-analytics.js only reports connected
+    // once one is stored). With a domain on file that is a pre-Umami
+    // address (V12's website_analytics default provider) -- visits can
+    // never arrive until it is saved again, which is what sets tracking
+    // up. The old copy said "nothing else to install" and hid the
+    // Settings link in exactly that case: a dead end.
+    body.innerHTML=d.domain
+      ?`<div class="an-empty" id="analyticsNotSetUp"><strong>Visitor tracking isn’t set up yet.</strong><span>We have your address (${esc(d.domain)}), but analytics hasn’t been turned on for it, so no visits are being counted. Save the address in Settings to set it up — it takes a moment.</span><button type="button" class="text-link" data-an-settings>Set up in Settings</button></div>`
+      :`<div class="an-empty" id="analyticsNotSetUp"><strong>Analytics will appear once your site is live.</strong><span>As soon as your website is live and connected, you’ll see visitors, popular pages and enquiries here.</span><button type="button" class="text-link" data-an-settings>Add your website address in Settings</button></div>`;
     const go=body.querySelector('[data-an-settings]');if(go)go.onclick=()=>switchView('settings');
     return;
   }
@@ -856,12 +871,58 @@ async function loadCanonicalWebsite(force){
     try{
       const r=await fetch('/api/app/website',{headers:{'Content-Type':'application/json'}});
       const d=await r.json().catch(()=>({}));
-      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null});}
+      // Phase 8: a builder project existing is no longer enough to call this
+      // "Connected" -- the workspace also has to actually be LINKED to it
+      // (link.status !== 'not_linked'). A successful summary with
+      // link.status:'not_linked' means the builder has a real purchased
+      // project for this person, but nobody has connected it to this
+      // workspace yet -- exactly the "Connect a website" case below, same
+      // as no_project, not the "ready to edit" case.
+      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&(!d.link||d.link.status!=='not_linked')){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null});}
+      else if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&d.link&&d.link.status==='not_linked'){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'no_project',message:null});}
       else Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:d.code||'bridge_unavailable',message:d.message||null});
     }catch(e){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'bridge_unavailable',message:null});}
     finally{canonicalWebsite.loadedAt=Date.now();canonicalWebsite.inflight=null;safeRender('website',renderWebsite);safeRender('settings',renderSettings);}
   })();
   return canonicalWebsite.inflight;
+}
+// Phase 8: "connect a website" -- every SiteRemade website this signed-in
+// person has actually purchased, fetched fresh from the builder (GET
+// /api/app/website/candidates -> routes/website-bridge.js -> the builder's
+// GET /api/app-bridge/website/candidates, same token-verified ownership
+// check as everything else here). Separate from canonicalWebsite, which
+// only ever answers "what is THE linked/canonical project" -- this answers
+// "what COULD this workspace connect to", so the Website page can offer a
+// real 0/1/many "Connect a website" action instead of a dead end.
+const websiteCandidates={status:'idle',list:[],loadedAt:0,inflight:null,connecting:null,error:null};
+async function loadWebsiteCandidates(force){
+  if(websiteCandidates.inflight)return websiteCandidates.inflight;
+  if(!force&&websiteCandidates.status!=='idle'&&Date.now()-websiteCandidates.loadedAt<60000)return;
+  if(websiteCandidates.status==='idle')websiteCandidates.status='loading';
+  websiteCandidates.inflight=(async()=>{
+    try{
+      const r=await fetch('/api/app/website/candidates',{headers:{'Content-Type':'application/json'}});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&Array.isArray(d.candidates)){Object.assign(websiteCandidates,{status:'ready',list:d.candidates,error:null});}
+      else Object.assign(websiteCandidates,{status:'unavailable',list:[],error:null});
+    }catch(e){Object.assign(websiteCandidates,{status:'unavailable',list:[],error:null});}
+    finally{websiteCandidates.loadedAt=Date.now();websiteCandidates.inflight=null;safeRender('website',renderWebsite);}
+  })();
+  return websiteCandidates.inflight;
+}
+// The explicit connect action (POST /api/app/website/connect). Re-verified
+// server-side against a fresh candidates call there too -- this just names
+// which one the customer picked.
+async function connectWebsite(projectId){
+  if(websiteCandidates.connecting)return;
+  websiteCandidates.connecting=projectId;websiteCandidates.error=null;renderWebsiteBuilderBlock();
+  try{
+    await api('/api/app/website/connect',{method:'POST',body:JSON.stringify({projectId})});
+    websiteCandidates.connecting=null;
+    await Promise.all([loadCanonicalWebsite(true),loadWebsiteCandidates(true)]);
+  }catch(e){
+    websiteCandidates.connecting=null;websiteCandidates.error=e.message||'Couldn’t connect your website right now.';renderWebsiteBuilderBlock();
+  }
 }
 // The single seam the editor uses to reach the builder. Real network calls
 // only when the builder genuinely returned this customer's project;
@@ -967,17 +1028,58 @@ function renderWebsite(){
   renderWebsiteBuilderBlock();renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
 }
 // "Builder project" support block: real connection state, never guessed.
+// Phase 8: when there's no link yet, this is now a real "Connect a
+// website" action (0/1/many purchased-project cases), not just a status
+// message -- see websiteCandidates above.
 function renderWebsiteBuilderBlock(){
   const host=qs('#websiteBuilder');if(!host)return;
   const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null,code=canonicalWebsite.code,st=canonicalWebsite.status;
-  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt,c.link&&c.link.status]]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt,c.link&&c.link.status],websiteCandidates.status,websiteCandidates.list,websiteCandidates.connecting,websiteCandidates.error]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
   const link='<a class="site-support-link" href="/handoff/website-builder">Open the SiteRemade builder ↗</a>';
   if(c){
     host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connected</h3><p>Version ${esc(String(c.revision))}${c.updatedAt?` · last edited ${esc(dateLabel(c.updatedAt))}`:''}. ${c.status==='purchased'?(c.lastPublishedAt?`Last published ${esc(dateLabel(c.lastPublishedAt))}.`:'Not re-published since purchase.'):'Not purchased yet — edits are saved as drafts.'} Updates you ask for above are saved straight to this project.</p>${c.link&&(c.link.status==='mismatch'||c.link.status==='conflict')?`<p class="site-support-note" id="websiteLinkNote">${c.link.status==='mismatch'?'This business is linked to a different builder website than the one your account shows now. Nothing was changed — contact SiteRemade if that isn’t expected.':'This builder website is already linked to another business on SiteRemade. Contact SiteRemade if that isn’t expected.'}</p>`:''}${link}`;
     return;
   }
-  const why={identity_not_linked:'Your SiteRemade account isn’t linked to the builder yet, so live editing, publishing and deployment status can’t be shown or changed from here.',no_project:'There’s no website in the SiteRemade builder for your account yet.',workspace_mismatch:canonicalWebsite.message||'Builder data isn’t shown for this workspace.'}[code];
-  host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>${st==='loading'?'Checking…':'Not connected yet'}</h3><p>${esc(why||'Your site\'s editable source lives in the SiteRemade builder. This app doesn\'t receive it yet, so live editing, publishing and deployment status can\'t be shown or changed from here.')}</p>${link}`;
+  // Staff viewing a customer workspace, or an account tied to more than one
+  // business: never shown a connect chooser here (that's exactly the
+  // ambiguity workspaceGate exists to avoid) -- Admin's "Website links"
+  // panel is the right place for staff, and a multi-workspace person picks
+  // a workspace elsewhere in this app first.
+  if(code==='workspace_mismatch'){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Not connected here</h3><p>${esc(canonicalWebsite.message||'Builder data isn’t shown for this workspace.')}</p>${link}`;
+    return;
+  }
+  if(code==='identity_not_linked'){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>${st==='loading'?'Checking…':'Not connected yet'}</h3><p>Your SiteRemade account isn’t linked to the builder yet, so live editing, publishing and deployment status can’t be shown or changed from here.</p>${link}`;
+    return;
+  }
+  // Every other case (no_project, or the canonical lookup simply hasn't
+  // resolved) is exactly where a real connect flow belongs: ask the
+  // builder, with this same session, what this person has actually bought.
+  if(websiteCandidates.status==='idle')loadWebsiteCandidates();
+  if(st==='loading'||websiteCandidates.status==='loading'){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Checking…</h3><p>Looking for your SiteRemade websites…</p>`;
+    return;
+  }
+  if(websiteCandidates.status==='unavailable'){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Not connected yet</h3><p>${esc(canonicalWebsite.message||'Your site\'s editable source lives in the SiteRemade builder. This app couldn\'t check your SiteRemade websites just now.')}</p>${link}`;
+    return;
+  }
+  const cands=websiteCandidates.list,errLine=websiteCandidates.error?`<p class="modal-status" role="status">${esc(websiteCandidates.error)}</p>`:'';
+  if(!cands.length){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connect a website</h3><p>We didn’t find a purchased SiteRemade website on your account yet. Once you’ve bought one in the builder, it’ll show up here to connect.</p>${link}`;
+    return;
+  }
+  const nameOf=k=>k.businessName||k.name||'Untitled website';
+  if(cands.length===1){
+    const k=cands[0],dom=k.domains&&k.domains[0]?k.domains[0].domain:null,busy=websiteCandidates.connecting===k.projectId;
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>We found your SiteRemade website</h3><p>“${esc(nameOf(k))}”${dom?` · ${esc(dom)}`:''} — connect it to start editing, publishing and seeing its status from here.</p><div class="admin-relink-actions"><button type="button" class="primary-action" id="websiteConnectSingle" ${busy?'disabled':''}>${busy?'Connecting…':'Connect this website'}</button></div>${errLine}${link}`;
+    const btn=qs('#websiteConnectSingle');if(btn)btn.onclick=()=>connectWebsite(k.projectId);
+    return;
+  }
+  const cardFor=k=>{const dom=k.domains&&k.domains[0]?k.domains[0].domain:null;return `<label class="admin-relink-option"><input type="radio" name="website-connect-pick" value="${esc(k.projectId)}" ${websiteCandidates.connecting?'disabled':''}><span><strong>${esc(nameOf(k))}</strong>${dom?` · ${esc(dom)}`:''} · version ${k.revision!==null&&k.revision!==undefined?esc(String(k.revision)):'—'}${k.purchasedAt?` · purchased ${esc(dateLabel(k.purchasedAt))}`:''}</span></label>`;};
+  host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connect a website</h3><p>We found ${cands.length} SiteRemade websites on your account. Choose the one for this business.</p><fieldset class="admin-relink-list">${cands.map(cardFor).join('')}</fieldset><div class="admin-relink-actions"><button type="button" class="primary-action" id="websiteConnectChosen" ${websiteCandidates.connecting?'disabled':''}>${websiteCandidates.connecting?'Connecting…':'Connect'}</button></div>${errLine}${link}`;
+  const goBtn=qs('#websiteConnectChosen');if(goBtn)goBtn.onclick=()=>{const picked=qs('input[name="website-connect-pick"]:checked');if(!picked){websiteCandidates.error='Choose a website first.';host.dataset.sig='';renderWebsiteBuilderBlock();return;}connectWebsite(picked.value);};
 }
 function setWebsiteFrame(url){
   const f=qs('#websiteFrame'),empty=qs('#websiteEmpty');if(!f||!empty)return;
@@ -1172,7 +1274,15 @@ if(qs('#websitePublishButton'))qs('#websitePublishButton').onclick=()=>publishWe
 // came from, when. Opening one marks it read through the existing
 // PATCH /api/app/conversations/:id {read:true}. Nothing here edits a lead.
 const contactState={filter:'all',open:new Set()};
-const CONTACT_SOURCE_LABELS={'website':'Website form','ai chat':'Website chat','twilio sms':'Text message'};
+const CONTACT_SOURCE_LABELS={'website':'Website form','ai chat':'Website chat','twilio sms':'Text message','business sms':'Text message'};
+// Phase 8: everything after the first message of a contact (a second text,
+// the chat's back-and-forth, email replies pulled in by Gmail sync) only
+// ever lived in the conversation -- it raised the unread count, but nothing
+// in the customer UI showed it. The detail panel now lists the thread
+// (read-only; same rows GET /api/app/bootstrap already returns).
+const CONTACT_SENDER_LABELS={customer:'Them',ai:'Chat assistant',business:'You',human:'You'};
+function contactThread(l){return ((contactConversation(l)?.messages)||[]).filter(m=>String(m.text||'').trim());}
+function contactThreadHtml(l,msg){const t=contactThread(l);if(!t.length||(t.length===1&&t[0].from==='customer'&&String(t[0].text).trim()===String(msg||'').trim()))return '';return `<section class="ct-thread" aria-label="Conversation"><h3>Conversation</h3><ol>${t.map(m=>`<li class="ct-thread-${m.from==='customer'?'them':'us'}"><span class="ct-thread-who">${esc(CONTACT_SENDER_LABELS[m.from]||'You')}<time datetime="${esc(m.createdAt)}" title="${esc(dateTimeLabel(m.createdAt))}">${esc(contactWhen(m.createdAt))}</time></span><p>${esc(m.text)}</p></li>`).join('')}</ol></section>`;}
 function contactSourceLabel(l){const k=String(l.source||'').trim().toLowerCase();return CONTACT_SOURCE_LABELS[k]||l.source||'Website';}
 function contactMessage(l){if(String(l.message||'').trim())return l.message;const c=contactConversation(l);const m=(c?.messages||[]).find(x=>x.from==='customer'&&String(x.text||'').trim());return m?m.text:'';}
 function contactWhen(iso){const t=new Date(iso).getTime();if(!Number.isFinite(t))return '';const m=Math.max(0,Math.round((Date.now()-t)/60000));if(m<1)return 'Just now';if(m<60)return `${m} min ago`;if(m<1440){const h=Math.round(m/60);return `${h} hour${h===1?'':'s'} ago`;}if(m<2880)return 'Yesterday';return dateLabel(iso);}
@@ -1182,7 +1292,7 @@ function renderContact(){
   const uc=qs('#contactUnreadCount');if(uc)uc.textContent=unread.length?` · ${unread.length}`:'';
   qsa('[data-ct-filter]').forEach(b=>{const on=b.dataset.ctFilter===contactState.filter;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
   const excluded=(state.leads||[]).length-all.length,foot=qs('#contactFootnote');if(foot)foot.hidden=excluded<=0;
-  const sig=JSON.stringify([contactState.filter,[...contactState.open],rows.map(l=>[l.id,l.updatedAt,isContactUnread(l),contactMessage(l).length])]);
+  const sig=JSON.stringify([contactState.filter,[...contactState.open],rows.map(l=>{const cv=contactConversation(l);return [l.id,l.updatedAt,isContactUnread(l),contactMessage(l).length,cv?.unread||0,cv?.messages?.length||0];})]);
   if(host.dataset.sig===sig)return;host.dataset.sig=sig;
   if(!rows.length){host.innerHTML=all.length?'<div class="ct-empty"><strong>You’re all caught up.</strong><span>Nothing unread right now.</span></div>':'<div class="ct-empty"><strong>Contact form submissions will appear here.</strong><span>When someone fills in the form or chats on your website, you’ll see who they are, how to reach them and what they asked — right here.</span></div>';return;}
   host.innerHTML=rows.map(l=>{
@@ -1198,6 +1308,7 @@ function renderContact(){
       </button>
       <div class="ct-detail" id="ct-d-${esc(l.id)}" ${open?'':'hidden'}>
         ${msg?`<p class="ct-full">${esc(msg)}</p>`:''}
+        ${contactThreadHtml(l,msg)}
         <dl class="ct-facts">
           ${l.email?`<div><dt>Email</dt><dd><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></dd></div>`:''}
           ${l.phone?`<div><dt>Phone</dt><dd><a href="tel:${esc(l.phone)}">${esc(l.phone)}</a></dd></div>`:''}
@@ -1321,7 +1432,11 @@ function renderSettings(){
   set('aiServices',w.ai?.services);set('aiServiceArea',w.ai?.serviceArea);set('aiTone',w.ai?.tone);
   set('settingsDomain',state.websiteAnalytics?.domain);
   const signed=qs('#settingsSignedIn');if(signed&&state.user)signed.textContent=`${state.user.name||''}${state.user.email&&state.user.email!==state.user.name?` · ${state.user.email}`:''}`;
-  const ai=qs('#aiReceptionistBadge');if(ai){const live=!!(state.integrations.openai||state.integrations.anthropic)&&w.ai?.enabled!==false;setChip(ai,live?'On':'Off',live?'success':'neutral');}
+  // Phase 8: the website chat's AI replies come ONLY from OpenAI
+  // (server.js externalAI(); /api/public/chat never calls Anthropic, which
+  // is used for website briefs), so an Anthropic-only server showed "On"
+  // while visitors got the built-in scripted replies. Three honest states.
+  const ai=qs('#aiReceptionistBadge');if(ai){const enabled=w.ai?.enabled!==false,live=enabled&&!!state.integrations.openai;setChip(ai,live?'AI replies on':enabled?'Basic replies':'Off',live?'success':'neutral');ai.title=live?'Replies are written by AI using the details below.':enabled?'AI replies aren’t turned on for SiteRemade yet. The chat asks a few standard questions and passes the conversation to you.':'The chat only confirms that a message was received.';}
   const code=qs('#settingsEmbedCode');if(code)code.textContent=`<script src="${location.origin}/widget.js" data-workspace="${w.id||''}" data-public-key="${w.publicKey||''}"></script>`;
   // Domain & hosting — read-only, and honest about what isn't reported yet.
   const snap=websiteSnapshot(),dr=qs('#settingsDomainRows');
@@ -1523,7 +1638,7 @@ if(qs('#manageBillingButton'))qs('#manageBillingButton').onclick=async()=>{const
 if(qs('#adFundForm'))qs('#adFundForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#adFundStatus');out.textContent='Opening secure checkout…';try{const d=await api('/api/app/ad-funds',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(d.url)location.href=d.url}catch(err){out.textContent=err.message}};
 
 async function toggleAutomation(id){const a=state.automations.find(x=>x.id===id);if(!a)return;try{await api(`/api/app/automations/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!a.enabled})});await refreshLight();}catch(e){alert(e.message)}}
-qs('#settingsForm').onsubmit=async e=>{e.preventDefault();const out=qs('#settingsStatus');out.textContent='Saving…';try{const d=await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});state.workspace=d.workspace;renderAll();out.textContent='Saved.';setTimeout(()=>out.textContent='',1500)}catch(err){out.textContent=err.message}};
+qs('#settingsForm').onsubmit=async e=>{e.preventDefault();const out=qs('#settingsStatus');out.textContent='Saving…';try{const d=await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});state.workspace=d.workspace;state.workspaces=(state.workspaces||[]).map(x=>x.id===d.workspace.id?d.workspace:x);renderAll();out.textContent='Saved.';setTimeout(()=>out.textContent='',1500)}catch(err){out.textContent=err.message}};
 
 qsa('[data-close]').forEach(b=>b.onclick=()=>hideModal(b.dataset.close));qsa('.modal-backdrop').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.hidden=true}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){qsa('.modal-backdrop').forEach(m=>m.hidden=true);qs('#leadDrawer').hidden=true;qs('#notificationPopover').hidden=true;}});
 
@@ -1545,7 +1660,7 @@ const BUILDER_BRIDGE_COPY={on:'Builder connection: on.',off:'Builder connection:
 function renderAdminWebsite(d){const host=qs('#adminWebsiteList');if(!host)return;const short=id=>{const s=String(id||'');return s.length>14?`${s.slice(0,9)}…${s.slice(-4)}`:s;};
   const bridgeLine=d.builderBridge&&BUILDER_BRIDGE_COPY[d.builderBridge]?`<p class="helper-copy admin-bridge-state" id="adminBuilderBridge" data-state="${esc(d.builderBridge)}">${esc(BUILDER_BRIDGE_COPY[d.builderBridge])}</p>`:'';
   if(d.websiteLinksAvailable===false){host.innerHTML=bridgeLine+'<p class="helper-copy">Website links aren’t available yet — the V52 migration hasn’t been applied.</p>';}
-  else host.innerHTML=bridgeLine+(d.websiteLinkCandidatesAvailable===false?'<p class="helper-copy">Reviewing a link needs the V53 migration, which hasn’t been applied yet.</p>':'')+d.workspaces.map(w=>{const x=w.website||{linked:false};const detail=x.linked?`${esc(short(x.projectId))}${x.lastSeenRevision!==null?` · version ${esc(String(x.lastSeenRevision))}`:''}${x.linkedAt?` · linked ${esc(dateLabel(x.linkedAt))}`:''} · ${x.analyticsReady?'Analytics site ready':'Analytics site not set up yet'}${x.needsReview?` · builder now reports ${esc(short(x.reportedProjectId))} — link left unchanged`:''}`:'Links itself the first time the customer opens their Website view with a purchased builder project.';
+  else host.innerHTML=bridgeLine+(d.websiteLinkCandidatesAvailable===false?'<p class="helper-copy">Reviewing a link needs the V53 migration, which hasn’t been applied yet.</p>':'')+d.workspaces.map(w=>{const x=w.website||{linked:false};const detail=x.linked?`${esc(short(x.projectId))}${x.lastSeenRevision!==null?` · version ${esc(String(x.lastSeenRevision))}`:''}${x.linkedAt?` · linked ${esc(dateLabel(x.linkedAt))}`:''} · ${x.analyticsReady?'Analytics site ready':'Analytics site not set up yet'}${x.needsReview?` · builder now reports ${esc(short(x.reportedProjectId))} — link left unchanged`:''}`:'The customer connects this themselves from their Website page — Admin has no way to see or choose their purchases without their own sign-in (see routes/website-bridge.js workspaceGate).';
     const open=x.needsReview&&adminRelink.open===w.id;
     const resolveBtn=x.needsReview?`<button type="button" class="secondary-button" data-relink-open="${esc(w.id)}" aria-expanded="${open?'true':'false'}">${open?'Close':'Resolve'}</button>`:'';
     let panel='';
@@ -1663,9 +1778,15 @@ qs('#showForgotFromReset').onclick=()=>{
 qs('#logoutButton').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload()};
 qs('#workspaceSwitchButton').onclick=()=>{const m=qs('#workspaceMenu');m.hidden=!m.hidden};
 qs('#aiSettingsForm').onsubmit=async e=>{e.preventDefault();const out=qs('#aiSettingsStatus');if(out)out.textContent='Saving…';try{await api('/api/app/settings',{method:'PATCH',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});await refreshLight();if(out)out.textContent='Saved.';}catch(err){if(out)out.textContent=err.message;}};
-if(qs('#testAiButton'))qs('#testAiButton').onclick=()=>{const demo=qs('#widgetDemo');demo.hidden=false;const msgs=qs('#widgetMessages');msgs.innerHTML='<div class="widget-bubble ai">Hi — tell me what you need help with and I’ll get the details for the business.</div>';};
+// Phase 8: "Try the chat" is a preview (POST /api/app/chat-preview): the same
+// reply the live widget would give, but nothing is saved -- it used to post
+// to the public widget endpoint and leave a real "Website chat" contact
+// behind for every test. History is kept here, in the page, only.
+let widgetPreviewHistory=[];
+const WIDGET_PREVIEW_MODE={ai:'Replies written by AI — this is what visitors would see. Preview only: nothing is saved or added to Contact.',basic:'AI replies aren’t turned on, so the chat uses its built-in questions — this is what visitors would see. Preview only: nothing is saved or added to Contact.',off:'The chat assistant is off, so visitors only get a “message received” reply. Preview only: nothing is saved or added to Contact.'};
+if(qs('#testAiButton'))qs('#testAiButton').onclick=()=>{const demo=qs('#widgetDemo');demo.hidden=false;widgetPreviewHistory=[];const msgs=qs('#widgetMessages');msgs.innerHTML='<div class="widget-bubble ai">Hi — tell me what you need help with and I’ll get the details for the business.</div>';const note=qs('#widgetPreviewNote');if(note)note.textContent='Preview only: nothing you type here is saved or added to Contact.';};
 if(qs('#closeWidgetDemo'))qs('#closeWidgetDemo').onclick=()=>qs('#widgetDemo').hidden=true;
-if(qs('#widgetForm'))qs('#widgetForm').onsubmit=async e=>{e.preventDefault();const text=qs('#widgetText').value.trim();if(!text)return;const msgs=qs('#widgetMessages');const safe=esc(text);msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble customer">${safe}</div>`);qs('#widgetText').value='';try{const d=await api('/api/public/chat',{method:'POST',body:JSON.stringify({workspaceId:state.workspace.id,publicKey:state.workspace.publicKey,leadId:qs('#widgetForm').dataset.leadId||'',name:qs('#widgetName').value.trim(),email:qs('#widgetEmail').value.trim(),phone:qs('#widgetPhone').value.trim(),text})});qs('#widgetForm').dataset.leadId=d.leadId||'';if(d.reply)msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(d.reply)}</div>`);else msgs.insertAdjacentHTML('beforeend','<div class="widget-bubble ai">Message sent to the team. They can reply here or by email/SMS.</div>');}catch(err){msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(err.message)}</div>`);}msgs.scrollTop=msgs.scrollHeight;};
+if(qs('#widgetForm'))qs('#widgetForm').onsubmit=async e=>{e.preventDefault();const text=qs('#widgetText').value.trim();if(!text)return;const msgs=qs('#widgetMessages');const safe=esc(text);msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble customer">${safe}</div>`);qs('#widgetText').value='';try{const d=await api('/api/app/chat-preview',{method:'POST',body:JSON.stringify({text,history:widgetPreviewHistory})});widgetPreviewHistory.push({from:'customer',text},{from:'ai',text:d.reply||''});widgetPreviewHistory=widgetPreviewHistory.slice(-18);msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(d.reply||'')}</div>`);const note=qs('#widgetPreviewNote');if(note)note.textContent=WIDGET_PREVIEW_MODE[d.mode]||WIDGET_PREVIEW_MODE.basic;}catch(err){msgs.insertAdjacentHTML('beforeend',`<div class="widget-bubble ai">${esc(err.message)}</div>`);}msgs.scrollTop=msgs.scrollHeight;};
 qs('#workspaceForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const out=qs('#workspaceFormStatus');try{await api('/api/app/workspaces',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});form.reset();out.textContent='Workspace created.';await refreshLight();}catch(err){out.textContent=err.message}};
 qs('#userForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;const out=qs('#userFormStatus');try{await api('/api/app/users',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});form.reset();out.textContent='User created.';await renderAdmin();}catch(err){out.textContent=err.message}};
 

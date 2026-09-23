@@ -26,6 +26,9 @@ const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
 const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
 const clean = (v,n=2000) => String(v ?? '').trim().slice(0,n);
+// Phase 8: PATCH /api/app/settings validation helpers.
+const SETTINGS_EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function validTimeZone(tz){try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return true;}catch{return false;}}
 const signupAttempts=new Map();
 // Phase 6: client IP comes from lib/public-rate-limit.js's clientIp() (Railway's
 // edge-set X-Real-IP first) instead of trusting the first X-Forwarded-For entry.
@@ -577,6 +580,25 @@ async function api(req,res,u){
   }
 
   if(m==='POST'&&p==='/api/app/assistant'){const b=await body(req),message=clean(b.message,3000);if(!message)return json(res,400,{ok:false,message:'Ask a question first.'});const result=await businessAssistant(c,message);return json(res,200,{ok:true,...result});}
+  // Phase 8: Settings -> "Try the chat". It used to post to the public
+  // widget endpoint (/api/public/chat) with the workspace's own public key,
+  // so every test created a real "AI Chat" lead + conversation: a fake entry
+  // in Contact ("Who contacted you") that can't be deleted there, counted as
+  // a website form submission in Analytics. This answers with exactly the
+  // reply the live widget would give (same externalAI()/localAI() and the
+  // same per-workspace AI budget as /api/public/chat) and writes nothing.
+  // mode: 'ai' (OpenAI wrote it), 'basic' (built-in replies: no OpenAI key,
+  // AI error, or budget spent), 'off' (the assistant is disabled).
+  if(m==='POST'&&p==='/api/app/chat-preview'){
+    const b=await body(req),text=clean(b.text,4000);if(!text)return json(res,400,{ok:false,message:'Type a message first.'});
+    const w=c.workspace,history=(Array.isArray(b.history)?b.history:[]).slice(-9).map(x=>({sender:x&&x.from==='customer'?'customer':'ai',text:clean(x&&x.text,4000)})).filter(x=>x.text);
+    let reply=null,mode='off';
+    if(w.ai_enabled){
+      if(process.env.OPENAI_API_KEY&&publicLimits.chatAiPerWorkspace.take(w.id).ok){reply=await externalAI(w,[...history,{sender:'customer',text}]).catch(()=>null);if(reply)mode='ai';}
+      if(!reply){reply=localAI(w,text);mode='basic';}
+    }else reply=`Thanks for reaching out to ${w.business_name}. Your message has been received and the team will follow up.`;
+    return json(res,200,{ok:true,reply,mode,saved:false});
+  }
   let x;
   if(m==='POST'&&p==='/api/app/website-updates'){
     const b=await body(req),page=clean(b.page,80)||'Other',priority=['Normal','Important'].includes(clean(b.priority,30))?clean(b.priority,30):'Normal',request=clean(b.request,4000),notes=clean(b.notes,4000);
@@ -768,7 +790,17 @@ return json(res,201,{ok:true,lead:mapLead(l)});
     return json(res,200,{ok:true,deletedId:invoiceId});
   }
   x=p.match(/^\/api\/app\/automations\/([^/]+)$/);if(x&&m==='PATCH'){const b=await body(req),a=await q(db.from('automations').update({enabled:!!b.enabled}).eq('workspace_id',c.wid).eq('automation_key',x[1]).select('*').single());return json(res,200,{ok:true,automation:mapAutomation(a)});}
-  if(m==='PATCH'&&p==='/api/app/settings'){const b=await body(req),patch={};for(const [js,sql,n] of [['businessName','business_name',160],['email','email',254],['phone','phone',80],['timezone','timezone',100],['currency','currency',10],['services','ai_services',2000],['serviceArea','ai_service_area',1000],['tone','ai_tone',500]])if(b[js]!==undefined)patch[sql]=clean(b[js],n);const w=await q(db.from('workspaces').update(patch).eq('id',c.wid).select('*').single());return json(res,200,{ok:true,workspace:mapWorkspace(w)});}
+  // Phase 8: the three Account fields that other code depends on are
+  // validated before anything is written (a 400 writes nothing). A time
+  // zone Intl doesn't know is sent verbatim as `timeZone` to Google
+  // Calendar by routes/google-calendar.js (which rejects it, breaking sync);
+  // a malformed alert email makes every new-contact alert silently go
+  // nowhere; a blank business name blanks the workspace everywhere.
+  if(m==='PATCH'&&p==='/api/app/settings'){const b=await body(req),patch={};for(const [js,sql,n] of [['businessName','business_name',160],['email','email',254],['phone','phone',80],['timezone','timezone',100],['currency','currency',10],['services','ai_services',2000],['serviceArea','ai_service_area',1000],['tone','ai_tone',500]])if(b[js]!==undefined)patch[sql]=clean(b[js],n);
+    if(patch.business_name!==undefined&&!patch.business_name)return json(res,400,{ok:false,field:'businessName',message:'Business name can’t be empty.'});
+    if(patch.email&&!SETTINGS_EMAIL_RE.test(patch.email))return json(res,400,{ok:false,field:'email',message:'Enter a valid email address for new-contact alerts.'});
+    if(patch.timezone&&!validTimeZone(patch.timezone))return json(res,400,{ok:false,field:'timezone',message:'That time zone isn’t recognised. Use a name like America/Edmonton or America/Toronto.'});
+    const w=await q(db.from('workspaces').update(patch).eq('id',c.wid).select('*').single());return json(res,200,{ok:true,workspace:mapWorkspace(w)});}
   // Phase 5: staff-only Website status per workspace (builder project link,
   // last seen revision, analytics provisioning) + the server-wide contact
   // intake protection. Reference data only; tolerant of V52 not applied.

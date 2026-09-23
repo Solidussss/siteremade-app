@@ -108,6 +108,13 @@ function registerUmamiAnalyticsRoutes(router) {
     try {
       const b = await readBody(req), domain = domainOf(b.domain);
       if (!domain || !umamiDomainOk(domain)) return json(res, 400, { ok: false, message: 'Enter a valid website domain.' });
+      // Phase 8: without UMAMI_* nothing can be set up and nothing is
+      // written (ensureWorkspaceSite would throw before its upsert), so say
+      // exactly that in customer terms -- this message is shown verbatim
+      // under Settings -> "Your website address". It used to surface as a
+      // 502 "Umami is not configured", which read like a transient outage
+      // and never said the address hadn't been kept.
+      if (!BASE || !USER || !PASS) return json(res, 503, { ok: false, code: 'analytics_not_configured', message: 'Visitor analytics isn’t available on SiteRemade yet, so your address wasn’t saved. Nothing on your website has changed.' });
       const id = await ensureWebsite(c, domain, b.businessName);
       return json(res, 200, { ok: true, connected: true, domain, tracker: { src: BASE + '/script.js', websiteId: id }, websiteAnalytics: { domain, provider: 'umami', connected: true } });
     } catch (e) {
