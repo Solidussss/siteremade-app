@@ -32,8 +32,16 @@ const signupAttempts=new Map();
 function signupAllowed(req){const ip=publicLimits.clientIp(req);const t=Date.now(),windowMs=3600000,max=5;const recent=(signupAttempts.get(ip)||[]).filter(x=>t-x<windowMs);if(recent.length>=max)return false;recent.push(t);signupAttempts.set(ip,recent);return true;}
 
 
-async function q(promise){const {data,error}=await promise;if(error)throw error;return data;}
-async function qc(promise){const {data,error,count}=await promise;if(error)throw error;return {data,count};}
+function queryError(label,error){
+  const message=error?.message||error?.code||'Database query failed';
+  const wrapped=new Error(label?`${label}: ${message}`:message);
+  wrapped.code=error?.code||'';
+  wrapped.details=error?.details||'';
+  wrapped.hint=error?.hint||'';
+  return wrapped;
+}
+async function q(promise,label=''){const {data,error}=await promise;if(error)throw queryError(label,error);return data;}
+async function qc(promise,label=''){const {data,error,count}=await promise;if(error)throw queryError(label,error);return {data,count};}
 function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
@@ -116,19 +124,19 @@ async function activity(wid,type,title,detail){await db.from('activities').inser
 async function audit(userId,wid,action,detail){await db.from('audit_logs').insert({user_id:userId,workspace_id:wid||null,action,detail:clean(detail,1000)});}
 async function workspaceSnapshot(c){
   const [leads,convs,msgs,apps,invoices,autos,activities,adSpend,adFunds,prospectViews,websiteAnalytics,websiteUpdates,websiteProjects] = await Promise.all([
-    q(db.from('leads').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false})),
-    q(db.from('conversations').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false})),
-    q(db.from('messages').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true})),
-    q(db.from('appointments').select('*').eq('workspace_id',c.wid).order('start_at',{ascending:true})),
-    q(db.from('invoices').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false})),
-    q(db.from('automations').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true})),
-    q(db.from('activities').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
-    q(db.from('ad_spend').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
-    q(db.from('ad_funds').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
-    q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000)),
-    q(db.from('website_analytics').select('*').eq('workspace_id',c.wid).maybeSingle()),
-    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200)),
-    q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200))
+    q(db.from('leads').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}),'bootstrap snapshot leads'),
+    q(db.from('conversations').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}),'bootstrap snapshot conversations'),
+    q(db.from('messages').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true}),'bootstrap snapshot messages'),
+    q(db.from('appointments').select('*').eq('workspace_id',c.wid).order('start_at',{ascending:true}),'bootstrap snapshot appointments'),
+    q(db.from('invoices').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}),'bootstrap snapshot invoices'),
+    q(db.from('automations').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:true}),'bootstrap snapshot automations'),
+    q(db.from('activities').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200),'bootstrap snapshot activities'),
+    q(db.from('ad_spend').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200),'bootstrap snapshot ad_spend'),
+    q(db.from('ad_funds').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200),'bootstrap snapshot ad_funds'),
+    q(db.from('prospect_views').select('place_id').eq('workspace_id',c.wid).limit(5000),'bootstrap snapshot prospect_views'),
+    q(db.from('website_analytics').select('*').eq('workspace_id',c.wid).maybeSingle(),'bootstrap snapshot website_analytics'),
+    q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200),'bootstrap snapshot website_updates'),
+    q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200),'bootstrap snapshot website_projects')
   ]);
   return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
 }
@@ -167,9 +175,9 @@ async function workspaceSnapshot(c){
 //     path (routes/umami-analytics.js) always bumps its own `updated_at` —
 //     so that column alone is the fingerprint, no extra columns needed.
 async function workspaceFingerprint(wid){
-  const countLatest=(table,ts)=>qc(db.from(table).select(`id,${ts}`,{count:'exact'}).eq('workspace_id',wid).order(ts,{ascending:false}).limit(1));
-  const countOnly=(table)=>qc(db.from(table).select('id',{count:'exact',head:true}).eq('workspace_id',wid));
-  const latestFundedAt=qc(db.from('ad_funds').select('id,funded_at',{count:'exact'}).eq('workspace_id',wid).not('funded_at','is',null).order('funded_at',{ascending:false}).limit(1));
+  const countLatest=(table,ts)=>qc(db.from(table).select(`id,${ts}`,{count:'exact'}).eq('workspace_id',wid).order(ts,{ascending:false}).limit(1),`bootstrap fingerprint ${table}.${ts}`);
+  const countOnly=(table)=>qc(db.from(table).select('id',{count:'exact',head:true}).eq('workspace_id',wid),`bootstrap fingerprint ${table}.count`);
+  const latestFundedAt=qc(db.from('ad_funds').select('id,funded_at',{count:'exact'}).eq('workspace_id',wid).not('funded_at','is',null).order('funded_at',{ascending:false}).limit(1),'bootstrap fingerprint ad_funds.funded_at');
   const [leads,convs,msgs,apps,activities,adSpend,adFunds,fundedAt,prospectViews,websiteUpdates,websiteProjects,invoices,autos,websiteAnalytics]=await Promise.all([
     countLatest('leads','updated_at'),
     countLatest('conversations','updated_at'),
@@ -182,9 +190,9 @@ async function workspaceFingerprint(wid){
     countOnly('prospect_views'),
     countLatest('website_updates','updated_at'),
     countLatest('website_projects','updated_at'),
-    q(db.from('invoices').select('id,status,paid_at').eq('workspace_id',wid)),
-    q(db.from('automations').select('automation_key,enabled').eq('workspace_id',wid)),
-    q(db.from('website_analytics').select('updated_at').eq('workspace_id',wid).maybeSingle())
+    q(db.from('invoices').select('id,status,paid_at').eq('workspace_id',wid),'bootstrap fingerprint invoices'),
+    q(db.from('automations').select('automation_key,enabled').eq('workspace_id',wid),'bootstrap fingerprint automations'),
+    q(db.from('website_analytics').select('updated_at').eq('workspace_id',wid).maybeSingle(),'bootstrap fingerprint website_analytics')
   ]);
   const sortedInvoices=[...invoices].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
   const sortedAutos=[...autos].sort((a,b)=>a.automation_key<b.automation_key?-1:a.automation_key>b.automation_key?1:0);
@@ -785,4 +793,4 @@ function serve(res,p,req){let rel=p==='/'?'index.html':decodeURIComponent(p.slic
 setInterval(processAppointmentReminders,15*60*1000).unref();
 setTimeout(processAppointmentReminders,5000).unref();
 
-http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(await router.dispatch(req,res,u,json))return;if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname,req))return;serve(res,'/',req);}catch(e){console.error(e);if(!res.headersSent)json(res,500,{ok:false,message:e.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
+http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(await router.dispatch(req,res,u,json))return;if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname,req))return;serve(res,'/',req);}catch(e){console.error('Unhandled request error',{message:e?.message||'',code:e?.code||'',details:e?.details||'',hint:e?.hint||'',stack:e?.stack||''});if(!res.headersSent)json(res,500,{ok:false,message:e?.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
