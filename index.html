@@ -30,7 +30,7 @@
        specificity bump (see the file's own header comment) so it keeps
        winning even against the per-version CSS files that get injected
        later, after login, without needing to touch that injection order. -->
-  <link rel="stylesheet" href="design-system.css?v=4" />
+  <link rel="stylesheet" href="design-system.css?v=5" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#f6f6f9" />
 </head>
@@ -190,9 +190,11 @@
           </div>
           <div class="site-head-actions">
             <a class="secondary-button site-view-link" id="websiteViewLink" href="#" target="_blank" rel="noopener noreferrer" hidden>View website ↗</a>
-            <!-- Publish renders only when a canonical builder project says
-                 there is something publishable (capabilities.canPublish).
-                 With no contract yet, it never renders. -->
+            <!-- Publish renders only when the builder project (Phase 4
+                 bridge) is purchased and has unpublished changes. It never
+                 renders from delivery-record data. Publishing marks the
+                 version the builder exports; it does not push anything to
+                 the web address. -->
             <button type="button" class="primary-action" id="websitePublishButton" hidden>Publish changes</button>
           </div>
         </header>
@@ -222,7 +224,7 @@
               <div><dt>Status</dt><dd id="websiteStateValue">—</dd></div>
               <div><dt>Domain</dt><dd id="websiteDomainValue">—</dd></div>
               <div><dt>Deployment</dt><dd id="websiteDeployValue">—</dd></div>
-              <div><dt>Record updated</dt><dd id="websiteUpdatedValue">—</dd></div>
+              <div><dt id="websiteUpdatedLabel">Record updated</dt><dd id="websiteUpdatedValue">—</dd></div>
             </dl>
 
             <section class="site-editor" id="siteEditor" data-state="idle" aria-labelledby="siteEditorTitle">
@@ -247,9 +249,26 @@
                 </div>
                 <ol class="site-editor-progress" id="siteEditorProgress" aria-label="Update progress" hidden>
                   <li data-step="planning">Planning</li>
-                  <li data-step="previewing">Preview</li>
-                  <li data-step="ready">Ready to publish</li>
+                  <li data-step="applying">Saving</li>
+                  <li data-step="preview_ready">Review</li>
+                  <li data-step="live">Published</li>
                 </ol>
+                <!-- Phase 4: what the builder actually saved, in plain
+                     language (its changeSummary). This is the honest
+                     stand-in for a preview: the builder has no
+                     preview-rendering URL yet, so nothing here pretends to
+                     render the new version. -->
+                <div class="site-editor-review" id="siteEditorReview" hidden>
+                  <h3 id="siteEditorReviewTitle">What changed</h3>
+                  <ul id="siteEditorChanges"></ul>
+                  <p id="siteEditorReviewNote"></p>
+                  <div class="site-editor-review-actions">
+                    <button type="button" class="site-editor-submit" id="siteEditorPublish" hidden>Publish this version</button>
+                    <button type="button" class="secondary-button" id="siteEditorRefresh" hidden>Refresh</button>
+                    <button type="button" class="secondary-button" id="siteEditorDone" hidden>Make another change</button>
+                    <a class="site-support-link" href="/handoff/website-builder">Open the builder ↗</a>
+                  </div>
+                </div>
                 <p class="site-editor-feedback" id="siteEditorFeedback" role="status" aria-live="polite"></p>
               </form>
             </section>
@@ -698,7 +717,7 @@
   <div class="notification-popover" id="notificationPopover" hidden><div class="popover-head"><strong>Recent activity</strong><button id="closeNotifications">×</button></div><div id="notificationList"></div></div>
 
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT</p><h2>Test AI receptionist</h2><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetName" placeholder="Your name" /><input id="widgetEmail" type="email" placeholder="Email" /><input id="widgetPhone" type="tel" placeholder="Phone" /><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=28"></script>
+  <script src="app.js?v=29"></script>
   <script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
 </body>
 </html>

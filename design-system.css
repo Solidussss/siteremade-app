@@ -677,6 +677,23 @@ body .site-editor-feedback{margin:14px 0 0;font-size:13px;line-height:1.55;color
 body .site-editor-feedback:empty{display:none}
 body .site-editor-feedback.is-error{color:#ffc4bd}
 body .site-editor-feedback.is-success{color:#b6ecd0}
+/* Phase 4: "What changed" review panel (the builder's own plain-language
+   change summary -- not a rendered preview) + conflict/published states. */
+body .site-editor[data-state="conflict"] .site-editor-pill{background:rgba(255,214,153,.14);color:#ffd999}
+body .site-editor[data-state="live"] .site-editor-pill{background:rgba(182,236,208,.14);color:#b6ecd0}
+body .site-editor textarea[readonly]{opacity:.6}
+body .site-editor-review{margin:16px 0 0;padding:16px;border-radius:var(--radius-md);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12)}
+body .site-editor-review[hidden]{display:none}
+body .site-editor-review h3{margin:0 0 8px;font-size:14px;font-weight:750;color:#fff}
+body .site-editor-review ul{margin:0 0 10px;padding-left:18px;display:grid;gap:4px;font-size:13.5px;line-height:1.5;color:#e8eaee}
+body .site-editor-review ul[hidden]{display:none}
+body .site-editor-review p{margin:0 0 12px;font-size:12.5px;line-height:1.55;color:#b9bdc6;overflow-wrap:anywhere}
+body .site-editor-review p:empty{display:none}
+body .site-editor-review-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+body .site-editor-review-actions button{min-height:40px;padding:0 16px;font-size:13px}
+body .site-editor-review-actions button[hidden]{display:none}
+body .site-editor-review-actions .secondary-button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:999px;cursor:pointer}
+body .site-editor-review-actions .site-support-link{color:#e8eaee;text-decoration-color:rgba(255,255,255,.35);font-size:13px}
 
 /* Supporting controls: plain columns separated by hairlines, not cards */
 body .site-support{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px;margin-top:48px;padding-top:36px;border-top:1px solid var(--line)}

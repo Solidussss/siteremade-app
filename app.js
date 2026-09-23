@@ -826,36 +826,73 @@ function renderDrawerProject(l){
 }
 
 // ===========================================================================
-// Website (home) — Phase 3C/3D
+// Website (home) — Phase 3C/3D, wired to the builder in Phase 4
 // ===========================================================================
 // Two data sources, kept deliberately separate (WEBSITEPROJECT-CONTRACT.md):
-//  - canonicalWebsite: the generator's WebsiteProject. The app has no way to
-//    fetch it yet, so it is always null today. Nothing in this file ever
-//    fills it from website_projects.
-//  - the delivery record: the app's own website_projects row(s). Only its
-//    staff-entered previewUrl/liveUrl/status are used, and every place they
-//    appear is labelled as coming from the delivery record.
-const canonicalWebsite={project:null};
-// The single seam where the contract's edit/publish operations (§5.3–5.5)
-// will be called. Until then every method answers contract_unavailable
-// WITHOUT a network call, and nothing is ever reported as applied.
+//  - canonicalWebsite: the generator's own project (the real, editable
+//    website), fetched through this app's server (GET /api/app/website ->
+//    routes/website-bridge.js -> the generator's /api/app-bridge/website,
+//    authorized by the signed-in user's own session). Only filled when that
+//    call genuinely succeeds -- never from website_projects.
+//  - the delivery record: the app's own website_projects row(s), SiteRemade's
+//    internal build/handover tracker. Its staff-entered previewUrl/liveUrl
+//    still drive the preview frame (the builder has no preview-rendering
+//    URL), and every place they appear says they come from the delivery
+//    record. When the builder isn't connected for this customer (bridge off,
+//    account not linked, no builder project, staff viewing a customer
+//    workspace, any error), the view falls back to exactly the Phase 3
+//    delivery-record presentation.
+const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null};
+async function loadCanonicalWebsite(force){
+  if(canonicalWebsite.inflight)return canonicalWebsite.inflight;
+  if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
+  if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';
+  canonicalWebsite.inflight=(async()=>{
+    try{
+      const r=await fetch('/api/app/website',{headers:{'Content-Type':'application/json'}});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null});}
+      else Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:d.code||'bridge_unavailable',message:d.message||null});
+    }catch(e){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'bridge_unavailable',message:null});}
+    finally{canonicalWebsite.loadedAt=Date.now();canonicalWebsite.inflight=null;safeRender('website',renderWebsite);safeRender('settings',renderSettings);}
+  })();
+  return canonicalWebsite.inflight;
+}
+// The single seam the editor uses to reach the builder. Real network calls
+// only when the builder genuinely returned this customer's project;
+// otherwise it answers contract_unavailable WITHOUT a network call, and
+// nothing is ever reported as applied unless the builder said it saved it.
 const websiteEditService={
-  available(){const p=canonicalWebsite.project;return !!(p&&p.capabilities&&p.capabilities.canEdit);},
+  available(){const p=canonicalWebsite.project;return canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
   _unavailable(){return {ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
-  async requestEdit(/* {projectId, baseRevisionId, instruction, idempotencyKey} */){return this._unavailable();},
-  async getEdit(/* {projectId, editId} */){return this._unavailable();},
-  async discardEdit(/* {projectId, editId} */){return this._unavailable();},
-  async publish(/* {projectId, revisionId, idempotencyKey} */){return this._unavailable();}
+  async _post(url,payload){
+    try{
+      const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok)return d;
+      return {ok:false,status:r.status,code:d.code||'bridge_unavailable',message:d.message||'That didn’t go through.',currentRevision:d.currentRevision};
+    }catch(e){return {ok:false,code:'bridge_unavailable',message:'The SiteRemade builder couldn’t be reached.'};}
+  },
+  async requestEdit({projectId,baseRevision,instruction}){if(!this.available())return this._unavailable();return this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId});},
+  async publish({projectId,revision}){if(!this.available())return this._unavailable();return this._post('/api/app/website/publish',{revision,expectedProjectId:projectId});}
 };
-// Editor states (contract §6). Today customers can reach idle / typing /
-// unavailable; planning → failed is reachable only in the owner-only
-// development mode (?editor=dev), which runs the stub above and so always
-// ends in "failed — nothing was changed".
-const WEBSITE_EDITOR_STATES=['idle','typing','planning','previewing','ready','failed','unavailable'];
-const websiteEditor={state:'idle',edit:null,error:null,sentToTeam:null,sending:false};
+// Editor states (contract §6, Phase 4N). Spec name -> state here:
+//   READY -> idle/typing · PLANNING -> planning (the edit request is with
+//   the builder) · APPLYING -> applying (re-reading the builder to confirm
+//   the saved draft) · PREVIEW_READY -> preview_ready (the plain-language
+//   change summary, NOT a rendered preview -- the builder has no preview
+//   URL yet) · PUBLISHING -> publishing · LIVE -> live ("Published": the
+//   version the builder will export; nothing is pushed to the web address
+//   automatically) · CONFLICT -> conflict · FAILED -> failed.
+// 'unavailable' is the Phase 3 not-connected state, unchanged.
+const WEBSITE_EDITOR_STATES=['idle','typing','planning','applying','preview_ready','publishing','live','conflict','failed','unavailable'];
+const EDITOR_STICKY_STATES=['planning','applying','preview_ready','publishing','live','conflict','failed'];
+const EDITOR_BUSY_STATES=['planning','applying','publishing'];
+const websiteEditor={state:'idle',edit:null,error:null,sentToTeam:null,sending:false,published:null};
 const EDITOR_DEV_REQUESTED=new URLSearchParams(location.search).get('editor')==='dev';
 function editorDevMode(){return EDITOR_DEV_REQUESTED&&state.user?.role==='owner';}
 const websiteView={device:null,frameSrc:'',projectId:null};
+const EDIT_MAX_CHARS=600;
 
 // Only ever hand http(s) URLs to an <iframe>/<a>: these are free-text
 // fields staff type into, so anything else (javascript:, data:, junk) is
@@ -866,9 +903,11 @@ function deliveryProjects(){const rank=p=>safeSiteUrl(p.liveUrl)?2:safeSiteUrl(p
 function currentDeliveryProject(){const rows=deliveryProjects();return rows.find(p=>p.id===websiteView.projectId)||rows[0]||null;}
 function websiteSnapshot(){
   const p=currentDeliveryProject(),live=safeSiteUrl(p?.liveUrl),preview=safeSiteUrl(p?.previewUrl);
-  const domain=siteHost(live)||String(state.websiteAnalytics?.domain||'').trim();
+  const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null;
+  const builderDomain=c&&c.domains&&c.domains[0]?c.domains[0].domain:'';
+  const domain=builderDomain||siteHost(live)||String(state.websiteAnalytics?.domain||'').trim();
   const key=live?'live':preview?'preview':p?'building':'none';
-  return {project:p,live,preview,url:live||preview,domain,key};
+  return {project:p,canonical:c,live,preview,url:live||preview,domain,key};
 }
 const WEBSITE_STATE_COPY={
   live:{chip:'Live',tone:'success',caption:'Showing your live site'},
@@ -876,31 +915,64 @@ const WEBSITE_STATE_COPY={
   building:{chip:'Being built',tone:'neutral',caption:'No preview yet'},
   none:{chip:'Not set up yet',tone:'neutral',caption:'No preview yet'}
 };
+// Builder-sourced status (only when canonicalWebsite is 'ready').
+function canonicalChip(c){
+  if(c.status!=='purchased')return {chip:'Draft · not purchased yet',tone:'neutral'};
+  if(c.hasUnpublishedChanges)return {chip:'Unpublished changes',tone:'warning'};
+  return {chip:'Up to date',tone:'success'};
+}
+const DEPLOYMENT_COPY={
+  not_deployed:['Not hosted by SiteRemade','SiteRemade doesn’t host or push your site automatically yet.'],
+  packaging:['Preparing your files',''],
+  ready:['Download prepared in the builder','A downloadable copy of your site was prepared in the builder (My Websites) — download again there after publishing to get the newest version. SiteRemade doesn’t push your site to your web address automatically yet.'],
+  failed:['Last export didn’t finish','Open the builder to try the download again.'],
+  live:['Live','']
+};
+const DOMAIN_STATE_COPY={not_configured:'not set up',instructions_generated:'DNS instructions ready',dns_pending:'waiting for DNS',verified:'reachable (not yet HTTPS)',ssl_pending:'waiting for HTTPS',live:'reachable over HTTPS'};
 function setChip(el,text,tone){if(!el)return;el.textContent=text;el.className=`chip chip-${tone||'neutral'}`;}
 
 function renderWebsite(){
   const view=qs('#view-website');if(!view)return;
-  const s=websiteSnapshot(),copy=WEBSITE_STATE_COPY[s.key],p=s.project;
-  const name=state.workspace.businessName||'Your website';
+  if(canonicalWebsite.status==='idle'&&state.user)loadCanonicalWebsite();
+  const s=websiteSnapshot(),copy=WEBSITE_STATE_COPY[s.key],p=s.project,c=s.canonical;
+  const name=(c&&c.businessName)||state.workspace.businessName||'Your website';
   qs('#websiteTitle').textContent=name;
-  setChip(qs('#websiteStateChip'),copy.chip,copy.tone);
+  const status=c?canonicalChip(c):{chip:copy.chip,tone:copy.tone};
+  setChip(qs('#websiteStateChip'),status.chip,status.tone);
   qs('#websiteDomainLine').textContent=s.domain||'No web address yet';
   const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.live?'View website ↗':'Open preview ↗';}}
-  // Publish: canonical-only (contract §9). Never shown from delivery data.
-  const pub=qs('#websitePublishButton');if(pub){const c=canonicalWebsite.project;pub.hidden=!(c&&c.capabilities?.canPublish&&c.state!=='live');}
+  // Publish: builder-only (contract §9). Never shown from delivery data.
+  const pub=qs('#websitePublishButton');if(pub){pub.hidden=!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=EDITOR_BUSY_STATES.includes(websiteEditor.state);}
   // Status rail
-  const stateVal=qs('#websiteStateValue');if(stateVal)stateVal.innerHTML=`<span class="chip chip-${copy.tone}">${esc(s.key==='building'&&p?`Being built · ${p.status}`:copy.chip)}</span>`;
-  const dom=qs('#websiteDomainValue');if(dom)dom.textContent=s.domain||'Not set';
-  const dep=qs('#websiteDeployValue');if(dep){dep.textContent='Not reported yet';dep.title='The SiteRemade builder doesn’t share deployment status with this app yet.';}
-  const upd=qs('#websiteUpdatedValue');if(upd)upd.textContent=p?.updatedAt?dateLabel(p.updatedAt):'—';
-  // Stage
+  const stateVal=qs('#websiteStateValue');if(stateVal)stateVal.innerHTML=c?`<span class="chip chip-${status.tone}">${esc(status.chip)}</span>`:`<span class="chip chip-${copy.tone}">${esc(s.key==='building'&&p?`Being built · ${p.status}`:copy.chip)}</span>`;
+  const dom=qs('#websiteDomainValue');if(dom){const bd=c&&c.domains&&c.domains[0];dom.textContent=bd?`${bd.domain} · ${DOMAIN_STATE_COPY[bd.state]||bd.state}`:(s.domain||'Not set');}
+  const dep=qs('#websiteDeployValue');if(dep){if(c){const dc=DEPLOYMENT_COPY[c.deploymentStatus]||DEPLOYMENT_COPY.not_deployed;dep.textContent=dc[0];dep.title=dc[1];}else{dep.textContent='Not reported yet';dep.title='The SiteRemade builder doesn’t share deployment status with this app yet.';}}
+  const updLabel=qs('#websiteUpdatedLabel');if(updLabel)updLabel.textContent=c?'Last edited':'Record updated';
+  const upd=qs('#websiteUpdatedValue');if(upd)upd.textContent=c?`${c.updatedAt?dateLabel(c.updatedAt):'—'} · version ${c.revision}`:(p?.updatedAt?dateLabel(p.updatedAt):'—');
+  // Stage (the frame can only ever show a delivery-record address -- the
+  // builder has no preview-rendering URL -- so it says so)
   qs('#websiteChromeUrl').textContent=s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet';
-  qs('#websiteCaption').textContent=s.url?`${copy.caption} · from your SiteRemade delivery record`:(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet');
+  qs('#websiteCaption').textContent=s.url
+    ?(c?`${copy.caption} · address from your SiteRemade delivery record. Builder changes appear there only once they’re published and put live.`:`${copy.caption} · from your SiteRemade delivery record`)
+    :(c?'There’s no visual preview in this app yet — your builder project is connected, and changes you make are listed below the editor.':(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet'));
   const capLink=qs('#websiteCaptionLink');if(capLink){capLink.hidden=!s.url;if(s.url)capLink.href=s.url;}
-  const emptyCopy=qs('#websiteEmptyCopy');if(emptyCopy)emptyCopy.textContent=p?`Your site is being built — currently at “${p.status}”. The preview appears here once SiteRemade adds it.`:'As soon as SiteRemade has a preview or live address for your site, you’ll see it right here.';
+  const emptyCopy=qs('#websiteEmptyCopy');if(emptyCopy)emptyCopy.textContent=c?'This app can’t render your builder project yet. Open the SiteRemade builder to see it, or check the change summary after an update.':(p?`Your site is being built — currently at “${p.status}”. The preview appears here once SiteRemade adds it.`:'As soon as SiteRemade has a preview or live address for your site, you’ll see it right here.');
   if(!websiteView.device)setWebsiteDevice(window.matchMedia('(max-width:640px)').matches?'mobile':'desktop');
   setWebsiteFrame(s.url);
-  renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
+  renderWebsiteBuilderBlock();renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
+}
+// "Builder project" support block: real connection state, never guessed.
+function renderWebsiteBuilderBlock(){
+  const host=qs('#websiteBuilder');if(!host)return;
+  const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null,code=canonicalWebsite.code,st=canonicalWebsite.status;
+  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt]]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  const link='<a class="site-support-link" href="/handoff/website-builder">Open the SiteRemade builder ↗</a>';
+  if(c){
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connected</h3><p>Version ${esc(String(c.revision))}${c.updatedAt?` · last edited ${esc(dateLabel(c.updatedAt))}`:''}. ${c.status==='purchased'?(c.lastPublishedAt?`Last published ${esc(dateLabel(c.lastPublishedAt))}.`:'Not re-published since purchase.'):'Not purchased yet — edits are saved as drafts.'} Updates you ask for above are saved straight to this project.</p>${link}`;
+    return;
+  }
+  const why={identity_not_linked:'Your SiteRemade account isn’t linked to the builder yet, so live editing, publishing and deployment status can’t be shown or changed from here.',no_project:'There’s no website in the SiteRemade builder for your account yet.',workspace_mismatch:canonicalWebsite.message||'Builder data isn’t shown for this workspace.'}[code];
+  host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>${st==='loading'?'Checking…':'Not connected yet'}</h3><p>${esc(why||'Your site\'s editable source lives in the SiteRemade builder. This app doesn\'t receive it yet, so live editing, publishing and deployment status can\'t be shown or changed from here.')}</p>${link}`;
 }
 function setWebsiteFrame(url){
   const f=qs('#websiteFrame'),empty=qs('#websiteEmpty');if(!f||!empty)return;
@@ -976,56 +1048,115 @@ function renderWebsiteRequests(){
 }
 
 // ---- Update My Website: the interaction shell ------------------------------
+function withNothingChanged(msg){const m=String(msg||'That didn’t go through.').trim();return /nothing (on your website )?was changed|nothing was changed/i.test(m)?m:`${m} Nothing on your website was changed.`;}
 function renderWebsiteEditor(){
   const box=qs('#siteEditor'),input=qs('#siteEditorInput');if(!box||!input)return;
-  const available=websiteEditService.available(),dev=editorDevMode(),text=input.value.trim();
+  const available=websiteEditService.available(),dev=editorDevMode(),text=input.value.trim(),c=canonicalWebsite.project;
   let st=websiteEditor.state;
-  if(!['planning','previewing','ready','failed'].includes(st))st=!available&&!dev?'unavailable':(text?'typing':'idle');
+  if(!EDITOR_STICKY_STATES.includes(st))st=!available&&!dev?'unavailable':(text?'typing':'idle');
   websiteEditor.state=st;box.dataset.state=st;box.dataset.hasText=text?'1':'0';
-  const pill={unavailable:'Not connected yet',idle:dev?'Development mode':'Ready',typing:dev?'Development mode':'Ready',planning:'Working out the change…',previewing:'Preview ready',ready:'Ready to publish',failed:'Nothing was changed'}[st];
+  const pill={unavailable:canonicalWebsite.status==='loading'?'Checking…':'Not connected yet',idle:dev&&!available?'Development mode':'Ready',typing:dev&&!available?'Development mode':'Ready',planning:'Working out your change…',applying:'Saving your update…',preview_ready:'Change ready to review',publishing:'Publishing…',live:'Published',conflict:'Website changed',failed:'Nothing was changed'}[st];
   qs('#siteEditorPill').textContent=pill;
-  const submit=qs('#siteEditorSubmit');submit.disabled=!(available||dev)||!text||['planning','previewing'].includes(st);
-  const handoff=qs('#siteEditorHandoff');handoff.hidden=available||!text||websiteEditor.sending;
-  const prog=qs('#siteEditorProgress'),order=['planning','previewing','ready'];prog.hidden=!order.includes(st);
-  qsa('#siteEditorProgress li').forEach(li=>{const i=order.indexOf(li.dataset.step),cur=order.indexOf(st);li.classList.toggle('done',cur>i);li.classList.toggle('current',cur===i);});
-  const fb=qs('#siteEditorFeedback');fb.classList.toggle('is-error',st==='failed');fb.classList.toggle('is-success',!!websiteEditor.sentToTeam&&st!=='failed');
+  const busy=EDITOR_BUSY_STATES.includes(st);
+  const submit=qs('#siteEditorSubmit');submit.disabled=!(available||dev)||!text||busy;
+  input.readOnly=busy;
+  const handoff=qs('#siteEditorHandoff');handoff.hidden=!text||websiteEditor.sending||busy||(available&&st!=='failed');
+  const prog=qs('#siteEditorProgress'),order=['planning','applying','preview_ready','live'],cur={planning:0,applying:1,preview_ready:2,publishing:3,live:4}[st];prog.hidden=cur===undefined;
+  qsa('#siteEditorProgress li').forEach(li=>{const i=order.indexOf(li.dataset.step);li.classList.toggle('done',cur>i);li.classList.toggle('current',cur===i||(st==='publishing'&&li.dataset.step==='live'));});
+  // "What changed" review panel: the builder's own plain-language summary of
+  // what it actually saved -- the honest stand-in for a rendered preview.
+  const review=qs('#siteEditorReview');
+  if(review){
+    const showReview=['preview_ready','publishing','live'].includes(st)&&!!websiteEditor.edit;
+    review.hidden=!showReview&&st!=='live'&&st!=='conflict';
+    const list=qs('#siteEditorChanges'),note=qs('#siteEditorReviewNote'),head=qs('#siteEditorReviewTitle');
+    const sig=JSON.stringify([st,websiteEditor.edit,websiteEditor.published,c&&[c.canPublish,c.revision,c.hasUnpublishedChanges]]);
+    if(review.dataset.sig!==sig){
+      review.dataset.sig=sig;
+      const items=(websiteEditor.edit&&websiteEditor.edit.changeSummary)||[];
+      if(head)head.textContent=st==='conflict'?'Your website changed':st==='live'?'Published':'What changed';
+      if(list){list.hidden=st==='conflict'||!items.length;list.innerHTML=items.map(t=>`<li>${esc(t)}</li>`).join('');}
+      const credits=websiteEditor.edit&&Number.isFinite(websiteEditor.edit.creditsCharged)&&websiteEditor.edit.creditsCharged>0?` This update used ${websiteEditor.edit.creditsCharged} builder credit${websiteEditor.edit.creditsCharged===1?'':'s'}${Number.isFinite(websiteEditor.edit.creditsRemaining)?` (${websiteEditor.edit.creditsRemaining} left today)`:''}.`:'';
+      if(note){
+        if(st==='conflict')note.textContent='Your text is still in the box above. Refresh to load the latest version, then apply your update again.';
+        else if(st==='live')note.textContent=`Version ${websiteEditor.published?.revision??c?.revision} is now your published version — downloads of your site files from the builder include it from now on. Updating the site at your web address isn’t automatic yet: download the files from the builder, or ask the SiteRemade team.`;
+        else if(c&&c.canPublish)note.textContent=`Saved as a draft (version ${websiteEditor.edit?.revision}). Your published version hasn’t changed. There’s no visual preview in this app yet — open the builder to see it, then publish when you’re happy.${credits}`;
+        else note.textContent=`Saved to your builder project (version ${websiteEditor.edit?.revision}). There’s no visual preview in this app yet — open the builder to see it. Publishing becomes available once your website is purchased.${credits}`;
+      }
+    }
+    const pubBtn=qs('#siteEditorPublish');if(pubBtn){pubBtn.hidden=!(st==='preview_ready'&&c&&c.canPublish&&c.hasUnpublishedChanges);pubBtn.disabled=busy;}
+    const refBtn=qs('#siteEditorRefresh');if(refBtn)refBtn.hidden=st!=='conflict';
+    const doneBtn=qs('#siteEditorDone');if(doneBtn)doneBtn.hidden=!['preview_ready','live'].includes(st);
+  }
+  const fb=qs('#siteEditorFeedback');fb.classList.toggle('is-error',st==='failed'||st==='conflict');fb.classList.toggle('is-success',(!!websiteEditor.sentToTeam&&st!=='failed')||st==='live');
   if(websiteEditor.sending)fb.textContent='Sending to the SiteRemade team…';
-  else if(st==='failed')fb.textContent=`${websiteEditor.error?.message||'That didn’t go through.'} Nothing on your website was changed, and your text is still here.`;
+  else if(st==='failed')fb.textContent=`${withNothingChanged(websiteEditor.error?.message)} Your text is still here.`;
+  else if(st==='conflict')fb.textContent='This website changed since you opened it. Refresh before applying this update.';
+  else if(st==='planning')fb.textContent='Working out and saving your change — this can take up to a minute.';
+  else if(st==='applying')fb.textContent='Checking the saved version with the builder…';
+  else if(st==='publishing')fb.textContent='Publishing…';
   else if(websiteEditor.sentToTeam)fb.textContent='Sent to the SiteRemade team. A person will review it — your website hasn’t changed yet. You can follow it under “Requests to the team” below.';
-  else if(st==='unavailable')fb.textContent='Editing from here turns on once your site is connected to the SiteRemade builder. Nothing you type is sent or changed until you choose to.';
+  else if(st==='unavailable')fb.textContent=canonicalWebsite.status==='loading'?'Checking whether your site is connected to the SiteRemade builder…':'Editing from here turns on once your site is connected to the SiteRemade builder. Nothing you type is sent or changed until you choose to.';
   else if(dev&&!available)fb.textContent='Development mode (staff only): submitting runs the edit service stub, which always ends in “nothing was changed” until the builder contract exists.';
   else fb.textContent='';
 }
-function setEditorState(next,extra={}){if(!WEBSITE_EDITOR_STATES.includes(next))return;Object.assign(websiteEditor,extra,{state:next});renderWebsiteEditor();}
+function setEditorState(next,extra={}){if(!WEBSITE_EDITOR_STATES.includes(next))return;Object.assign(websiteEditor,extra,{state:next});renderWebsiteEditor();safeRender('website-publish',()=>{const pub=qs('#websitePublishButton'),c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null;if(pub){pub.hidden=!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(next);pub.disabled=EDITOR_BUSY_STATES.includes(next);}});}
 async function submitWebsiteEdit(){
-  const input=qs('#siteEditorInput'),text=input.value.trim();if(!text)return;
+  const input=qs('#siteEditorInput'),text=input.value.trim();if(!text||EDITOR_BUSY_STATES.includes(websiteEditor.state))return;
   if(!websiteEditService.available()&&!editorDevMode()){renderWebsiteEditor();return;}
   websiteEditor.sentToTeam=null;
-  setEditorState('planning',{error:null,edit:null});
+  if(websiteEditService.available()&&text.length>EDIT_MAX_CHARS){setEditorState('failed',{error:{message:`Please keep automatic updates under ${EDIT_MAX_CHARS} characters — or send longer requests to the SiteRemade team.`}});return;}
+  setEditorState('planning',{error:null,edit:null,published:null});
   const c=canonicalWebsite.project;
-  const idem=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2);
-  const res=await websiteEditService.requestEdit({projectId:c?.id||null,baseRevisionId:c?.revision?.id||null,instruction:text,idempotencyKey:idem});
-  if(!res||!res.ok){setEditorState('failed',{error:res||{message:'No response.'}});return;}
-  // Future (contract §5.3): poll websiteEditService.getEdit() and move
-  // through previewing → ready. Unreachable until requestEdit can succeed.
-  setEditorState(res.edit?.status==='ready'?'ready':'planning',{edit:res.edit});
+  const res=await websiteEditService.requestEdit({projectId:c?.projectId||null,baseRevision:c?.revision??null,instruction:text});
+  if(!res||!res.ok){
+    if(res&&res.code==='revision_conflict'){setEditorState('conflict',{error:res});return;}
+    setEditorState('failed',{error:res||{message:'No response.'}});return;
+  }
+  // Saved by the builder. APPLYING = confirm that saved draft by re-reading
+  // the builder project (a real call, not a timed animation).
+  setEditorState('applying',{edit:{revision:res.revision,changeSummary:res.changeSummary||[],creditsCharged:res.creditsCharged,creditsRemaining:res.creditsRemaining}});
+  input.value='';
+  await loadCanonicalWebsite(true);
+  setEditorState('preview_ready');
+}
+async function publishWebsite(){
+  const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null;
+  if(!c||!c.canPublish||EDITOR_BUSY_STATES.includes(websiteEditor.state))return;
+  setEditorState('publishing',{error:null});
+  const res=await websiteEditService.publish({projectId:c.projectId,revision:c.revision});
+  if(!res||!res.ok){
+    if(res&&res.code==='revision_conflict'){setEditorState('conflict',{error:res});return;}
+    setEditorState('failed',{error:{message:(res&&res.message)||'Publishing didn’t go through.'}});return;
+  }
+  websiteEditor.published={revision:res.revision,publishedAt:res.publishedAt};
+  await loadCanonicalWebsite(true);
+  setEditorState('live');
+}
+async function refreshAfterConflict(){
+  await loadCanonicalWebsite(true);
+  setEditorState(qs('#siteEditorInput').value.trim()?'typing':'idle',{error:null,edit:null});
 }
 async function sendWebsiteEditToTeam(){
   const input=qs('#siteEditorInput'),text=input.value.trim();if(!text||websiteEditor.sending)return;
   websiteEditor.sending=true;renderWebsiteEditor();
   try{
-    const d=await api('/api/app/website-updates',{method:'POST',body:JSON.stringify({page:'Other',priority:'Normal',request:text,notes:'Sent from the Website view ("Update My Website"). Builder editing is not connected, so this was routed to the SiteRemade team as a manual request — nothing was changed automatically.'})});
+    const d=await api('/api/app/website-updates',{method:'POST',body:JSON.stringify({page:'Other',priority:'Normal',request:text,notes:websiteEditService.available()?'Sent from the Website view ("Update My Website") after the automatic update couldn’t make this change — nothing was changed automatically.':'Sent from the Website view ("Update My Website"). Builder editing is not connected, so this was routed to the SiteRemade team as a manual request — nothing was changed automatically.'})});
     if(d.websiteUpdate)state.websiteUpdates=[d.websiteUpdate,...(state.websiteUpdates||[])];
     input.value='';websiteEditor.sending=false;setEditorState('idle',{sentToTeam:d.websiteUpdate||true,error:null});renderWebsiteRequests();
   }catch(e){websiteEditor.sending=false;setEditorState('failed',{error:{message:e.message}});}
 }
 if(qs('#siteEditorForm')){
   qs('#siteEditorForm').onsubmit=e=>{e.preventDefault();submitWebsiteEdit();};
-  qs('#siteEditorInput').addEventListener('input',()=>{websiteEditor.sentToTeam=null;if(websiteEditor.state==='failed')websiteEditor.state='idle';renderWebsiteEditor();});
+  qs('#siteEditorInput').addEventListener('input',()=>{websiteEditor.sentToTeam=null;if(['failed','preview_ready','live'].includes(websiteEditor.state))websiteEditor.state='idle';renderWebsiteEditor();});
   qs('#siteEditorInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();submitWebsiteEdit();}});
   qs('#siteEditorHandoff').onclick=()=>sendWebsiteEditToTeam();
-  qsa('[data-edit-example]').forEach(b=>b.onclick=()=>{const input=qs('#siteEditorInput');const add=b.dataset.editExample;input.value=input.value.trim()?`${input.value.trim()}\n${add}`:add;input.focus();input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new Event('input'));});
+  qsa('[data-edit-example]').forEach(b=>b.onclick=()=>{const input=qs('#siteEditorInput');if(input.readOnly)return;const add=b.dataset.editExample;input.value=input.value.trim()?`${input.value.trim()}\n${add}`:add;input.focus();input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new Event('input'));});
+  const pubInline=qs('#siteEditorPublish');if(pubInline)pubInline.onclick=()=>publishWebsite();
+  const refresh=qs('#siteEditorRefresh');if(refresh)refresh.onclick=()=>refreshAfterConflict();
+  const done=qs('#siteEditorDone');if(done)done.onclick=()=>{setEditorState('idle',{edit:null,published:null,error:null});qs('#siteEditorInput').focus();};
 }
+if(qs('#websitePublishButton'))qs('#websitePublishButton').onclick=()=>publishWebsite();
 
 // ===========================================================================
 // Contact — Phase 3F
@@ -1192,8 +1323,11 @@ function renderSettings(){
   if(dr)dr.innerHTML=`
     <div class="st-row"><div><strong>Live address</strong><span>${snap.live?`<a href="${esc(snap.live)}" target="_blank" rel="noopener noreferrer">${esc(snap.live.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a>`:'Not live yet'}</span></div></div>
     <div class="st-row"><div><strong>Preview address</strong><span>${snap.preview?`<a href="${esc(snap.preview)}" target="_blank" rel="noopener noreferrer">${esc(snap.preview.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a>`:'None'}</span></div></div>
-    <div class="st-row"><div><strong>Domain status &amp; SSL</strong><span>Not reported yet — SiteRemade manages this for you. Ask your SiteRemade contact about domain changes.</span></div><span class="chip chip-neutral">Managed</span></div>
-    <p class="st-note">Addresses come from your SiteRemade delivery record. Live DNS, SSL and deployment status will appear here once the SiteRemade builder is connected to this app.</p>`;
+    ${snap.canonical?`<div class="st-row"><div><strong>Domain status</strong><span>${snap.canonical.domains&&snap.canonical.domains.length?snap.canonical.domains.map(d=>`${esc(d.domain)} — ${esc(DOMAIN_STATE_COPY[d.state]||d.state)}`).join('<br>'):'No domain connected in the builder yet.'}</span></div><span class="chip chip-neutral">Builder</span></div>
+    <div class="st-row"><div><strong>Hosting</strong><span>${esc((DEPLOYMENT_COPY[snap.canonical.deploymentStatus]||DEPLOYMENT_COPY.not_deployed)[0])} — SiteRemade doesn’t push your site to your web address automatically yet.</span></div></div>
+    <p class="st-note">Live and preview addresses come from your SiteRemade delivery record. Domain and hosting status come from your SiteRemade builder project. A domain marked “reachable” only means it answered a web request — it isn’t proof of ownership.</p>`
+    :`<div class="st-row"><div><strong>Domain status &amp; SSL</strong><span>Not reported yet — SiteRemade manages this for you. Ask your SiteRemade contact about domain changes.</span></div><span class="chip chip-neutral">Managed</span></div>
+    <p class="st-note">Addresses come from your SiteRemade delivery record. Live DNS, SSL and deployment status will appear here once the SiteRemade builder is connected to this app.</p>`}`;
   // Billing
   const b=state.billing||{},status=String(b.status||w.siteRemadeSubscriptionStatus||'inactive'),active=['active','trialing'].includes(status);
   const pl=qs('#settingsPlanLine');if(pl)pl.textContent=`${money((Number(b.monthlyCents)||0)/100)} per month`;
@@ -1324,7 +1458,7 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // Settings → Connections) do it when they are opened, not on every 5-second
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
-const VIEW_SHOWN_HOOKS={analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
+const VIEW_SHOWN_HOOKS={website:()=>loadCanonicalWebsite(),analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
 function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
