@@ -7,6 +7,8 @@
 // database access, nothing cached across requests.
 //
 //   GET  /api/app/website             -> canonical website summary
+//   GET  /api/app/website/candidates  -> Phase 8: every purchased project this signed-in person owns
+//   POST /api/app/website/connect     -> Phase 8: {projectId} -> creates the FIRST link for this workspace
 //   GET  /api/app/website/deployment  -> its deployment/domain state
 //   POST /api/app/website/edits       -> {baseRevision, request[, expectedProjectId]}
 //   POST /api/app/website/publish     -> {revision[, expectedProjectId]}
@@ -162,6 +164,61 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     // mismatch / conflict / unknown) -- no ids beyond the projectId the
     // summary already carries.
     return json(res, 200, { ...summaryFrom(got.summary), link: { status: linked.status } });
+  });
+
+  // Phase 8: "which of my SiteRemade websites is this?" -- the customer-
+  // facing list GET /api/app/website itself no longer auto-links from (see
+  // lib/website-links.js recordBridgeSummary). Always a FRESH call to the
+  // builder with this same request's own token: server-side ownership and
+  // purchase verification on every load, never anything the browser cached
+  // from an earlier visit. Same workspace gate as the rest of this file --
+  // staff and multi-workspace accounts get workspace_mismatch here too,
+  // exactly like every other route below, because "whose purchases are
+  // these" is exactly as ambiguous for them as "whose website is this".
+  router.get('/api/app/website/candidates', { auth: 'user' }, async (req, res, { c, json }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const r = await bridge.getCandidates(c.access);
+    if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.candidates)) return passThroughError(json, res, r);
+    let linkedProjectId = null;
+    try { const existing = await websiteLinks.getLinkForWorkspace(c.wid); linkedProjectId = existing ? existing.generator_project_id : null; } catch (e) { console.warn('[website-links] candidates: could not read existing link:', e && e.message); }
+    const candidates = r.data.candidates.map(x => ({
+      projectId: x.projectId, name: x.name || null, businessName: x.businessName || null, status: x.status || 'purchased',
+      revision: Number.isInteger(x.revision) ? x.revision : null, purchasedAt: x.purchasedAt || null,
+      domains: Array.isArray(x.domains) ? x.domains.map(d => ({ domain: d.domain, state: d.state, verifiedAt: d.verifiedAt || null })) : [],
+      deploymentStatus: x.deploymentStatus || 'not_deployed', hasUnpublishedChanges: !!x.hasUnpublishedChanges,
+      alreadyLinked: !!linkedProjectId && x.projectId === linkedProjectId,
+    }));
+    return json(res, 200, { ok: true, candidates, alreadyConnected: !!linkedProjectId });
+  });
+
+  // Phase 8: the explicit connect action. Only creates a NEW link (a
+  // workspace that already has one gets `already_linked` -- switching an
+  // established link stays the staff relink/review flow above, unchanged).
+  // `projectId` is never trusted on its own: it's matched against a FRESH
+  // GET /api/app-bridge/website/candidates made right here with this same
+  // request's token, so what actually gets linked is always something the
+  // builder just re-confirmed this signed-in person purchased.
+  router.post('/api/app/website/connect', { auth: 'user' }, async (req, res, { c, json }) => {
+    const gate = workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    let body;
+    try { body = await readJsonBody(req, 2000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
+    const projectId = typeof body.projectId === 'string' ? body.projectId.trim() : '';
+    if (!websiteLinks.PROJECT_ID_RE.test(projectId)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Choose one of your SiteRemade websites.' });
+    const r = await bridge.getCandidates(c.access);
+    if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.candidates)) return passThroughError(json, res, r);
+    const chosen = r.data.candidates.find(x => x.projectId === projectId);
+    if (!chosen) return json(res, 422, { ok: false, code: 'not_a_candidate', message: 'That website isn’t one of your verified SiteRemade purchases. Refresh and try again.' });
+    let out;
+    try {
+      out = await websiteLinks.connectWorkspaceToProject(c.wid, chosen);
+    } catch (e) {
+      console.warn('[website-links] connect failed:', e && e.message);
+      return json(res, 503, { ok: false, code: 'unavailable', message: 'Couldn’t connect your website right now. Nothing was changed.' });
+    }
+    if (!out.ok) return json(res, out.status, { ok: false, code: out.code, message: out.message });
+    return json(res, 200, { ok: true, projectId: chosen.projectId, created: out.created });
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {

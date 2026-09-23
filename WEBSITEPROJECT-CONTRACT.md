@@ -568,3 +568,77 @@ projects does this customer own". Instead:
    the project is linked elsewhere, or the row changed meanwhile), updates
    the link conditionally, clears the review, and writes
    `audit_logs` (`action = 'website_link.relink'`).
+
+### 11.7 Customer-initiated "Connect a website" flow (Phase 8)
+
+Production audit finding: a workspace with no link yet had no understandable
+way to connect one. `GET /api/app/website` used to auto-link the FIRST time
+it saw a purchased canonical project for a single-workspace customer — real,
+but invisible (nothing told the customer it happened, and it silently picked
+whichever project the builder's "most recent purchase" resolution favored,
+never letting the customer choose among more than one).
+
+**What changed:**
+
+- `lib/website-links.js` `recordBridgeSummary`: the `!existing` branch no
+  longer inserts a link. It now only ever reports `{status:'not_linked'}`.
+  Every other branch (refreshing an existing link's revision, detecting and
+  recording a mismatch, clearing a resolved one) is untouched.
+- `GET /api/app/website` can now return **200 with `link.status:'not_linked'`**
+  even when it found a real purchased builder project — that combination
+  means "there is something to connect, nothing is connected yet". The
+  front end (`app.js` `loadCanonicalWebsite`) treats that combination as
+  NOT ready/connected (same bucket as `no_project`), not as "Connected" —
+  this is the one place a client has to know about the new status value.
+- `GET /api/app/website/candidates` (new, `auth:'user'`, same
+  `workspaceGate` as every route in this file — staff 403, multi-workspace
+  409): a live call to the builder's `GET
+  /api/app-bridge/website/candidates` with the request's own token, mapped
+  to an allowlisted, enriched shape (`projectId, name, businessName,
+  status, revision, purchasedAt, domains, deploymentStatus,
+  hasUnpublishedChanges, alreadyLinked`) plus `alreadyConnected`. Nothing
+  is written to the database by this route — it's read-only, so opening
+  the Website page never has a side effect.
+- `POST /api/app/website/connect` `{projectId}` (new, same gate): re-fetches
+  the builder's candidate list with the SAME request's token (never trusts
+  a `projectId` the browser remembers from an earlier `GET
+  /candidates` response), confirms it's in that fresh list, then calls
+  `lib/website-links.js` `connectWorkspaceToProject` — refuses if the
+  workspace already has a link (`already_linked`; switching an established
+  link stays the staff relink flow, §11.6, unchanged) or if the project is
+  already linked to a different workspace (`linked_elsewhere`).
+- Generator `GET /api/app-bridge/website/candidates` (server.js): additive
+  enrichment only — each candidate now also carries `name`, `businessName`,
+  `domains`, `deploymentStatus`, `hasUnpublishedChanges`, the same fields
+  route 1 (`GET /api/app-bridge/website`) already exposes for the single
+  canonical project, read the same way (`getOwnedProjectRaw` +
+  `canonicalDirectionIndex` + `bridgeDomains`). A metadata lookup failing
+  for one candidate never drops it from the list.
+- `app.js` `renderWebsiteBuilderBlock`: the "not connected" branch is now a
+  real 0/1/many chooser (`websiteCandidates` state, `loadWebsiteCandidates`,
+  `connectWebsite`) instead of a static message. Staff/multi-workspace
+  (`workspace_mismatch`) and `identity_not_linked` still get the old static
+  message — there is genuinely nothing to choose from in either case.
+- Admin's "Website links" NOT LINKED row copy was updated to explain the
+  real boundary: Admin cannot browse or link a not-yet-connected customer's
+  purchases, because that data is only ever resolved with the customer's
+  own token (never a staff/impersonation path — same constraint §11.6
+  documents for candidate capture). The customer connects it themselves;
+  Admin's role stays inspect (LINKED/NOT LINKED/REVIEW, unchanged) plus the
+  §11.6 relink flow for an already-linked project that needs review. This
+  was a deliberate decision, not an oversight: building a staff-side
+  preview would mean either a new impersonation path or caching a
+  customer's purchases without their token being present, both rejected.
+
+**Compatibility:** no new columns, no new migration. `connectWorkspaceToProject`
+writes only V52 columns (`workspace_id, generator_project_id, purchase_ref,
+last_seen_revision, linked_at, updated_at`). Both new routes degrade the
+same way the rest of this file already does when V52 isn't applied yet
+(`getLinkForWorkspace`/`connectWorkspaceToProject` failures are caught and
+reported as `unavailable`/`unknown`, never a crash).
+
+**Verified:** `phase8/website-connect-test.js` (real dual in-process
+server — this app + the real generator, both booted for real, not
+mocked out) — 33/33 passing, covering 0/1/many candidates, cross-account
+isolation, already-linked refusal, staff/multi-workspace boundary, and
+Admin's list reflecting real link state.
