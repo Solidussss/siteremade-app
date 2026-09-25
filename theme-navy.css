@@ -1,0 +1,477 @@
+/* ==========================================================================
+   SiteRemade "Midnight" theme — visual pass only
+   ==========================================================================
+   Loaded after design-system.css. No markup, JS, ids or behaviour are
+   touched; this file only re-skins classes that already exist.
+
+   Direction: premium dark-blue SaaS. Deep navy foundation, layered blue
+   surfaces, a soft cool glow, bold modern sans-serif type, one restrained
+   blue→violet accent gradient, and slow ambient background motion.
+
+   How it works with the existing system:
+   - design-system.css is fully token-driven, so re-pointing the tokens in
+     §1 re-skins most of the app in one move.
+   - `--ink-900` was used both as "primary text" and as "dark fill" (primary
+     buttons, the Update-My-Website panel, tooltips, auth backdrop). On a
+     dark theme those two meanings split, so every dark-fill use is
+     restated explicitly in §6 rather than left to inherit the wrong one.
+   - Same `body .selector` specificity bump as design-system.css so this
+     wins over the per-version stylesheets that are injected after login.
+   - No webfont: the login path deliberately makes zero font requests (see
+     design-system.css §1), so the bold sans is a system stack.
+   ========================================================================== */
+
+/* ---- 1. Tokens ----------------------------------------------------------- */
+:root{
+  --font-ui:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --font-display:Inter,"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+
+  --bg:#050a1a;         --canvas:#050a1a;
+  --surface:#0c1530;    --surface-raised:#111d3f;
+  --surface-sunken:#08102a;
+  --text:#f1f4ff;       --ink-900:#f1f4ff; --ink-700:#c5cee8;
+  --muted:#8e9bc0;      --ink-500:#8e9bc0; --ink-300:#5f6d96;
+  --line:rgba(132,164,255,.13);  --line-strong:rgba(132,164,255,.26);
+  --soft:#08102a;
+
+  --accent:#5b86ff;     --accent-2:#8a6bff;
+  --accent-tint:rgba(91,134,255,.15); --accent-ink:#a9c0ff;
+  --green:#3fdc9b;      --success:#3fdc9b; --success-tint:rgba(63,220,155,.13);
+  --red:#ff8079;        --danger:#ff8079;  --danger-tint:rgba(255,128,121,.13);
+  --amber:#f6bd57;      --warning:#f6bd57; --warning-tint:rgba(246,189,87,.13);
+
+  --grad-accent:linear-gradient(135deg,#5b86ff 0%,#6f6bff 55%,#8a6bff 100%);
+  --grad-card:linear-gradient(180deg,rgba(21,33,70,.82) 0%,rgba(11,19,44,.82) 100%);
+  --glow:0 0 0 1px rgba(132,164,255,.10),0 12px 40px -12px rgba(60,100,255,.35);
+
+  --radius:20px; --radius-sm:12px; --radius-md:16px; --radius-lg:22px;
+  --shadow-sm:0 1px 0 rgba(255,255,255,.04) inset,0 1px 2px rgba(0,0,0,.35);
+  --shadow-md:0 1px 0 rgba(255,255,255,.05) inset,0 18px 44px -18px rgba(0,0,0,.7);
+  --shadow-lg:0 1px 0 rgba(255,255,255,.06) inset,0 36px 90px -24px rgba(0,0,0,.85);
+}
+html{background:var(--bg);color-scheme:dark}
+body{background:transparent;color:var(--text)}
+::selection{background:rgba(91,134,255,.4);color:#fff}
+body ::-webkit-scrollbar{width:10px;height:10px}
+body ::-webkit-scrollbar-thumb{background:rgba(132,164,255,.18);border-radius:10px;border:2px solid transparent;background-clip:content-box}
+body ::-webkit-scrollbar-thumb:hover{background:rgba(132,164,255,.32);background-clip:content-box;border:2px solid transparent}
+body ::-webkit-scrollbar-track{background:transparent}
+
+/* ---- 2. Ambient background -----------------------------------------------
+   Two fixed layers behind the whole app, moving at different speeds for a
+   faint parallax depth: a bloom field (slow drift) and a dotted grid that
+   slides one tile at a time (seamless loop). Both animate `transform` only,
+   so they stay on the compositor and cost almost nothing. */
+body::before,body::after{content:"";position:fixed;pointer-events:none;z-index:0}
+body::before{
+  inset:-25%;
+  background:
+    radial-gradient(38% 34% at 18% 16%,rgba(58,112,255,.30),transparent 70%),
+    radial-gradient(34% 30% at 86% 8%,rgba(112,84,255,.22),transparent 70%),
+    radial-gradient(42% 38% at 74% 92%,rgba(20,150,255,.17),transparent 70%),
+    radial-gradient(30% 28% at 8% 88%,rgba(92,60,255,.14),transparent 70%);
+  animation:sr-bloom 46s ease-in-out infinite alternate;
+  will-change:transform;
+}
+body::after{
+  inset:-64px;
+  background-image:
+    linear-gradient(rgba(132,164,255,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(132,164,255,.055) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 70% at 50% 0%,#000 0%,transparent 78%);
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 0%,#000 0%,transparent 78%);
+  animation:sr-grid 90s linear infinite;
+  will-change:transform;
+}
+@keyframes sr-bloom{
+  0%{transform:translate3d(0,0,0) scale(1)}
+  50%{transform:translate3d(3.5%,2.5%,0) scale(1.06)}
+  100%{transform:translate3d(-3%,4%,0) scale(1.02) rotate(2deg)}
+}
+@keyframes sr-grid{to{transform:translate3d(64px,64px,0)}}
+body .app-shell,body .auth-screen,body .subscription-lock{position:relative;z-index:1}
+body .auth-screen,body .subscription-lock{position:fixed}
+@media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}
+
+/* ---- 3. Typography --------------------------------------------------------
+   Bold, confident sans. Big tight titles, small tracked section labels,
+   lighter calm supporting copy. */
+body .page-head h1,body .site-head h1,body .drawer-head h2,body .modal-head h2,body .future-card h2,
+body #view-home .page-head h1{
+  font-family:var(--font-display);font-weight:800;letter-spacing:-.04em;line-height:1.04;
+  background:linear-gradient(180deg,#fff 30%,#b9c8f5 130%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+body .page-head h1,body .site-head h1{font-size:clamp(32px,3.8vw,50px)}
+body #view-automations .page-head h1,body #view-integrations .page-head h1,body #view-admin .page-head h1{font-weight:800;font-size:clamp(28px,3vw,38px);letter-spacing:-.035em}
+body .page-head>div>p:last-child,body .site-head-domain,body .st-lede,body .ads-source{color:var(--ink-500);font-weight:400}
+body .page-head>div>p:last-child{font-size:15px;line-height:1.55;margin-top:10px}
+body .eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.16em;color:var(--accent-ink);display:inline-flex;align-items:center;gap:9px}
+body .eyebrow::before{content:"";width:18px;height:2px;border-radius:2px;background:var(--grad-accent);flex:none}
+body .metric-label span,body .an-stat dt{letter-spacing:.06em}
+/* every place the old system used the serif-flavoured display weight */
+body #view-home .v22-hero-copy h2,body #view-home .v42-attention-head strong,body .v41-head strong,body .v41-agenda-head strong,
+body .site-empty strong,body .site-editor h2,body .site-support-block h3,body .an-empty strong,body .ct-empty strong,
+body .ads-block h2,body .st-section h2,body .panel-head h2,body .calendar-top h2{
+  font-family:var(--font-display);font-weight:750;letter-spacing:-.03em;color:var(--ink-900);
+}
+body .an-stat dd,body .metric-value strong,body .pipeline-column strong,body .ai-stats strong{
+  font-family:var(--font-display);font-weight:800;letter-spacing:-.045em;
+  background:linear-gradient(180deg,#fff 40%,#aebfee 140%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+body .an-trend-head h2,body .an-list h3,body .st-section h3{font-weight:700;letter-spacing:-.015em}
+body .an-stat dt{font-weight:700;color:var(--ink-500);text-transform:uppercase;font-size:11px;letter-spacing:.1em}
+
+/* ---- 4. Sidebar ------------------------------------------------------------ */
+body .sidebar{
+  background:linear-gradient(180deg,rgba(9,16,38,.92),rgba(6,11,27,.94));
+  border-right:1px solid var(--line);
+  -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
+  padding:24px 16px 16px;
+}
+body .app-brand{height:48px;padding:0 8px;position:relative}
+body .app-brand img{filter:invert(1);width:32px;height:32px;position:relative;z-index:1}
+body .app-brand::before{content:"";position:absolute;left:-6px;top:-4px;width:56px;height:56px;border-radius:50%;background:radial-gradient(circle,rgba(91,134,255,.45),transparent 68%);filter:blur(6px);animation:sr-pulse 7s ease-in-out infinite}
+@keyframes sr-pulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.15)}}
+@media (prefers-reduced-motion:reduce){body .app-brand::before{animation:none}}
+body .workspace-card{
+  background:var(--grad-card);border:1px solid var(--line);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-sm);margin:16px 0 26px;transition:border-color .2s var(--ease),box-shadow .2s var(--ease);
+}
+body .workspace-card:hover{border-color:var(--line-strong);box-shadow:var(--glow)}
+body .workspace-mark{background:var(--grad-accent);color:#fff;box-shadow:0 6px 18px -4px rgba(91,110,255,.7)}
+body .workspace-card small{color:var(--ink-300);letter-spacing:.14em}
+body .workspace-card strong{color:var(--ink-900);font-weight:700}
+body .workspace-card button,body .user-card button{color:var(--ink-500)}
+body .nav-group-label{color:var(--ink-300);letter-spacing:.16em}
+body .side-divider{background:linear-gradient(90deg,transparent,var(--line-strong),transparent)}
+body .nav-item{color:var(--ink-500);position:relative;height:44px;transition:background .18s var(--ease),color .18s var(--ease),transform .18s var(--ease)}
+body .nav-item strong{font-weight:650}
+body .nav-item:hover{background:rgba(132,164,255,.08);color:var(--ink-900)}
+body .nav-item:hover span{opacity:1}
+body .nav-item.active{
+  color:#fff;background:linear-gradient(90deg,rgba(91,134,255,.24),rgba(91,134,255,.06));
+  box-shadow:inset 0 0 0 1px rgba(132,164,255,.22),0 10px 28px -14px rgba(60,100,255,.6);
+}
+body .nav-item.active::before{content:"";position:absolute;left:-16px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--grad-accent);box-shadow:0 0 12px rgba(91,134,255,.9)}
+body .nav-item.active span{color:var(--accent-ink)}
+body .nav-item em,body .nav-item.active em{background:var(--grad-accent);color:#fff}
+body .admin-nav .nav-item{color:#a99bff}
+body .admin-nav .nav-item.active{background:linear-gradient(90deg,rgba(138,107,255,.24),rgba(138,107,255,.05));color:#fff}
+body .admin-nav .nav-item:hover{background:rgba(138,107,255,.12)}
+body .nav-group-label.admin-label{color:#8a7cf0}
+body .user-card{border-top:1px solid var(--line)}
+body .user-card strong{color:var(--ink-900)}
+body .user-card small{color:var(--ink-500)}
+body .user-card .avatar,body .avatar{background:var(--accent-tint);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--line-strong)}
+body .workspace-menu,body .notification-popover{background:var(--surface-raised);border:1px solid var(--line-strong);box-shadow:var(--shadow-lg);color:var(--ink-900)}
+body .workspace-option{color:var(--ink-900)}
+body .workspace-option:hover,body .workspace-option.active{background:rgba(132,164,255,.1)}
+body .mobile-nav{background:rgba(7,12,30,.92);border-top:1px solid var(--line);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+body .mobile-nav button{color:var(--ink-500)}
+body .mobile-nav button.active{color:#fff}
+body .mobile-group-label{color:var(--ink-500)}
+
+/* ---- 5. Topbar, controls, buttons ------------------------------------------ */
+body .topbar{background:rgba(5,10,26,.66);border-bottom:1px solid var(--line);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+body .topbar-status{color:var(--ink-500)}
+body .live-dot{box-shadow:0 0 0 4px rgba(63,220,155,.14),0 0 14px rgba(63,220,155,.7)}
+body .icon-button,body .search-box,body .range-control,body .filter-tabs button,body .calendar-top button,
+body .conversation-head button,body .message-box{background:var(--surface);border-color:var(--line);color:var(--ink-700)}
+body .icon-button:hover,body .filter-tabs button:hover{background:var(--surface-raised);border-color:var(--line-strong)}
+body .search-box input{color:var(--ink-900)}
+body .range-control button,body .text-button{color:var(--ink-500)}
+body .range-control button.active,body .filter-tabs button.active{background:var(--accent-tint);color:#fff;border-color:rgba(132,164,255,.3)}
+
+body .primary-action{
+  background:var(--grad-accent);color:#fff;border:0;
+  box-shadow:0 1px 0 rgba(255,255,255,.22) inset,0 10px 26px -10px rgba(91,110,255,.85);
+}
+body .primary-action:hover{filter:brightness(1.1);box-shadow:0 1px 0 rgba(255,255,255,.28) inset,0 14px 34px -10px rgba(91,110,255,1)}
+body .primary-action:disabled{filter:saturate(.5) brightness(.8);box-shadow:none}
+body .secondary-button,body .light-button,body .v17-lead-actions a,body .v17-lead-actions button,
+body .site-head-actions .secondary-button,body .ads-account-actions a,body .ads-account-actions button{
+  background:rgba(132,164,255,.08);color:var(--ink-900);border:1px solid var(--line-strong);
+}
+body .secondary-button:hover,body .light-button:hover,body .site-head-actions .secondary-button:hover{background:rgba(132,164,255,.16);border-color:rgba(132,164,255,.4)}
+body .danger-button{background:var(--danger-tint);color:var(--danger);border:1px solid rgba(255,128,121,.25)}
+body .transaction-delete:hover{border-color:rgba(255,128,121,.35)}
+body .close-button{background:rgba(132,164,255,.1);color:var(--ink-900)}
+body .close-button:hover{background:rgba(132,164,255,.2)}
+body .text-link,body .site-support-link,body .ct-facts a,body .st-row a{color:var(--accent-ink);text-decoration-color:rgba(169,192,255,.35)}
+body .text-link:hover,body .site-support-link:hover{color:#fff;text-decoration-color:currentColor}
+
+body input,body select,body textarea{background:var(--surface-sunken);color:var(--ink-900);border:1px solid var(--line-strong)}
+body input::placeholder,body textarea::placeholder{color:var(--ink-300)}
+body input:hover,body select:hover,body textarea:hover{border-color:rgba(132,164,255,.38)}
+body input:focus,body select:focus,body textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,134,255,.22),0 0 24px -6px rgba(91,134,255,.5)}
+body select option{background:#0c1530;color:#f1f4ff}
+body input:-webkit-autofill{-webkit-text-fill-color:#f1f4ff;box-shadow:0 0 0 40px #08102a inset}
+body .settings-card label,body .auth-card label,body .lead-drawer label,body .lead-modal label,
+body .prospecting-controls label,body .compact-form label,body .fund-form label,body .website-update-form label,body .st-form label{color:var(--ink-700)}
+body .toggle{background:rgba(132,164,255,.2)}
+body .toggle.on{background:var(--grad-accent);box-shadow:0 0 14px rgba(91,134,255,.55)}
+
+/* ---- 6. Surfaces: cards, panels, tables, modals --------------------------- */
+body .panel,body .metric-card,body .lead-table-wrap,body .calendar-shell,body .placeholder-layout,
+body .prospect-card,body .automation-card,body .v34-card,body .website-update-item,body .settings-card,
+body .v43-ad-control,body .v43-client-card,body .v43-ad-health,body .site-status,body .site-review,body .billing-card,body .widget-card{
+  background:var(--grad-card);border:1px solid var(--line);box-shadow:var(--shadow-sm);color:var(--ink-900);
+}
+body .panel,body .automation-card,body .v34-card,body .website-update-item{transition:border-color .2s var(--ease),box-shadow .2s var(--ease),transform .2s var(--ease)}
+body .panel:hover,body .automation-card:hover,body .v34-card:hover{border-color:var(--line-strong)}
+body .panel-flagship,body #view-home .v42-attention,body #view-home .leads-panel,
+body #view-website-projects .website-update-history-card,body #view-website-projects .website-update-form-card{
+  border:1px solid var(--line);border-top:1px solid transparent;border-radius:var(--radius-lg);background:var(--grad-card);position:relative;box-shadow:var(--shadow-md);
+}
+body .panel-flagship::before,body #view-home .v42-attention::before,body #view-home .leads-panel::before,
+body #view-website-projects .website-update-history-card::before,body #view-website-projects .website-update-form-card::before{
+  content:"";position:absolute;left:24px;right:24px;top:-1px;height:2px;border-radius:2px;background:var(--grad-accent);opacity:.9;
+}
+body #view-home .activity-panel{background:rgba(8,16,42,.55)}
+body #view-admin .admin-panel{border-top:1px solid var(--line);border-left:1px solid var(--line);border-right:1px solid var(--line);border-radius:var(--radius-lg)}
+body #view-admin .admin-panel::before{content:"";position:absolute;left:24px;right:24px;top:-1px;height:2px;border-radius:2px;background:linear-gradient(90deg,#8a6bff,#c06bff)}
+body #view-admin .admin-panel{position:relative}
+body .metric-card.hero-metric,body .ai-panel,body .billing-primary,body .future-card,body .v43-recommend{
+  background:linear-gradient(150deg,#1a2f78 0%,#101c4a 55%,#0c1433 100%);border:1px solid rgba(132,164,255,.28);color:#fff;
+}
+body .panel-head h2{font-size:20px}
+body .lead-table th{background:rgba(8,16,42,.7);color:var(--ink-500)}
+body .lead-table td{border-bottom-color:var(--line);color:var(--ink-700)}
+body .lead-table td strong{color:var(--ink-900)}
+body .lead-table-row:hover td,body .lead-row.clickable-lead:hover{background:rgba(132,164,255,.07)}
+body .lead-row,body .transaction-list>div,body .setting-row,body .conversation,body .conversation-head,body .st-row,body .st-section,
+body .site-status>div,body .an-list li,body .ads-campaigns li,body .ads-recs li,body .ct-item,body .ct-list,body .ads-block,body .site-support,body .an-secondary{border-color:var(--line)}
+body .conversation.active{background:rgba(91,134,255,.12)}
+body .message.inbound{background:rgba(132,164,255,.1);color:var(--ink-900)}
+body .message.ai{background:var(--grad-accent);color:#fff}
+body .lead-modal,body .lead-drawer{background:var(--surface-raised);border:1px solid var(--line-strong);color:var(--ink-900);box-shadow:var(--shadow-lg)}
+body .modal-backdrop{background:rgba(2,5,16,.66);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+body .calendar-day{border-color:var(--line)}
+body .calendar-event{background:var(--accent-tint);color:var(--accent-ink)}
+body .timeline-icon,body .payment-icon,body .automation-icon{background:var(--accent-tint);color:var(--accent-ink)}
+body .pipeline-column{background:rgba(8,16,42,.6)}
+body .pipeline-bar{background:rgba(132,164,255,.14)}
+body .pipeline-bar i{background:var(--grad-accent)}
+body .v43-grid article,body .v43-results article,body .v43-connections>div{background:rgba(8,16,42,.6);border-color:var(--line)}
+body .ai-stats div{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12)}
+body .micro-bars i{background:#aac1ff}
+
+/* status: chips read as soft glowing tints on navy */
+body .chip,body .status-pill,body .coming-badge{border:1px solid transparent}
+body .chip-success,body .status-Won,body .invoice-status.paid,body .trend.positive,body .ai-live-pill,body .v28-score.hot,body .v28-score.good{border-color:rgba(63,220,155,.28)}
+body .chip-warning,body .status-Contacted,body .invoice-status.pending,body .v28-score.fair{border-color:rgba(246,189,87,.28)}
+body .chip-danger,body .status-Lost,body .invoice-status.void,body .trend.negative,body .v28-score.weak{border-color:rgba(255,128,121,.28)}
+body .chip-info,body .status-New{border-color:rgba(132,164,255,.32)}
+body .chip-success::before,body .chip-info::before{box-shadow:0 0 8px currentColor}
+body .status-Quoted{background:rgba(138,107,255,.16);color:#c3b3ff}
+body .status-pill.dark{background:rgba(255,255,255,.1);color:#fff}
+body .hero-metric .trend.positive{background:rgba(63,220,155,.18);color:#8ff0c3}
+
+/* ---- 7. Overview hero (home) ----------------------------------------------- */
+body #view-home .v22-hero{background:linear-gradient(150deg,rgba(38,64,150,.55),rgba(12,20,50,.85));border:1px solid var(--line-strong);box-shadow:var(--glow)}
+body #view-home .metric-grid{background:var(--grad-card);border-color:var(--line)}
+body #view-home .metric-card{background:transparent;border-color:var(--line)}
+body #view-home .metric-card.hero-metric{background:linear-gradient(150deg,rgba(43,76,190,.7),rgba(20,32,84,.7))}
+body #view-home .v22-hero-stat{border-color:var(--line)}
+body #view-home .v22-hero-stat:hover strong{color:var(--accent-ink)}
+
+/* ---- 8. Website ------------------------------------------------------------ */
+body .site-stage{background:var(--grad-card);border:1px solid var(--line-strong);box-shadow:var(--shadow-lg),0 0 80px -30px rgba(70,110,255,.45)}
+body .site-chrome{background:rgba(8,16,42,.6);border-bottom-color:var(--line)}
+body .site-chrome-dots i:nth-child(1){background:#ff8079}
+body .site-chrome-dots i:nth-child(2){background:#f6bd57}
+body .site-chrome-dots i:nth-child(3){background:#3fdc9b}
+body .site-chrome-dots i{opacity:.75}
+body .site-chrome-url{background:var(--surface-sunken);color:var(--ink-500);box-shadow:inset 0 0 0 1px var(--line)}
+body .site-device{background:var(--surface-sunken);box-shadow:inset 0 0 0 1px var(--line)}
+body .site-device button.active,body .an-range button.active{background:var(--accent-tint);color:#fff;box-shadow:inset 0 0 0 1px rgba(132,164,255,.32)}
+body .an-range{background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);padding:4px}
+body .an-range button{color:var(--ink-500);transition:background .18s var(--ease),color .18s var(--ease)}
+body .an-range button:hover:not(.active){color:var(--ink-900)}
+body .site-canvas{background:radial-gradient(90% 80% at 50% 0%,#101c44,#070d22)}
+body .site-caption{border-top-color:var(--line);color:var(--ink-500);background:rgba(8,16,42,.5)}
+body .site-caption a{color:var(--accent-ink)}
+body .site-status dt{color:var(--ink-500)}
+body .site-status dd{color:var(--ink-900)}
+body .site-editor{
+  background:radial-gradient(120% 90% at 100% 0%,rgba(91,110,255,.32),transparent 55%),linear-gradient(170deg,#14245a 0%,#0b1436 100%);
+  border:1px solid rgba(132,164,255,.3);box-shadow:var(--shadow-lg),0 0 70px -24px rgba(91,110,255,.6);
+}
+body .site-editor-submit{background:#fff;color:#0b1436}
+body .site-editor .eyebrow{color:#b7c8ff}
+body .site-editor textarea{background:rgba(5,10,26,.45);border-color:rgba(255,255,255,.16)}
+body .site-editor-pill{background:rgba(255,255,255,.1)}
+body .site-editor-review-actions .secondary-button{color:#fff}
+body .project-stepper-step.done:before{background:var(--accent)}
+body .project-stepper-step i{background:var(--surface);border-color:var(--line-strong)}
+body .project-stepper-step.done i{background:var(--grad-accent);color:#fff}
+body .project-stepper-step.current i{background:var(--grad-accent);box-shadow:0 0 0 4px rgba(91,134,255,.22),0 0 18px rgba(91,134,255,.7)}
+body .project-stepper-step.done span,body .project-stepper-step.current span{color:var(--ink-900)}
+body #view-website-projects .website-update-item.selected{background:var(--accent-tint)}
+
+/* ---- 9. Analytics ----------------------------------------------------------- */
+body .an-stats{
+  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--grad-card);box-shadow:var(--shadow-sm);overflow:hidden;
+}
+body .an-stat{padding:24px 22px 22px;border-left-color:var(--line)}
+body .an-stat:first-child{padding-left:22px}
+body .an-stat p{color:var(--ink-500)}
+body .an-trend{padding:22px 24px 14px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--grad-card);box-shadow:var(--shadow-sm)}
+body .an-grid{stroke:rgba(132,164,255,.1)}
+body .an-axis{fill:var(--ink-300)}
+body .an-line{stroke:#7aa0ff;stroke-width:2.5;filter:drop-shadow(0 0 8px rgba(91,134,255,.7))}
+body .an-area{fill:#5b86ff;opacity:.16}
+body .an-cross{stroke:rgba(169,192,255,.4)}
+body .an-dot{fill:#fff;stroke:#5b86ff}
+body .an-tip{background:var(--surface-raised);border:1px solid var(--line-strong);color:#fff}
+body .an-tip span{color:var(--ink-500)}
+body .an-list{padding:20px 22px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--grad-card)}
+body .an-secondary{border-top:0;gap:16px;padding-top:0}
+body .an-list li i{background:var(--grad-accent);opacity:.5;height:2px}
+body .an-list-label{color:var(--ink-900)}
+body .an-table td,body .an-table th{border-bottom-color:var(--line)}
+body #view-analytics .ad-metrics>div,body #view-analytics .analytics-track,body #view-prospecting .ad-metrics>div,body #view-prospecting .prospecting-tip{background:var(--accent-tint)}
+body #view-analytics .analytics-track i{background:var(--grad-accent)}
+
+/* ---- 10. Contact, Ads, Settings -------------------------------------------- */
+body .ct-list{border-top:0;display:grid;gap:10px}
+body .ct-item{border:1px solid var(--line);border-radius:var(--radius-md);background:var(--grad-card);box-shadow:var(--shadow-sm);transition:border-color .2s var(--ease),transform .2s var(--ease)}
+body .ct-item:hover{border-color:var(--line-strong)}
+body .ct-row{padding:20px 22px;border-radius:var(--radius-md)}
+body .ct-row:hover{background:rgba(132,164,255,.05)}
+body .ct-item.is-unread{border-color:rgba(132,164,255,.3);box-shadow:var(--shadow-sm),inset 3px 0 0 var(--accent)}
+body .ct-item.is-unread .ct-dot{background:var(--accent);box-shadow:0 0 12px var(--accent)}
+body .ct-detail{padding:0 22px 26px 54px}
+body .ct-meta,body .ct-who span,body .ct-facts dt{color:var(--ink-500)}
+body .ct-msg,body .ct-source{color:var(--ink-700)}
+body .ct-full,body .ct-facts dd,body .ct-who strong{color:var(--ink-900)}
+
+body .ads-advisory{color:var(--ink-500)}
+body .ads-block{border-top:0}
+body .ads-account{
+  padding:26px 28px;margin-bottom:18px;border:1px solid var(--line-strong);border-radius:var(--radius-lg);
+  background:radial-gradient(100% 140% at 0% 0%,rgba(91,134,255,.2),transparent 60%),var(--grad-card);box-shadow:var(--glow);
+}
+body .ads-block:not(.ads-account){padding:26px 28px;margin-bottom:18px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--grad-card);box-shadow:var(--shadow-sm)}
+body .ads-block:not(.ads-account) .an-stats{border:0;background:transparent;box-shadow:none;border-radius:0}
+body .ads-block h2{font-size:26px;color:var(--ink-900)}
+body .ads-campaigns b,body .ads-campaigns strong,body .ads-recs strong{color:var(--ink-900)}
+
+body .st-nav a{color:var(--ink-500);position:relative}
+body .st-nav a:hover{background:rgba(132,164,255,.08);color:#fff}
+body .st-nav a.active,body .st-nav a[aria-current]{background:var(--accent-tint);color:#fff}
+body .st-section{padding:30px 32px 32px;margin:0 0 18px;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--grad-card);box-shadow:var(--shadow-sm)}
+body .st-section:last-child{border:1px solid var(--line)}
+body .st-section h2{font-size:24px;margin-bottom:8px}
+body .st-lede{margin-bottom:24px}
+body .st-form input,body .st-form textarea{background:var(--surface-sunken);color:var(--ink-900);border-color:var(--line-strong)}
+body .st-form label{font-size:12.5px;letter-spacing:.01em}
+body .st-row{border-top-color:var(--line)}
+body .st-row strong{color:var(--ink-900)}
+body .st-row span{color:var(--ink-500)}
+body .st-code,body .st-mono{background:var(--surface-sunken)}
+body .st-code code{color:var(--accent-ink)}
+
+/* ---- 11. Empty states -------------------------------------------------------
+   Same elements the app already renders (.an-empty / .ct-empty / .site-empty),
+   presented as intentional, minimal "stage" surfaces: a glowing orb, a bold
+   line, calm supporting copy, and a faint ghost of what will live here. */
+body .an-empty,body .ct-empty{
+  position:relative;overflow:hidden;isolation:isolate;
+  max-width:none;justify-items:center;text-align:center;gap:10px;
+  padding:150px 32px 56px;border:1px solid var(--line);border-radius:var(--radius-lg);
+  background:radial-gradient(70% 60% at 50% 0%,rgba(91,134,255,.16),transparent 70%),var(--grad-card);
+  box-shadow:var(--shadow-md);
+}
+body .an-empty::before,body .ct-empty::before{
+  content:"";position:absolute;left:50%;top:44px;width:64px;height:64px;margin-left:-32px;border-radius:50%;z-index:1;
+  background:radial-gradient(circle at 35% 30%,#9db8ff,#5b86ff 45%,#3a3fd6 100%);
+  box-shadow:0 0 0 10px rgba(91,134,255,.10),0 0 0 22px rgba(91,134,255,.05),0 12px 44px rgba(91,134,255,.6);
+  animation:sr-orb 6s ease-in-out infinite;
+}
+body .an-empty::after,body .ct-empty::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:46%;z-index:-1;pointer-events:none;opacity:.9;
+  -webkit-mask-image:linear-gradient(180deg,transparent,#000 70%);mask-image:linear-gradient(180deg,transparent,#000 70%);
+}
+@keyframes sr-orb{0%,100%{transform:translateY(0);box-shadow:0 0 0 10px rgba(91,134,255,.10),0 0 0 22px rgba(91,134,255,.05),0 12px 44px rgba(91,134,255,.55)}
+  50%{transform:translateY(-6px);box-shadow:0 0 0 14px rgba(91,134,255,.12),0 0 0 30px rgba(91,134,255,.04),0 18px 54px rgba(91,134,255,.8)}}
+@media (prefers-reduced-motion:reduce){body .an-empty::before,body .ct-empty::before{animation:none}}
+body .an-empty strong,body .ct-empty strong{font-size:clamp(22px,2.2vw,28px);position:relative;z-index:1}
+body .an-empty span,body .ct-empty span{max-width:520px;font-size:15px;line-height:1.6;position:relative;z-index:1}
+body .an-empty .text-link{margin-top:8px;position:relative;z-index:1;display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:999px;background:rgba(132,164,255,.1);border:1px solid var(--line-strong);text-decoration:none;color:#fff}
+body .an-empty .text-link:hover{background:rgba(132,164,255,.2)}
+
+/* ghost of a chart (analytics + ads) */
+body .an-empty::after{
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 160' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%235b86ff' stop-opacity='.28'/%3E%3Cstop offset='1' stop-color='%235b86ff' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M0 120 C80 110 120 70 200 84 S330 130 420 90 S560 30 650 56 S760 70 800 40 L800 160 L0 160Z' fill='url(%23g)'/%3E%3Cpath d='M0 120 C80 110 120 70 200 84 S330 130 420 90 S560 30 650 56 S760 70 800 40' fill='none' stroke='%237aa0ff' stroke-opacity='.45' stroke-width='2' stroke-dasharray='5 7'/%3E%3C/svg%3E") center bottom/100% 100% no-repeat;
+}
+/* ghost of inbox rows (contact) */
+body .ct-empty::after{
+  background:
+    linear-gradient(90deg,rgba(132,164,255,.13) 0 9%,transparent 9% 100%) 6% 22%/88% 14px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.09) 0 55%,transparent 55% 100%) 6% 38%/88% 10px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.13) 0 12%,transparent 12% 100%) 6% 66%/88% 14px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.09) 0 42%,transparent 42% 100%) 6% 82%/88% 10px no-repeat;
+}
+body .ads-empty{border-top:1px solid var(--line)}
+body .site-empty{background:radial-gradient(90% 70% at 50% 0%,rgba(91,134,255,.22),transparent 70%),linear-gradient(180deg,#0e1a40,#070d22)}
+body .site-empty strong{font-size:clamp(22px,2.2vw,28px)}
+body .site-empty::before{content:"";width:56px;height:56px;border-radius:50%;justify-self:center;background:radial-gradient(circle at 35% 30%,#9db8ff,#5b86ff 45%,#3a3fd6 100%);box-shadow:0 0 0 10px rgba(91,134,255,.1),0 0 0 22px rgba(91,134,255,.05),0 10px 40px rgba(91,134,255,.55);margin-bottom:6px}
+body .empty-state,body .v29-empty{color:var(--ink-500)}
+body .skeleton{background:rgba(132,164,255,.08)}
+body .skeleton::after{background:linear-gradient(90deg,transparent,rgba(132,164,255,.14),transparent)}
+
+/* ---- 12. Auth / lock screens ------------------------------------------------ */
+body .auth-screen,body .subscription-lock{background:radial-gradient(80% 60% at 50% 0%,#12235a,#050a1a 70%)}
+body .auth-card,body .subscription-lock-card{background:var(--surface-raised);border:1px solid var(--line-strong);color:var(--ink-900);box-shadow:var(--shadow-lg),0 0 90px -30px rgba(91,110,255,.6)}
+body .auth-tab{color:var(--ink-500)}
+body .auth-tab.active{background:var(--grad-accent);color:#fff}
+
+/* ---- 13. Mobile ------------------------------------------------------------- */
+@media(max-width:900px){
+  body::after{opacity:.6}
+  body .st-section{padding:24px 20px}
+  body .ads-account,body .ads-block:not(.ads-account){padding:20px}
+  body .an-empty,body .ct-empty{padding-top:140px}
+  body .nav-item.active::before{left:-12px}
+}
+
+/* ---- 14. Corrections after visual review ------------------------------------ */
+body .auth-card input,body .settings-card input,body .settings-card textarea,body .settings-card select,
+body .lead-modal input,body .lead-modal textarea,body .lead-drawer input,body .lead-drawer textarea,body .lead-drawer select{
+  background:var(--surface-sunken);color:var(--ink-900);border-color:var(--line-strong);
+}
+body .auth-card input:focus,body .settings-card input:focus,body .settings-card textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,134,255,.22)}
+body .auth-card>img{filter:invert(1);width:40px;height:auto}
+body .auth-tabs{background:var(--surface-sunken);box-shadow:inset 0 0 0 1px var(--line)}
+body .auth-card h1{font-weight:800;letter-spacing:-.04em;background:linear-gradient(180deg,#fff 30%,#b9c8f5 130%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+body .auth-card p,body .auth-card small{color:var(--ink-500)}
+body .auth-forgot-link{color:var(--accent-ink)}
+/* empty-state ghosts sit in their own reserved band under the copy */
+body .an-empty,body .ct-empty{padding-bottom:190px}
+body .an-empty::after,body .ct-empty::after{height:150px}
+body .an-empty .text-link{margin-bottom:0}
+body .ct-empty::after{
+  -webkit-mask-image:linear-gradient(180deg,#000 30%,transparent 100%);mask-image:linear-gradient(180deg,#000 30%,transparent 100%);
+  background:
+    radial-gradient(circle,rgba(132,164,255,.22) 0 5px,transparent 6px) 8% 6px/22px 22px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.18) 0 16%,transparent 16% 100%) 14% 6px/76% 8px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.10) 0 62%,transparent 62% 100%) 14% 24px/76% 7px no-repeat,
+    linear-gradient(rgba(132,164,255,.10),rgba(132,164,255,.10)) 6% 46px/88% 1px no-repeat,
+    radial-gradient(circle,rgba(132,164,255,.14) 0 5px,transparent 6px) 8% 62px/22px 22px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.13) 0 12%,transparent 12% 100%) 14% 62px/76% 8px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.07) 0 48%,transparent 48% 100%) 14% 80px/76% 7px no-repeat;
+}
+body .ads-block.ads-account+.ads-empty{margin-top:0}
+body .ai-panel input,body .ai-panel textarea,body .ai-panel [class*="answer"],body .ai-panel [class*="reply"],body .ai-panel [class*="note"]{background:rgba(5,10,26,.5);border:1px solid rgba(255,255,255,.14);color:#e8eeff}
+body .ai-panel>p,body .ai-panel p{color:#b9c6ea}
+body .ct-empty::after{
+  background:
+    linear-gradient(90deg,rgba(132,164,255,.17) 0 18%,transparent 18% 100%) 8% 8px/84% 9px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.09) 0 66%,transparent 66% 100%) 8% 28px/84% 7px no-repeat,
+    linear-gradient(rgba(132,164,255,.09),rgba(132,164,255,.09)) 8% 54px/84% 1px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.12) 0 14%,transparent 14% 100%) 8% 72px/84% 9px no-repeat,
+    linear-gradient(90deg,rgba(132,164,255,.07) 0 50%,transparent 50% 100%) 8% 92px/84% 7px no-repeat;
+}
