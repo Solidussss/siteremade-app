@@ -213,6 +213,40 @@ function renderSubscriptionGate(){
   if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
 }
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
+// The purchased-website ZIP downloads in place: the file is fetched, and only a real ZIP becomes a browser download
+// (with the builder's filename); anything else shows a readable message next to the button -- never a JSON page or
+// a blank tab. The link still works without JavaScript.
+function handoffFilename(disposition){
+  const d=String(disposition||'');
+  const star=/filename\*=UTF-8''([^;]+)/i.exec(d);if(star){try{return decodeURIComponent(star[1]);}catch(e){}}
+  const plain=/filename="([^"]+)"/i.exec(d);return plain?plain[1]:'SiteRemade-website.zip';
+}
+function handoffStatus(link){
+  const box=link.closest('.website-handoff-actions')||link.parentElement;
+  let el=box&&box.parentElement?box.parentElement.querySelector('.website-handoff-status'):null;
+  if(!el&&box){el=document.createElement('p');el.className='website-handoff-status';el.setAttribute('role','status');box.insertAdjacentElement('afterend',el);}
+  return el;
+}
+document.addEventListener('click',async e=>{
+  const link=e.target&&e.target.closest?e.target.closest('a.website-handoff-download'):null;if(!link)return;
+  e.preventDefault();if(link.dataset.busy)return;link.dataset.busy='1';
+  const label=link.textContent,status=handoffStatus(link);
+  link.textContent='Preparing your website files…';link.setAttribute('aria-busy','true');
+  if(status){status.textContent='';status.classList.remove('is-error');}
+  try{
+    const r=await fetch(link.getAttribute('href'),{credentials:'same-origin',headers:{Accept:'application/zip,application/json'}});
+    if(r.ok&&/application\/zip/i.test(r.headers.get('content-type')||'')){
+      const blob=await r.blob(),name=handoffFilename(r.headers.get('content-disposition'));
+      const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      if(status)status.textContent=`Downloaded ${name} (${blob.size>=1048576?(blob.size/1048576).toFixed(1)+' MB':Math.max(1,Math.round(blob.size/1024))+' KB'}). Unzip it and open index.html, or upload the folder to any host.`;
+    }else{
+      const d=await r.json().catch(()=>({}));
+      if(status){status.textContent=d.message||'Your website files could not be prepared. Please try again shortly.';status.classList.add('is-error');}
+    }
+  }catch(err){if(status){status.textContent='The download couldn’t start — check your connection and try again.';status.classList.add('is-error');}}
+  finally{link.textContent=label;link.removeAttribute('aria-busy');delete link.dataset.busy;}
+});
 function renderAll(){
   [
     ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['ads',renderAds],['dashboard',renderDashboard],
@@ -925,7 +959,8 @@ function renderDrawerProject(l){
 // way, since both endpoints return the same summary shape.
 const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null,scopedProjectId:null};
 async function loadCanonicalWebsite(force){
-  if(isSubscriptionLocked())return;
+  // (no subscription check: a purchased website -- its preview and its ZIP -- belongs to the customer whether or not
+  // they subscribe; the server routes behind this are not subscription-gated either)
   if(canonicalWebsite.inflight)return canonicalWebsite.inflight;
   if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
   if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';

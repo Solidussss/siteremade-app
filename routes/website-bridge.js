@@ -51,6 +51,7 @@
 // `appliedOperations` (internal, structured) is stripped before anything
 // reaches the browser -- customers only ever see `changeSummary`.
 const { readJsonBody, db, hasSiteRemadeAccess, requireSiteRemadeAccess } = require('../lib/context');
+const { sendWebsiteDownload } = require('../lib/website-download');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
 const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
@@ -342,16 +343,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
-    const r = await bridge.downloadWebsite(c.access, got.summary.projectId);
-    if (r.status !== 200 || !r.buffer) return json(res, r.status || 502, { ok: false, code: 'download_unavailable', message: 'The website files could not be prepared.' });
-    const disposition = r.headers && r.headers.get ? r.headers.get('content-disposition') : null;
-    res.writeHead(200, {
-      'Content-Type': 'application/zip',
-      'Content-Length': r.buffer.length,
-      'Content-Disposition': disposition || 'attachment; filename="SiteRemade-website.zip"',
-      'Cache-Control': 'no-store',
-    });
-    return res.end(r.buffer);
+    return sendWebsiteDownload({ bridge, token: c.access, projectId: got.summary.projectId, res, json });
   });
 
   router.get('/api/app/website/projects/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params }) => {
@@ -455,16 +447,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
     if (!got.ok) return passThroughError(json, res, got.r);
-    const r = await bridge.downloadWebsite(c.access, got.summary.projectId);
-    if (r.status !== 200 || !r.buffer) return json(res, r.status || 502, { ok: false, code: 'download_unavailable', message: 'The website files could not be prepared.' });
-    const disposition = r.headers && r.headers.get ? r.headers.get('content-disposition') : null;
-    res.writeHead(200, {
-      'Content-Type': 'application/zip',
-      'Content-Length': r.buffer.length,
-      'Content-Disposition': disposition || 'attachment; filename="SiteRemade-website.zip"',
-      'Cache-Control': 'no-store',
-    });
-    return res.end(r.buffer);
+    return sendWebsiteDownload({ bridge, token: c.access, projectId: got.summary.projectId, res, json });
   });
 
   router.get('/api/app/website/preview', { auth: 'user' }, async (req, res, { c, json }) => {

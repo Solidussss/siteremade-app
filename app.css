@@ -618,6 +618,9 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
 }
 .website-handoff-download:hover{filter:brightness(1.06)}
 .website-handoff-download:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.website-handoff-download[aria-busy="true"]{opacity:.75;cursor:progress}
+.website-handoff-status{margin:10px 0 0;max-width:440px;color:var(--muted);font-size:10px;line-height:1.5}
+.website-handoff-status.is-error{color:#c54747}
 .website-handoff-copy{
   margin:10px 0 0;
   max-width:440px;
