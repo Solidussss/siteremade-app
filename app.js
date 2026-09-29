@@ -165,8 +165,29 @@ function maybeRedirectForWebsiteBuilderHandoff(){
   location.href='/handoff/website-builder?return='+encodeURIComponent(pending.ret)+'&mode='+encodeURIComponent(pending.mode||'session');
   return true;
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();handleConnectionReturn();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();handleConnectionReturn();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');loadWorkspaceCredits(!!sid||qp.get('billing')==='return');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
+// BILLING PASS: the plan, balance, renewal date and prices come from the SiteRemade builder's one credit ledger (the
+// same numbers the builder shows), through GET /api/app/website/credits. Never computed here.
+const workspaceCredits={data:null,websitePrice:null};
+function creditDate(iso){try{return iso?new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';}catch(e){return '';}}
+function creditSummaryText(){
+  const c=workspaceCredits.data;if(!c)return '';
+  const costs=c.costs||{};const price=costs.aiUpdate!=null?` An AI update costs ${costs.aiUpdate} credit (+${costs.imageSupport} for each new picture); a new Business website ${costs.businessGeneration}, a Creative page ${costs.creativePage}. Editing text yourself is free.`:'';
+  if(c.plan==='workspace'){const s=c.subscription||{};return `Workspace plan: ${c.remaining} AI credits left${s.renewsAt?` · renews ${creditDate(s.renewsAt)} with 100 credits (unused credits don’t roll over)`:s.endsAt?` · plan ends ${creditDate(s.endsAt)}`:''}.${price}`;}
+  if(c.plan==='tester')return `Tester allowance: ${c.remaining} credits${c.tester&&c.tester.resetsAt?` · resets ${new Date(c.tester.resetsAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`:''}.${price}`;
+  const problem=c.subscription&&c.subscription.paymentProblem?' Your last Workspace payment failed — update it under Manage billing to get this month’s credits.':'';
+  return `Free trial: ${c.remaining} of ${(c.trial&&c.trial.credits)||6} one-time credits left. A Workspace subscription adds 100 AI credits every month.${problem}${price}`;
+}
+function renderWorkspaceCredits(){
+  const t=creditSummaryText();
+  ['#workspaceCreditsLine','#settingsCreditsLine','#lockCreditsLine'].forEach(id=>{const el=qs(id);if(el){el.textContent=t;el.hidden=!t;}});
+  const note=qs('#siteEditorCost');if(note){const c=workspaceCredits.data;note.textContent=c&&c.costs&&c.costs.aiUpdate!=null?`Each automatic update costs ${c.costs.aiUpdate} credit, plus ${c.costs.imageSupport} for each new picture it makes. You have ${c.remaining}.`:'';note.hidden=!note.textContent;}
+}
+async function loadWorkspaceCredits(refresh){
+  try{const r=await fetch('/api/app/website/credits'+(refresh?'?refresh=1':''),{headers:{Accept:'application/json'}});const d=await r.json().catch(()=>({}));if(r.ok&&d.ok){workspaceCredits.data=d.credits||null;workspaceCredits.websitePrice=d.websitePrice||null;}}catch(e){/* informational: the balance line just stays empty */}
+  safeRender('workspace-credits',renderWorkspaceCredits);
+}
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
   const locked=isSubscriptionLocked();
@@ -265,7 +286,7 @@ function renderPayments(){
   qs('#transactionList').innerHTML=state.invoices.length?state.invoices.map(i=>{const lead=i.leadId?state.leads.find(l=>l.id===i.leadId):null;const nameHtml=lead?`<button type="button" class="customer-id customer-id-link" data-open-invoice-lead="${lead.id}"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></button>`:`<div class="customer-id"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></div>`;return `<div>${nameHtml}<span>${esc(i.description)}</span><em>${money(i.amount)}</em><select class="invoice-status ${i.status.toLowerCase()}" data-invoice="${i.id}">${['Draft','Pending','Paid','Void'].map(x=>`<option ${x===i.status?'selected':''}>${x}</option>`).join('')}</select><button class="transaction-delete" data-delete-invoice="${i.id}" title="Delete invoice">×</button></div>`}).join(''):'<div class="empty-state">No customer invoices yet.</div>';qsa('[data-invoice]').forEach(sel=>sel.onchange=()=>updateInvoice(sel.dataset.invoice,sel.value));qsa('[data-delete-invoice]').forEach(btn=>btn.onclick=()=>deleteInvoice(btn.dataset.deleteInvoice));qsa('[data-open-invoice-lead]').forEach(btn=>btn.onclick=()=>{switchView('leads');setTimeout(()=>openLead(btn.dataset.openInvoiceLead),50)});
   const monthly=(Number(state.billing?.monthlyCents)||0)/100,status=state.billing?.status||state.workspace.siteRemadeSubscriptionStatus||'inactive';
   qs('#subscriptionPrice').textContent=subscriptionMoney(monthly);const ss=qs('#subscriptionStatus');ss.textContent=String(status).replace('_',' ').toUpperCase();ss.classList.toggle('neutral',!['active','trialing'].includes(status));
-  qs('#startSubscriptionButton').textContent=['active','trialing'].includes(status)?'Subscription active':'Start monthly plan';qs('#startSubscriptionButton').disabled=['active','trialing'].includes(status);
+  qs('#startSubscriptionButton').textContent=['active','trialing'].includes(status)?'Subscription active':'Subscribe to Workspace';qs('#startSubscriptionButton').disabled=['active','trialing'].includes(status);
   const funded=(state.adFunds||[]).filter(f=>f.status==='Funded').reduce((x,f)=>x+Number(f.amount||0),0),spent=(state.adSpend||[]).reduce((x,a)=>x+Number(a.spend||0),0),available=Math.max(0,funded-spent);
   qs('#adFundedTotal').textContent=money(funded);qs('#adFundSpent').textContent=money(spent);qs('#adFundAvailable').textContent=money(available);
   qs('#adFundHistory').innerHTML=(state.adFunds||[]).length?state.adFunds.map(f=>`<div><span class="payment-icon">↗</span><strong>${esc(f.platform)} ads</strong><span>${dateLabel(f.createdAt)}</span><em>${money(f.amount)}</em><span class="status-pill ${f.status==='Funded'?'':'neutral'}">${esc(f.status)}</span></div>`).join(''):'<div class="empty-state">No advertising funds added yet.</div>';const fundForm=qs('#adFundForm');if(fundForm){fundForm.style.display=state.user?.role==='owner'?'none':'grid';if(state.user?.role==='owner')qs('#adFundStatus').textContent='Client approves/funds the advertising budget. You manage campaign delivery and record performance from this workspace.';}
@@ -1031,11 +1052,17 @@ const websiteEditService={
   // deliberately different selection would just 409 revision_conflict
   // every time. The default/canonical case (scopedProjectId null) is
   // untouched -- same URL, same body shape as before Phase 9.
+  // BILLING PASS: one id per update attempt, reused when the same update is sent again after a failure -- if the
+  // first one had in fact gone through, the builder returns it instead of making (and charging) it twice
   async requestEdit({projectId,baseRevision,instruction}){
     if(!this.available())return this._unavailable();
+    const key=JSON.stringify([projectId,baseRevision,instruction]);
+    if(!this._attempt||this._attempt.key!==key)this._attempt={key,id:'edit_'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)};
+    const requestId=this._attempt.id;
     const scoped=canonicalWebsite.scopedProjectId;
-    if(scoped)return this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/edits`,{baseRevision,request:instruction});
-    return this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId});
+    const res=scoped?await this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/edits`,{baseRevision,request:instruction,requestId}):await this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId,requestId});
+    if(res&&res.ok)this._attempt=null;
+    return res;
   },
   async publish({projectId,revision}){
     if(!this.available())return this._unavailable();
@@ -1292,7 +1319,7 @@ function renderWebsiteEditor(){
       const items=(websiteEditor.edit&&websiteEditor.edit.changeSummary)||[];
       if(head)head.textContent=st==='conflict'?'Your website changed':st==='live'?'Published':'What changed';
       if(list){list.hidden=st==='conflict'||!items.length;list.innerHTML=items.map(t=>`<li>${esc(t)}</li>`).join('');}
-      const credits=websiteEditor.edit&&Number.isFinite(websiteEditor.edit.creditsCharged)&&websiteEditor.edit.creditsCharged>0?` This update used ${websiteEditor.edit.creditsCharged} builder credit${websiteEditor.edit.creditsCharged===1?'':'s'}${Number.isFinite(websiteEditor.edit.creditsRemaining)?` (${websiteEditor.edit.creditsRemaining} left today)`:''}.`:'';
+      const credits=websiteEditor.edit&&Number.isFinite(websiteEditor.edit.creditsCharged)&&websiteEditor.edit.creditsCharged>0?` This update used ${websiteEditor.edit.creditsCharged} credit${websiteEditor.edit.creditsCharged===1?'':'s'}${Number.isFinite(websiteEditor.edit.creditsRemaining)?` (${websiteEditor.edit.creditsRemaining} left)`:''}.`:'';
       if(note){
         if(st==='conflict')note.textContent='Your text is still in the box above. Refresh to load the latest version, then apply your update again.';
         else if(st==='live')note.textContent=`Version ${websiteEditor.published?.revision??c?.revision} is now your published version — downloads of your site files from the builder include it from now on. Updating the site at your web address isn’t automatic yet: download the files from the builder, or ask the SiteRemade team.`;
@@ -1332,6 +1359,7 @@ async function submitWebsiteEdit(){
   // Saved by the builder. APPLYING = confirm that saved draft by re-reading
   // the builder project (a real call, not a timed animation).
   setEditorState('applying',{edit:{revision:res.revision,changeSummary:res.changeSummary||[],creditsCharged:res.creditsCharged,creditsRemaining:res.creditsRemaining}});
+  if(Number.isFinite(res.creditsRemaining)&&workspaceCredits.data){workspaceCredits.data.remaining=res.creditsRemaining;safeRender('workspace-credits',renderWorkspaceCredits);}
   input.value='';
   await loadCanonicalWebsite(true);
   setEditorState('preview_ready');

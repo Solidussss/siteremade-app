@@ -24,7 +24,8 @@ const registerers = [
   require('./legacy-twilio-inbound'),
   require('./daily-workflow'),
   require('./website-builder-handoff'),
-  require('./website-bridge')
+  require('./website-bridge'),
+  require('./billing-internal')
 ];
 
 function buildRouter() {

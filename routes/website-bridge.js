@@ -201,6 +201,30 @@ async function forWorkspaceProject(c, projectId) {
   return { ok: false, r };
 }
 
+// BILLING PASS: the browser sends one id per update attempt; a retry of the same attempt reuses it
+function requestIdFrom(body) { const v = typeof body.requestId === 'string' ? body.requestId.trim() : ''; return /^[A-Za-z0-9_.:-]{8,120}$/.test(v) ? v : null; }
+function editResult(projectId, d) {
+  return {
+    ok: true, projectId, revision: d.revision,
+    changeSummary: Array.isArray(d.changeSummary) ? d.changeSummary.filter(s => typeof s === 'string').slice(0, 20) : [],
+    creditsCharged: Number.isFinite(d.creditsCharged) ? d.creditsCharged : null,
+    creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null,
+    replayed: !!d.replayed,
+  };
+}
+// an explicit allowlist of the builder's credit summary
+function creditsFrom(x) {
+  const n = v => (Number.isFinite(v) ? v : null); const s = v => (typeof v === 'string' ? v.slice(0, 80) : null);
+  const costs = x.costs || {};
+  return {
+    plan: s(x.plan), planLabel: s(x.planLabel), remaining: n(x.remaining),
+    trial: x.trial ? { credits: n(x.trial.credits), remaining: n(x.trial.remaining) } : null,
+    subscription: x.subscription ? { status: s(x.subscription.status), credits: n(x.subscription.credits), remaining: n(x.subscription.remaining), renewsAt: s(x.subscription.renewsAt), endsAt: s(x.subscription.endsAt), paymentProblem: !!x.subscription.paymentProblem } : null,
+    tester: x.tester ? { credits: n(x.tester.credits), remaining: n(x.tester.remaining), resetsAt: s(x.tester.resetsAt) } : null,
+    costs: { businessGeneration: n(costs.businessGeneration), creativePage: n(costs.creativePage), aiUpdate: n(costs.aiUpdate), imageSupport: n(costs.imageSupport), imagePremium: n(costs.imagePremium), manualEdit: n(costs.manualEdit) },
+  };
+}
+
 module.exports = function registerWebsiteBridgeRoutes(router) {
   router.get('/api/app/website', { auth: 'user' }, async (req, res, { c, json }) => {
     if (!requireSiteRemadeAccess(c, json, res)) return;
@@ -383,15 +407,8 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before applying this update.' });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
-    const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request });
-    if (r.status === 200 && r.data && r.data.ok) {
-      return json(res, 200, {
-        ok: true, projectId: got.summary.projectId, revision: r.data.revision,
-        changeSummary: Array.isArray(r.data.changeSummary) ? r.data.changeSummary.filter(s => typeof s === 'string').slice(0, 20) : [],
-        creditsCharged: Number.isFinite(r.data.creditsCharged) ? r.data.creditsCharged : null,
-        creditsRemaining: Number.isFinite(r.data.creditsRemaining) ? r.data.creditsRemaining : null,
-      });
-    }
+    const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request, requestId: requestIdFrom(body) });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, editResult(got.summary.projectId, r.data));
     return passThroughError(json, res, r);
   });
 
@@ -441,15 +458,18 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (body.expectedProjectId && body.expectedProjectId !== got.summary.projectId) {
       return json(res, 409, { ok: false, code: 'revision_conflict', message: 'This website changed since you opened it. Refresh before applying this update.', currentRevision: got.summary.revision });
     }
-    const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request });
-    if (r.status === 200 && r.data && r.data.ok) {
-      return json(res, 200, {
-        ok: true, projectId: got.summary.projectId, revision: r.data.revision,
-        changeSummary: Array.isArray(r.data.changeSummary) ? r.data.changeSummary.filter(s => typeof s === 'string').slice(0, 20) : [],
-        creditsCharged: Number.isFinite(r.data.creditsCharged) ? r.data.creditsCharged : null,
-        creditsRemaining: Number.isFinite(r.data.creditsRemaining) ? r.data.creditsRemaining : null,
-      });
-    }
+    const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request, requestId: requestIdFrom(body) });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, editResult(got.summary.projectId, r.data));
+    return passThroughError(json, res, r);
+  });
+
+  // BILLING PASS: the plan, credit balance, renewal date and prices from the builder's one ledger (the same numbers
+  // the builder shows), plus the one-time website price. Readable without a subscription: it is what tells a
+  // customer what they have and what subscribing adds. `?refresh=1` re-checks the subscription right away.
+  router.get('/api/app/website/credits', { auth: 'user' }, async (req, res, { c, u, json }) => {
+    const r = await bridge.getCredits(c.access, u && u.searchParams && u.searchParams.get('refresh') === '1');
+    if (r.status === 200 && r.data && r.data.ok && r.data.credits) return json(res, 200, { ok: true, credits: creditsFrom(r.data.credits), websitePrice: r.data.websitePrice || null });
+    if (r.status === 401 || r.status === 404) return json(res, 200, { ok: true, credits: null, linked: false });
     return passThroughError(json, res, r);
   });
 

@@ -107,11 +107,12 @@
       <img src="siteremade-logo-black.png?v=14" alt="SiteRemade" />
       <p class="eyebrow">WORKPLACE ACTIVATION</p>
       <h1>Connect your SiteRemade website</h1>
-      <p class="subscription-lock-copy">Your website is a separate one-time purchase. SiteRemade Workplace is the ongoing workspace for managing it, requesting updates, publishing changes, viewing analytics and handling website operations.</p>
-      <div class="subscription-lock-price"><strong>$149.99</strong><span> website · one time</span></div>
-      <div class="subscription-lock-price"><strong id="lockSubscriptionPrice">$39.99</strong><span>/ month · Workplace</span></div>
+      <p class="subscription-lock-copy"><strong>Subscribe to Workspace</strong> for this app — managing your website, AI updates, publishing, analytics and website operations — with 100 AI credits every month (unused credits don’t roll over). <strong>Buying a website</strong> is separate: each website is a one-time purchase in the builder, and a subscription does not include it.</p>
+      <div class="subscription-lock-price"><strong id="lockSubscriptionPrice">$39.99</strong><span>/ month · Subscribe to Workspace · 100 AI credits a month</span></div>
+      <div class="subscription-lock-price"><strong>$149.99 CAD</strong><span> · Buy a website · one time, per website</span></div>
+      <p class="helper-copy" id="lockCreditsLine" hidden></p>
       <span class="status-pill neutral" id="lockSubscriptionStatus">INACTIVE</span>
-      <button class="primary-action subscription-lock-primary" id="lockStartSubscriptionButton" type="button">Start SiteRemade Workplace</button>
+      <button class="primary-action subscription-lock-primary" id="lockStartSubscriptionButton" type="button">Subscribe to Workspace</button>
       <button class="secondary-button" id="lockManageBillingButton" type="button">Manage billing</button>
       <button class="text-button subscription-lock-signout" id="lockLogoutButton" type="button">Sign out</button>
       <p class="helper-copy" id="lockBillingStatus">Secure billing is handled through Stripe.</p>
@@ -250,6 +251,7 @@
                   <button type="button" data-edit-example="Update my phone number to ">Update my phone number</button>
                   <button type="button" data-edit-example="Create a winter version of the site: ">Create a winter version</button>
                 </div>
+                <p class="helper-copy" id="siteEditorCost" hidden></p>
                 <div class="site-editor-actions">
                   <button type="submit" class="site-editor-submit" id="siteEditorSubmit" disabled>Update my website</button>
                   <button type="button" class="site-editor-handoff" id="siteEditorHandoff" hidden>Send to the SiteRemade team instead</button>
@@ -494,8 +496,9 @@
           <article class="panel billing-card billing-primary">
             <div class="panel-head"><div><p class="eyebrow">SITEREMADE BILLING</p><h2>Your monthly system</h2></div><span class="status-pill neutral" id="subscriptionStatus">INACTIVE</span></div>
             <div class="billing-price"><strong id="subscriptionPrice">$250</strong><span>/ month</span></div>
-            <p>Your SiteRemade growth system: website operations, managed lead delivery, AI receptionist, scheduling, payments, analytics and optional prospecting.</p>
-            <div class="billing-actions"><button class="primary-action" id="startSubscriptionButton" type="button">Start monthly plan</button><button class="secondary-button" id="manageBillingButton" type="button">Manage billing</button></div>
+            <p>Your SiteRemade growth system: website operations, managed lead delivery, AI receptionist, scheduling, payments, analytics and optional prospecting. Includes 100 AI credits a month for building and updating websites. Buying a website is a separate one-time purchase.</p>
+            <p class="helper-copy" id="workspaceCreditsLine" hidden></p>
+            <div class="billing-actions"><button class="primary-action" id="startSubscriptionButton" type="button">Subscribe to Workspace</button><button class="secondary-button" id="manageBillingButton" type="button">Manage billing</button></div>
             <p class="helper-copy" id="billingStatus">Billed by SiteRemade through Stripe.</p>
           </article>
 
@@ -642,8 +645,9 @@
               <h2>Billing</h2><p class="st-lede">Your SiteRemade plan. Payments are handled securely by Stripe.</p>
               <div class="st-rows">
                 <div class="st-row"><div><strong>SiteRemade plan</strong><span id="settingsPlanLine">—</span></div><span class="chip chip-neutral" id="settingsPlanStatus">—</span></div>
+                <div class="st-row"><div><strong>AI credits</strong><span id="settingsCreditsLine">—</span></div></div>
               </div>
-              <div class="st-form-actions"><button type="button" class="primary-action" id="settingsStartPlan">Start monthly plan</button><button type="button" class="secondary-button" id="settingsManageBilling">Manage billing</button><p class="modal-status" id="settingsBillingStatus" role="status"></p></div>
+              <div class="st-form-actions"><button type="button" class="primary-action" id="settingsStartPlan">Subscribe to Workspace</button><button type="button" class="secondary-button" id="settingsManageBilling">Manage billing</button><p class="modal-status" id="settingsBillingStatus" role="status"></p></div>
             </section>
 
             <section class="st-section" id="st-connections">
@@ -726,7 +730,7 @@
 
   <!-- Phase 8: preview only (POST /api/app/chat-preview) -- no name/email/phone fields, because nothing typed here is saved or added to Contact. -->
   <div class="widget-demo" id="widgetDemo" hidden><div class="widget-card"><button class="close-button" id="closeWidgetDemo">×</button><p class="eyebrow">WEBSITE CHAT · PREVIEW</p><h2>Try your website chat</h2><p class="helper-copy" id="widgetPreviewNote" role="status">Preview only: nothing you type here is saved or added to Contact.</p><div id="widgetMessages" class="widget-messages"></div><form id="widgetForm"><input id="widgetText" placeholder="Ask a question…" required /><button class="primary-action">Send</button></form></div></div>
-  <script src="app.js?v=31"></script>
+  <script src="app.js?v=32"></script>
   <script data-gmail-direct-v34>document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-v29-provider="gmail"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.location.assign('/api/app/gmail/start');},true);</script>
 </body>
 </html>
