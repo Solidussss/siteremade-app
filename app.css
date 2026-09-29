@@ -601,7 +601,8 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  min-height:44px;
+  height:44px;
+  box-sizing:border-box;
   padding:0 18px;
   border-radius:12px;
   background:#315cff;
@@ -609,6 +610,9 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
   text-decoration:none;
   font-size:11px;
   font-weight:800;
+  line-height:1;
+  text-align:center;
+  vertical-align:middle;
   letter-spacing:-.01em;
   box-shadow:0 10px 24px rgba(49,92,255,.22);
 }
