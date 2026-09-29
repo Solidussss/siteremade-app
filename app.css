@@ -594,3 +594,33 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
 }
 /* Phase 6: Admin "Resolve" for a website link that needs review (staff only) */
 .admin-relink{display:grid;gap:8px;padding:0 0 16px}.admin-relink .helper-copy{margin-top:0}.admin-relink-list{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}.admin-relink-option{display:flex;gap:9px;align-items:flex-start;font-size:11px;line-height:1.45;cursor:pointer}.admin-relink-option input{margin-top:2px;flex:none}.admin-relink-option span{min-width:0;overflow-wrap:anywhere}.admin-relink-option em{font-style:normal;color:var(--muted)}.admin-relink-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.admin-relink-actions .helper-copy{flex-basis:100%}.admin-relink-actions button{min-height:34px;padding:0 12px}.admin-bridge-state{margin:0 0 6px}
+
+/* My Websites — purchased-site ownership handoff */
+.website-handoff-actions{margin-top:14px}
+.website-handoff-download{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:44px;
+  padding:0 18px;
+  border-radius:12px;
+  background:#315cff;
+  color:#fff;
+  text-decoration:none;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:-.01em;
+  box-shadow:0 10px 24px rgba(49,92,255,.22);
+}
+.website-handoff-download:hover{filter:brightness(1.06)}
+.website-handoff-download:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.website-handoff-copy{
+  margin:10px 0 0;
+  max-width:440px;
+  color:var(--muted);
+  font-size:10px;
+  line-height:1.55;
+}
+@media(max-width:640px){
+  .website-handoff-download{width:100%;min-height:46px}
+}
