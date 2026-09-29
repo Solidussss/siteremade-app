@@ -1196,7 +1196,7 @@ function renderWebsiteBuilderBlock(){
     const scoped=canonicalWebsite.scopedProjectId;
     const downloadUrl=scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}/download`:'/api/app/website/download';
     const handoff=c.status==='purchased'
-      ?`<div class="admin-relink-actions"><a class="primary-action" href="${downloadUrl}">Download website files (.zip)</a></div><p class="site-support-note">Your ZIP is the real handoff: HTML, CSS, JavaScript, assets, README and HANDOFF guide. It’s yours to host anywhere.</p>`
+      ?`<div class="website-handoff-actions"><a class="website-handoff-download" href="${downloadUrl}">Download website files (.zip)</a></div><p class="website-handoff-copy">Your ZIP is the real handoff: HTML, CSS, JavaScript, assets, README and HANDOFF guide. It’s yours to host anywhere.</p>`
       :'';
     host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connected</h3><p>Version ${esc(String(c.revision))}${c.updatedAt?` · last edited ${esc(dateLabel(c.updatedAt))}`:''}. ${c.status==='purchased'?(c.lastPublishedAt?`Last published ${esc(dateLabel(c.lastPublishedAt))}.`:'Not re-published since purchase.'):'Not purchased yet — edits are saved as drafts.'} Updates you ask for above are saved straight to this project.</p>${handoff}${c.link&&(c.link.status==='mismatch'||c.link.status==='conflict')?`<p class="site-support-note" id="websiteLinkNote">${c.link.status==='mismatch'?'This business is linked to a different builder website than the one your account shows now. Nothing was changed — contact SiteRemade if that isn’t expected.':'This builder website is already linked to another business on SiteRemade. Contact SiteRemade if that isn’t expected.'}</p>`:''}${link}`;
     return;
