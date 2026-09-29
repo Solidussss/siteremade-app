@@ -337,6 +337,17 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     return json(res, 200, summaryFrom(got.summary));
   });
 
+  router.get('/api/app/website/projects/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
+    const r = await bridge.getPreview(c.access, got.summary.projectId);
+    if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    return res.end(r.text);
+  });
+
   router.get('/api/app/website/projects/:projectId/deployment', { auth: 'user' }, async (req, res, { c, json, params }) => {
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
@@ -420,6 +431,17 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
       return json(res, 200, { ok: true, published: true, alreadyPublished: !!r.data.alreadyPublished, revision: r.data.revision, publishedAt: r.data.publishedAt, automaticHosting: false });
     }
     return passThroughError(json, res, r);
+  });
+
+  router.get('/api/app/website/preview', { auth: 'user' }, async (req, res, { c, json }) => {
+    const gate = await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const got = await canonical(c);
+    if (!got.ok) return passThroughError(json, res, got.r);
+    const r = await bridge.getPreview(c.access, got.summary.projectId);
+    if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    return res.end(r.text);
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {
