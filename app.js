@@ -1016,7 +1016,6 @@ function renderProjectSwitcher(hostId,current){
 // real 0/1/many "Connect a website" action instead of a dead end.
 const websiteCandidates={status:'idle',list:[],loadedAt:0,inflight:null,connecting:null,error:null};
 async function loadWebsiteCandidates(force){
-  if(isSubscriptionLocked())return;
   if(websiteCandidates.inflight)return websiteCandidates.inflight;
   if(!force&&websiteCandidates.status!=='idle'&&Date.now()-websiteCandidates.loadedAt<60000)return;
   if(websiteCandidates.status==='idle')websiteCandidates.status='loading';
@@ -1120,12 +1119,16 @@ function siteHost(url){try{return new URL(url).hostname.replace(/^www\./,'');}ca
 function deliveryProjects(){const rank=p=>safeSiteUrl(p.liveUrl)?2:safeSiteUrl(p.previewUrl)?1:0;return [...(state.websiteProjects||[])].sort((a,b)=>rank(b)-rank(a)||new Date(b.updatedAt)-new Date(a.updatedAt));}
 function currentDeliveryProject(){const rows=deliveryProjects();return rows.find(p=>p.id===websiteView.projectId)||rows[0]||null;}
 function websiteSnapshot(){
-  const p=currentDeliveryProject(),live=safeSiteUrl(p?.liveUrl),preview=safeSiteUrl(p?.previewUrl);
+  const p=currentDeliveryProject(),live=safeSiteUrl(p?.liveUrl),deliveryPreview=safeSiteUrl(p?.previewUrl);
   const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null;
   const builderDomain=c&&c.domains&&c.domains[0]?c.domains[0].domain:'';
+  const scoped=canonicalWebsite.scopedProjectId;
+  const builderPreview=c&&c.status==='purchased'
+    ?(scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}/preview?v=${encodeURIComponent(c.revision)}`:`/api/app/website/preview?v=${encodeURIComponent(c.revision)}`)
+    :'';
   const domain=builderDomain||siteHost(live)||String(state.websiteAnalytics?.domain||'').trim();
-  const key=live?'live':preview?'preview':p?'building':'none';
-  return {project:p,canonical:c,live,preview,url:live||preview,domain,key};
+  const key=live?'live':builderPreview||deliveryPreview?'preview':p?'building':'none';
+  return {project:p,canonical:c,live,preview:builderPreview||deliveryPreview,builderPreview,url:live||builderPreview||deliveryPreview,domain,key};
 }
 const WEBSITE_STATE_COPY={
   live:{chip:'Live',tone:'success',caption:'Showing your live site'},
@@ -1168,14 +1171,14 @@ function renderWebsite(){
   const dep=qs('#websiteDeployValue');if(dep){if(c){const dc=DEPLOYMENT_COPY[c.deploymentStatus]||DEPLOYMENT_COPY.not_deployed;dep.textContent=dc[0];dep.title=dc[1];}else{dep.textContent='Not reported yet';dep.title='The SiteRemade builder doesn’t share deployment status with this app yet.';}}
   const updLabel=qs('#websiteUpdatedLabel');if(updLabel)updLabel.textContent=c?'Last edited':'Record updated';
   const upd=qs('#websiteUpdatedValue');if(upd)upd.textContent=c?`${c.updatedAt?dateLabel(c.updatedAt):'—'} · version ${c.revision}`:(p?.updatedAt?dateLabel(p.updatedAt):'—');
-  // Stage (the frame can only ever show a delivery-record address -- the
-  // builder has no preview-rendering URL -- so it says so)
-  qs('#websiteChromeUrl').textContent=s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet';
-  qs('#websiteCaption').textContent=s.url
-    ?(c?`${copy.caption} · address from your SiteRemade delivery record. Builder changes appear there only once they’re published and put live.`:`${copy.caption} · from your SiteRemade delivery record`)
-    :(c?'There’s no visual preview in this app yet — your builder project is connected, and changes you make are listed below the editor.':(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet'));
+  // The connected purchased builder project now has an authenticated,
+  // non-hosted preview. A real live/delivery URL still wins when one exists.
+  qs('#websiteChromeUrl').textContent=s.live?s.live.replace(/^https?:\/\//,'').replace(/\/$/,''):(s.builderPreview?'SiteRemade preview':(s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet'));
+  qs('#websiteCaption').textContent=s.builderPreview&&!s.live
+    ?'Showing the website you purchased in SiteRemade. This preview does not mean the site is hosted yet.'
+    :(s.url?(c?`${copy.caption} · hosted/delivery address.`:`${copy.caption} · from your SiteRemade delivery record`):(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet'));
   const capLink=qs('#websiteCaptionLink');if(capLink){capLink.hidden=!s.url;if(s.url)capLink.href=s.url;}
-  const emptyCopy=qs('#websiteEmptyCopy');if(emptyCopy)emptyCopy.textContent=c?'This app can’t render your builder project yet. Open the SiteRemade builder to see it, or check the change summary after an update.':(p?`Your site is being built — currently at “${p.status}”. The preview appears here once SiteRemade adds it.`:'As soon as SiteRemade has a preview or live address for your site, you’ll see it right here.');
+  const emptyCopy=qs('#websiteEmptyCopy');if(emptyCopy)emptyCopy.textContent=c?'Preparing your purchased website preview…':(p?`Your site is being built — currently at “${p.status}”. The preview appears here once SiteRemade adds it.`:'As soon as SiteRemade has a preview or live address for your site, you’ll see it right here.');
   if(!websiteView.device)setWebsiteDevice(window.matchMedia('(max-width:640px)').matches?'mobile':'desktop');
   setWebsiteFrame(s.url);
   renderWebsiteBuilderBlock();renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
