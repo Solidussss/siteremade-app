@@ -4,6 +4,7 @@ const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
 const money=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',maximumFractionDigits:0}).format(Number(n)||0);
 const subscriptionMoney=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
 const isSubscriptionLocked=()=>state.user?.role!=='owner'&&!!state.locked;
+const FREE_VIEWS_WHEN_LOCKED=new Set(['website','settings']);
 const esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const initials=(n='')=>n.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'•';
 const relative=iso=>{const d=Math.max(0,(Date.now()-new Date(iso))/1000);if(d<60)return'now';if(d<3600)return`${Math.floor(d/60)}m`;if(d<86400)return`${Math.floor(d/3600)}h`;return`${Math.floor(d/86400)}d`;};
@@ -165,7 +166,7 @@ function maybeRedirectForWebsiteBuilderHandoff(){
   location.href='/handoff/website-builder?return='+encodeURIComponent(pending.ret)+'&mode='+encodeURIComponent(pending.mode||'session');
   return true;
 }
-async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();loadDashboardFeatureScripts();handleConnectionReturn();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');loadWorkspaceCredits(!!sid||qp.get('billing')==='return');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
+async function bootstrap(){try{const d=await api('/api/app/bootstrap',{onResponse:r=>{const et=r.headers.get('ETag');if(et)lastBootstrapETag=et;}});Object.assign(state,{workspace:d.workspace||{},workspaces:d.workspaces||[],user:d.user||null,locked:!!d.locked,integrations:d.integrations||{},leads:d.leads||[],conversations:d.conversations||[],appointments:d.appointments||[],invoices:d.invoices||[],automations:d.automations||[],activities:d.activities||[],adSpend:d.adSpend||[],adFunds:d.adFunds||[],billing:d.billing||{},prospectViews:d.prospectViews||[],websiteAnalytics:d.websiteAnalytics||{},websiteUpdates:d.websiteUpdates||[],websiteProjects:d.websiteProjects||[]});qs('#authScreen').hidden=true;if(maybeRedirectForWebsiteBuilderHandoff())return true;renderAll();const initialView=new URLSearchParams(location.search).get('view');if(initialView)switchView(initialView);loadDashboardFeatureScripts();handleConnectionReturn();qs('#systemStatus').textContent='Cloud database live';const qp=new URLSearchParams(location.search),sid=qp.get('session_id');loadWorkspaceCredits(!!sid||qp.get('billing')==='return');if(sid&&(qp.get('billing')==='success'||qp.get('adfund')==='success')){try{await api('/api/app/checkout/confirm?sessionId='+encodeURIComponent(sid));history.replaceState({},'',location.pathname);const d2=await api('/api/app/bootstrap');Object.assign(state,{workspace:d2.workspace||{},workspaces:d2.workspaces||[],user:d2.user||state.user,locked:!!d2.locked,integrations:d2.integrations||{},leads:d2.leads||[],conversations:d2.conversations||[],appointments:d2.appointments||[],invoices:d2.invoices||[],automations:d2.automations||[],activities:d2.activities||[],adSpend:d2.adSpend||[],adFunds:d2.adFunds||[],billing:d2.billing||{},prospectViews:d2.prospectViews||[],websiteAnalytics:d2.websiteAnalytics||{},websiteUpdates:d2.websiteUpdates||[],websiteProjects:d2.websiteProjects||[]});renderAll();}catch(err){console.error('Checkout confirmation:',err)}}return true;}catch(e){qs('#authScreen').hidden=false;qs('#systemStatus').textContent=e.message.includes('Supabase')?'Supabase setup required':'Sign in required';if(e.message.includes('Supabase')){const s=qs('#loginStatus');s.textContent=e.message;s.style.color='#c54747';}console.error(e);return false;}}
 
 // BILLING PASS: the plan, balance, renewal date and prices come from the SiteRemade builder's one credit ledger (the
 // same numbers the builder shows), through GET /api/app/website/credits. Never computed here.
@@ -191,7 +192,22 @@ async function loadWorkspaceCredits(refresh){
 function renderSubscriptionGate(){
   const lock=qs('#subscriptionLock');if(!lock)return;
   const locked=isSubscriptionLocked();
-  lock.hidden=!locked;document.body.classList.toggle('subscription-locked',locked);
+  // Buying a website is permanent ownership. An inactive Workspace plan must
+  // never hide the Website area or strand the customer's purchased files.
+  // The subscription only gates ongoing Workspace features.
+  lock.hidden=true;
+  document.body.classList.remove('subscription-locked');
+  document.body.classList.toggle('subscription-limited',locked);
+  qsa('[data-view]').forEach(b=>{
+    const view=b.dataset.view;
+    if(!view)return;
+    const paidOnly=locked&&!FREE_VIEWS_WHEN_LOCKED.has(view);
+    b.disabled=paidOnly;
+    if(paidOnly)b.title='Workspace subscription required';
+    else if(b.title==='Workspace subscription required')b.removeAttribute('title');
+  });
+  const active=qs('.view.active')?.id?.replace(/^view-/,'');
+  if(locked&&active&&!FREE_VIEWS_WHEN_LOCKED.has(active))switchView('website');
   const cents=Number(state.billing?.monthlyCents||3999),status=String(state.billing?.status||'inactive');
   if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=subscriptionMoney(cents/100);
   if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
@@ -1034,8 +1050,10 @@ async function connectWebsite(projectId){
 // otherwise it answers contract_unavailable WITHOUT a network call, and
 // nothing is ever reported as applied unless the builder said it saved it.
 const websiteEditService={
-  available(){const p=canonicalWebsite.project;return canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
-  _unavailable(){return {ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
+  available(){const p=canonicalWebsite.project;return !isSubscriptionLocked()&&canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
+  _unavailable(){return isSubscriptionLocked()
+    ?{ok:false,code:'SUBSCRIPTION_REQUIRED',message:'Your purchased website is still yours. Start Workspace to make AI updates from the app.'}
+    :{ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
   async _post(url,payload){
     try{
       const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -1143,7 +1161,7 @@ function renderWebsite(){
   qs('#websiteDomainLine').textContent=s.domain||'No web address yet';
   const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.live?'View website ↗':'Open preview ↗';}}
   // Publish: builder-only (contract §9). Never shown from delivery data.
-  const pub=qs('#websitePublishButton');if(pub){pub.hidden=!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=EDITOR_BUSY_STATES.includes(websiteEditor.state);}
+  const pub=qs('#websitePublishButton');if(pub){pub.hidden=isSubscriptionLocked()||!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=isSubscriptionLocked()||EDITOR_BUSY_STATES.includes(websiteEditor.state);}
   // Status rail
   const stateVal=qs('#websiteStateValue');if(stateVal)stateVal.innerHTML=c?`<span class="chip chip-${status.tone}">${esc(status.chip)}</span>`:`<span class="chip chip-${copy.tone}">${esc(s.key==='building'&&p?`Being built · ${p.status}`:copy.chip)}</span>`;
   const dom=qs('#websiteDomainValue');if(dom){const bd=c&&c.domains&&c.domains[0];dom.textContent=bd?`${bd.domain} · ${DOMAIN_STATE_COPY[bd.state]||bd.state}`:(s.domain||'Not set');}
@@ -1717,7 +1735,7 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
 const VIEW_SHOWN_HOOKS={website:()=>loadCanonicalWebsite(),analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
-function switchView(v){if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
+function switchView(v){if(isSubscriptionLocked()&&!FREE_VIEWS_WHEN_LOCKED.has(v))v='website';if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
 qsa('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
