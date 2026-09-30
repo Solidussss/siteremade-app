@@ -54,6 +54,7 @@ const { readJsonBody, db, hasSiteRemadeAccess, requireSiteRemadeAccess } = requi
 const { sendWebsiteDownload } = require('../lib/website-download');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
+const { savedWebsitesFrom } = require('../lib/saved-websites');
 const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
 
 // Phase 5: a linked workspace gets its analytics site set up server-side,
@@ -274,6 +275,43 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
       alreadyLinked: linkedProjectIds.has(x.projectId),
     }));
     return json(res, 200, { ok: true, candidates, alreadyConnected: linkedProjectIds.size > 0 });
+  });
+
+  // SAVED WEBSITES: every website saved to this person's SiteRemade account -- drafts included, not only purchases
+  // (the candidates route above lists purchases only, for connecting). A fresh builder call with this request's own
+  // token on every load, behind the same workspace gate as every route in this file: the list is the signed-in
+  // person's own projects, shown only where the workspace is unambiguous.
+  router.get('/api/app/websites', { auth: 'user' }, async (req, res, { c, json }) => {
+    const gate = await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    const r = await bridge.getWebsites(c.access);
+    if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.websites)) return passThroughError(json, res, r);
+    let linkedIds = new Set();
+    try { linkedIds = new Set((await websiteLinks.listLinksForWorkspace(c.wid)).map(l => l.generator_project_id)); } catch (e) { console.warn('[website-links] saved websites: could not read links:', e && e.message); }
+    const websites = savedWebsitesFrom(r.data.websites, linkedIds); // lib/saved-websites.js: metadata allowlist, newest first
+    return json(res, 200, { ok: true, websites });
+  });
+
+  // A saved website's preview (the latest saved version by default; ?source=published for a purchased website's
+  // published/purchased version) and a purchased website's files. The id only says WHICH of this person's websites:
+  // the builder authorizes every request from the signed-in person's own token -- a website that isn't theirs is a
+  // 404, and a draft's files are refused (403 not_purchased: only a purchase hands over the files). Same workspace
+  // gate as the canonical /api/app/website/preview and /download, which likewise need no link.
+  router.get('/api/app/websites/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params, u }) => {
+    const gate = await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    if (!websiteLinks.PROJECT_ID_RE.test(String(params.projectId || ''))) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
+    const published = !!(u && u.searchParams && u.searchParams.get('source') === 'published');
+    const r = await bridge.getPreview(c.access, params.projectId, { draft: !published });
+    if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status === 404 ? 404 : (r.status || 502), { ok: false, code: r.status === 404 ? 'not_found' : 'preview_unavailable', message: 'The website preview could not be loaded.' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    return res.end(r.text);
+  });
+  router.get('/api/app/websites/:projectId/download', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const gate = await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
+    if (!websiteLinks.PROJECT_ID_RE.test(String(params.projectId || ''))) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
+    return sendWebsiteDownload({ bridge, token: c.access, projectId: params.projectId, res, json });
   });
 
   // Phase 8: the explicit connect action. Only creates a NEW link (a

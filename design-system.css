@@ -703,6 +703,22 @@ body .site-support-block .project-stepper{margin:18px 0 16px}
 body .site-support-note{color:var(--ink-700)!important}
 body .site-support-link{display:inline-block;border:0;background:none;padding:0;font:inherit;font-size:13.5px;font-weight:650;color:var(--ink-900);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
 body .site-support-link:hover{text-decoration-color:currentColor}
+/* Saved websites: every website on the customer's SiteRemade account, drafts and owned (saved-websites-view.js) */
+body .saved-websites{margin-top:48px;padding-top:36px;border-top:1px solid var(--line)}
+body .saved-websites h3{font-family:var(--font-display);font-weight:560;font-size:21px;letter-spacing:-.01em;margin:8px 0 6px;color:var(--ink-900)}
+body .saved-websites-summary,body .saved-websites-empty{font-size:13.5px;line-height:1.6;color:var(--ink-500);margin:0 0 14px}
+body .saved-websites-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0 32px}
+body .saved-website{padding:18px 0;border-bottom:1px solid var(--line);min-width:0}
+body .saved-website-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+body .saved-website-name{font-size:15px;color:var(--ink-900);overflow-wrap:anywhere}
+body .saved-website-meta{margin:6px 0 0;font-size:12.5px;color:var(--ink-500)}
+body .saved-website-note{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-700)}
+body .saved-website-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:12px}
+body .saved-website-actions .secondary-button{min-height:34px;padding:0 14px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--ink-900);cursor:pointer;font-size:13px}
+body .saved-website-link{font-size:13px;font-weight:650;color:var(--ink-900);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+body .saved-website-link:hover{text-decoration-color:currentColor}
+body .saved-website-current{font-size:12.5px;font-weight:650;color:var(--ink-500)}
+@media(max-width:640px){body .saved-websites-list{grid-template-columns:1fr}body .saved-websites{margin-top:32px;padding-top:24px}}
 body .site-project-pick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-500);margin:0 0 6px}
 body .site-project-pick select{height:34px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:0 10px;background:var(--surface);font:inherit;font-size:13px}
 body .site-review{display:grid;gap:10px;margin:6px 0 14px;padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--line)}

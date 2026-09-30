@@ -1079,6 +1079,52 @@ async function connectWebsite(projectId){
     websiteCandidates.connecting=null;websiteCandidates.error=e.message||'Couldn’t connect your website right now.';renderWebsiteBuilderBlock();
   }
 }
+// SAVED WEBSITES: every website saved to this person's SiteRemade account -- drafts and owned, Business and Creative
+// (GET /api/app/websites -> the builder's GET /api/app-bridge/websites). Until this list, the app only ever showed
+// purchased websites, so a project saved to the account as a draft never appeared here. Rendering lives in
+// saved-websites-view.js. Opening a website HERE (editing, publishing) still needs it to be an owned website connected
+// to this business -- a draft is previewed here and continued in the builder.
+const savedWebsites={status:'idle',list:[],loadedAt:0,inflight:null,message:null,connecting:null,error:null};
+async function loadSavedWebsites(force){
+  if(savedWebsites.inflight)return savedWebsites.inflight;
+  if(!force&&savedWebsites.status!=='idle'&&Date.now()-savedWebsites.loadedAt<60000)return;
+  if(savedWebsites.status==='idle')savedWebsites.status='loading';
+  savedWebsites.inflight=(async()=>{
+    try{
+      const r=await fetch('/api/app/websites',{headers:{'Content-Type':'application/json'}});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&Array.isArray(d.websites))Object.assign(savedWebsites,{status:'ready',list:d.websites,message:null});
+      else Object.assign(savedWebsites,{status:'unavailable',list:[],message:d.message||null});
+    }catch(e){Object.assign(savedWebsites,{status:'unavailable',list:[],message:null});}
+    finally{savedWebsites.loadedAt=Date.now();savedWebsites.inflight=null;safeRender('saved-websites',renderSavedWebsites);safeRender('website-builder',renderWebsiteBuilderBlock);}
+  })();
+  return savedWebsites.inflight;
+}
+function renderSavedWebsites(){
+  const host=qs('#savedWebsites');if(!host||!window.SavedWebsitesView)return;
+  const current=canonicalWebsite.status==='ready'&&canonicalWebsite.project?canonicalWebsite.project.projectId:null;
+  const sig=JSON.stringify([savedWebsites.status,savedWebsites.list,savedWebsites.message,current,savedWebsites.connecting,savedWebsites.error]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  host.innerHTML=window.SavedWebsitesView.listHtml(savedWebsites,{currentProjectId:current,busyProjectId:savedWebsites.connecting});
+}
+// An owned website that isn't connected to this business yet: the same verified connect as "Connect a website"
+// (POST /api/app/website/connect re-checks it against the builder's purchases), then it opens here.
+async function connectSavedWebsite(projectId){
+  if(savedWebsites.connecting)return;
+  savedWebsites.connecting=projectId;savedWebsites.error=null;renderSavedWebsites();
+  try{
+    await api('/api/app/website/connect',{method:'POST',body:JSON.stringify({projectId})});
+    savedWebsites.connecting=null;
+    await Promise.all([loadSavedWebsites(true),loadWebsiteProjectsList(true)]);
+    switchToWebsiteProject(projectId);
+  }catch(e){savedWebsites.connecting=null;savedWebsites.error=e.message||'Couldn’t connect that website right now.';renderSavedWebsites();}
+}
+if(qs('#savedWebsites'))qs('#savedWebsites').addEventListener('click',e=>{
+  const open=e.target.closest&&e.target.closest('[data-saved-open]');
+  if(open){switchToWebsiteProject(open.dataset.savedOpen);window.scrollTo({top:0,behavior:'smooth'});return;}
+  const connect=e.target.closest&&e.target.closest('[data-saved-connect]');
+  if(connect)connectSavedWebsite(connect.dataset.savedConnect);
+});
 // The single seam the editor uses to reach the builder. Real network calls
 // only when the builder genuinely returned this customer's project;
 // otherwise it answers contract_unavailable WITHOUT a network call, and
@@ -1223,6 +1269,8 @@ function renderWebsite(){
   if(!websiteView.device)setWebsiteDevice(window.matchMedia('(max-width:640px)').matches?'mobile':'desktop');
   setWebsiteFrame(s.url);
   renderWebsiteBuilderBlock();renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
+  if(savedWebsites.status==='idle'&&state.user)loadSavedWebsites();
+  renderSavedWebsites();
 }
 // "Builder project" support block: real connection state, never guessed.
 // Phase 8: when there's no link yet, this is now a real "Connect a
@@ -1231,7 +1279,7 @@ function renderWebsite(){
 function renderWebsiteBuilderBlock(){
   const host=qs('#websiteBuilder');if(!host)return;
   const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null,code=canonicalWebsite.code,st=canonicalWebsite.status;
-  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt,c.link&&c.link.status],websiteCandidates.status,websiteCandidates.list,websiteCandidates.connecting,websiteCandidates.error]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
+  const sig=JSON.stringify([st,code,c&&[c.projectId,c.revision,c.updatedAt,c.status,c.lastPublishedAt,c.link&&c.link.status],websiteCandidates.status,websiteCandidates.list,websiteCandidates.connecting,websiteCandidates.error,savedWebsites.status,savedWebsites.list.length]);if(host.dataset.sig===sig)return;host.dataset.sig=sig;
   const link='<a class="site-support-link" href="/handoff/website-builder">Open the SiteRemade builder ↗</a>';
   if(c){
     const scoped=canonicalWebsite.scopedProjectId;
@@ -1270,7 +1318,8 @@ function renderWebsiteBuilderBlock(){
   }
   const cands=websiteCandidates.list,errLine=websiteCandidates.error?`<p class="modal-status" role="status">${esc(websiteCandidates.error)}</p>`:'';
   if(!cands.length){
-    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connect a website</h3><p>We didn’t find a purchased SiteRemade website on your account yet. Once you’ve bought one in the builder, it’ll show up here to connect.</p>${link}`;
+    const drafts=savedWebsites.status==='ready'?savedWebsites.list.filter(w=>!w.isPurchased).length:0;
+    host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connect a website</h3><p>${drafts?`You have ${drafts} saved draft${drafts===1?'':'s'} — listed under “Your saved websites” below. Buy one in the builder to edit it, publish it and download its files from here.`:'We didn’t find a purchased SiteRemade website on your account yet. Once you’ve bought one in the builder, it’ll show up here to connect.'}</p>${link}`;
     return;
   }
   const nameOf=k=>k.businessName||k.name||'Untitled website';
@@ -1433,6 +1482,7 @@ async function submitWebsiteEdit(){
   if(Number.isFinite(res.creditsRemaining)&&workspaceCredits.data){workspaceCredits.data.remaining=res.creditsRemaining;safeRender('workspace-credits',renderWorkspaceCredits);}
   input.value='';
   await loadCanonicalWebsite(true);
+  loadSavedWebsites(true);
   setEditorState('preview_ready');
 }
 async function publishWebsite(){
@@ -1446,6 +1496,7 @@ async function publishWebsite(){
   }
   websiteEditor.published={revision:res.revision,publishedAt:res.publishedAt};
   await loadCanonicalWebsite(true);
+  loadSavedWebsites(true);
   setEditorState('live');
 }
 async function refreshAfterConflict(){
