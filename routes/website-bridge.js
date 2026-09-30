@@ -202,11 +202,15 @@ async function forWorkspaceProject(c, projectId) {
   return { ok: false, r };
 }
 
+// ?source=draft: preview the latest saved draft (after an update, before publishing) instead of the published website
+function previewWantsDraft(u) { return !!(u && u.searchParams && u.searchParams.get('source') === 'draft'); }
 // BILLING PASS: the browser sends one id per update attempt; a retry of the same attempt reuses it
 function requestIdFrom(body) { const v = typeof body.requestId === 'string' ? body.requestId.trim() : ''; return /^[A-Za-z0-9_.:-]{8,120}$/.test(v) ? v : null; }
 function editResult(projectId, d) {
   return {
     ok: true, projectId, revision: d.revision,
+    // "Update My Website" update intelligence: a specific change, or a redesign of the site (the builder decides)
+    mode: d.mode === 'deep' ? 'deep' : 'surgical',
     changeSummary: Array.isArray(d.changeSummary) ? d.changeSummary.filter(s => typeof s === 'string').slice(0, 20) : [],
     creditsCharged: Number.isFinite(d.creditsCharged) ? d.creditsCharged : null,
     creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null,
@@ -346,12 +350,12 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     return sendWebsiteDownload({ bridge, token: c.access, projectId: got.summary.projectId, res, json });
   });
 
-  router.get('/api/app/website/projects/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params }) => {
+  router.get('/api/app/website/projects/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params, u }) => {
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
-    const r = await bridge.getPreview(c.access, got.summary.projectId);
+    const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
     return res.end(r.text);
@@ -450,12 +454,12 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     return sendWebsiteDownload({ bridge, token: c.access, projectId: got.summary.projectId, res, json });
   });
 
-  router.get('/api/app/website/preview', { auth: 'user' }, async (req, res, { c, json }) => {
+  router.get('/api/app/website/preview', { auth: 'user' }, async (req, res, { c, json, u }) => {
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
     if (!got.ok) return passThroughError(json, res, got.r);
-    const r = await bridge.getPreview(c.access, got.summary.projectId);
+    const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
     return res.end(r.text);

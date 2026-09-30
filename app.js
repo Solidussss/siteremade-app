@@ -1158,16 +1158,20 @@ function websiteSnapshot(){
   const c=canonicalWebsite.status==='ready'?canonicalWebsite.project:null;
   const builderDomain=c&&c.domains&&c.domains[0]?c.domains[0].domain:'';
   const scoped=canonicalWebsite.scopedProjectId;
+  // An update saved a draft that isn't published yet: the preview shows THAT draft (the builder compiles it the same
+  // way it compiles the download), so the owner sees the change before choosing to publish it.
+  const draft=!!(c&&c.status==='purchased'&&c.hasUnpublishedChanges);
   const builderPreview=c&&c.status==='purchased'
-    ?(scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}/preview?v=${encodeURIComponent(c.revision)}`:`/api/app/website/preview?v=${encodeURIComponent(c.revision)}`)
+    ?(scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}/preview?v=${encodeURIComponent(c.revision)}`:`/api/app/website/preview?v=${encodeURIComponent(c.revision)}`)+(draft?'&source=draft':'')
     :'';
   const domain=builderDomain||siteHost(live)||String(state.websiteAnalytics?.domain||'').trim();
-  const key=live?'live':builderPreview||deliveryPreview?'preview':p?'building':'none';
-  return {project:p,canonical:c,live,preview:builderPreview||deliveryPreview,builderPreview,url:live||builderPreview||deliveryPreview,domain,key};
+  const key=draft?'draft':live?'live':builderPreview||deliveryPreview?'preview':p?'building':'none';
+  return {project:p,canonical:c,live,preview:builderPreview||deliveryPreview,builderPreview,draft,url:draft?builderPreview:(live||builderPreview||deliveryPreview),domain,key};
 }
 const WEBSITE_STATE_COPY={
   live:{chip:'Live',tone:'success',caption:'Showing your live site'},
   preview:{chip:'Preview · not live yet',tone:'warning',caption:'Showing your preview'},
+  draft:{chip:'Draft · not published',tone:'warning',caption:'Showing your latest saved changes'},
   building:{chip:'Being built',tone:'neutral',caption:'No preview yet'},
   none:{chip:'Not set up yet',tone:'neutral',caption:'No preview yet'}
 };
@@ -1197,7 +1201,7 @@ function renderWebsite(){
   const status=c?canonicalChip(c):{chip:copy.chip,tone:copy.tone};
   setChip(qs('#websiteStateChip'),status.chip,status.tone);
   qs('#websiteDomainLine').textContent=s.domain||'No web address yet';
-  const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.live?'View website ↗':'Open preview ↗';}}
+  const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.draft?'Open draft preview ↗':s.live?'View website ↗':'Open preview ↗';}}
   // Publish: builder-only (contract §9). Never shown from delivery data.
   const pub=qs('#websitePublishButton');if(pub){pub.hidden=isSubscriptionLocked()||!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=isSubscriptionLocked()||EDITOR_BUSY_STATES.includes(websiteEditor.state);}
   // Status rail
@@ -1208,8 +1212,10 @@ function renderWebsite(){
   const upd=qs('#websiteUpdatedValue');if(upd)upd.textContent=c?`${c.updatedAt?dateLabel(c.updatedAt):'—'} · version ${c.revision}`:(p?.updatedAt?dateLabel(p.updatedAt):'—');
   // The connected purchased builder project now has an authenticated,
   // non-hosted preview. A real live/delivery URL still wins when one exists.
-  qs('#websiteChromeUrl').textContent=s.live?s.live.replace(/^https?:\/\//,'').replace(/\/$/,''):(s.builderPreview?'SiteRemade preview':(s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet'));
-  qs('#websiteCaption').textContent=s.builderPreview&&!s.live
+  qs('#websiteChromeUrl').textContent=s.draft?'SiteRemade draft preview':s.live?s.live.replace(/^https?:\/\//,'').replace(/\/$/,''):(s.builderPreview?'SiteRemade preview':(s.url?s.url.replace(/^https?:\/\//,'').replace(/\/$/,''):'No web address yet'));
+  qs('#websiteCaption').textContent=s.draft
+    ?`Showing your latest saved changes (version ${c.revision}) — a draft. Your published version hasn’t changed; publish when you’re happy.`
+    :s.builderPreview&&!s.live
     ?'Showing the website you purchased in SiteRemade. This preview does not mean the site is hosted yet.'
     :(s.url?(c?`${copy.caption} · hosted/delivery address.`:`${copy.caption} · from your SiteRemade delivery record`):(p?`Your site is being built (${p.status}). The preview appears here once it's ready.`:'No preview yet'));
   const capLink=qs('#websiteCaptionLink');if(capLink){capLink.hidden=!s.url;if(s.url)capLink.href=s.url;}
@@ -1352,14 +1358,18 @@ function renderWebsiteRequests(){
 }
 
 // ---- Update My Website: the interaction shell ------------------------------
-function withNothingChanged(msg){const m=String(msg||'That didn’t go through.').trim();return /nothing (on your website )?was changed|nothing was changed/i.test(m)?m:`${m} Nothing on your website was changed.`;}
+function withNothingChanged(msg){const m=String(msg||'That didn’t go through.').trim();return /nothing (on your website )?was changed|nothing was changed|nothing was saved/i.test(m)?m:`${m} Nothing on your website was changed.`;}
+// Display only, while the builder works: does this read like a redesign ("make it feel premium") rather than one
+// specific change ("change the headline to …")? The builder makes the real decision (lib/edit-classifier.js there)
+// and says which it was in its reply (mode).
+function looksLikeRedesign(text){const t=String(text||'');if(/["“]|\bto\s+[A-Z0-9]|\b(move|remove|delete|swap)\b/.test(t))return false;return /\b(re-?design|re-?think|overhaul|revamp|refresh|premium|luxur\w*|high[- ]end|upscale|editorial|generic|creative|modern|minimal\w*|elegant|sophisticated|bold(er)?|feel|feels|vibe|look like|brand|less boring|more interesting)\b/i.test(t);}
 function renderWebsiteEditor(){
   const box=qs('#siteEditor'),input=qs('#siteEditorInput');if(!box||!input)return;
   const available=websiteEditService.available(),dev=editorDevMode(),text=input.value.trim(),c=canonicalWebsite.project;
   let st=websiteEditor.state;
   if(!EDITOR_STICKY_STATES.includes(st))st=!available&&!dev?'unavailable':(text?'typing':'idle');
   websiteEditor.state=st;box.dataset.state=st;box.dataset.hasText=text?'1':'0';
-  const pill={unavailable:canonicalWebsite.status==='loading'?'Checking…':'Not connected yet',idle:dev&&!available?'Development mode':'Ready',typing:dev&&!available?'Development mode':'Ready',planning:'Working out your change…',applying:'Saving your update…',preview_ready:'Change ready to review',publishing:'Publishing…',live:'Published',conflict:'Website changed',failed:'Nothing was changed'}[st];
+  const pill={unavailable:canonicalWebsite.status==='loading'?'Checking…':'Not connected yet',idle:dev&&!available?'Development mode':'Ready',typing:dev&&!available?'Development mode':'Ready',planning:websiteEditor.redesign?'Working out your redesign…':'Working out your change…',applying:'Saving your update…',preview_ready:'Change ready to review',publishing:'Publishing…',live:'Published',conflict:'Website changed',failed:'Nothing was changed'}[st];
   qs('#siteEditorPill').textContent=pill;
   const busy=EDITOR_BUSY_STATES.includes(st);
   const submit=qs('#siteEditorSubmit');submit.disabled=!(available||dev)||!text||busy;
@@ -1378,13 +1388,13 @@ function renderWebsiteEditor(){
     if(review.dataset.sig!==sig){
       review.dataset.sig=sig;
       const items=(websiteEditor.edit&&websiteEditor.edit.changeSummary)||[];
-      if(head)head.textContent=st==='conflict'?'Your website changed':st==='live'?'Published':'What changed';
+      if(head)head.textContent=st==='conflict'?'Your website changed':st==='live'?'Published':(websiteEditor.edit&&websiteEditor.edit.mode==='deep'?'What we redesigned':'What changed');
       if(list){list.hidden=st==='conflict'||!items.length;list.innerHTML=items.map(t=>`<li>${esc(t)}</li>`).join('');}
       const credits=websiteEditor.edit&&Number.isFinite(websiteEditor.edit.creditsCharged)&&websiteEditor.edit.creditsCharged>0?` This update used ${websiteEditor.edit.creditsCharged} credit${websiteEditor.edit.creditsCharged===1?'':'s'}${Number.isFinite(websiteEditor.edit.creditsRemaining)?` (${websiteEditor.edit.creditsRemaining} left)`:''}.`:'';
       if(note){
         if(st==='conflict')note.textContent='Your text is still in the box above. Refresh to load the latest version, then apply your update again.';
         else if(st==='live')note.textContent=`Version ${websiteEditor.published?.revision??c?.revision} is now your published version — downloads of your site files from the builder include it from now on. Updating the site at your web address isn’t automatic yet: download the files from the builder, or ask the SiteRemade team.`;
-        else if(c&&c.canPublish)note.textContent=`Saved as a draft (version ${websiteEditor.edit?.revision}). Your published version hasn’t changed. There’s no visual preview in this app yet — open the builder to see it, then publish when you’re happy.${credits}`;
+        else if(c&&c.canPublish)note.textContent=`Saved as a draft (version ${websiteEditor.edit?.revision}) — the preview above now shows it. Your published version hasn’t changed; publish when you’re happy.${credits}`;
         else note.textContent=`Saved to your builder project (version ${websiteEditor.edit?.revision}). There’s no visual preview in this app yet — open the builder to see it. Publishing becomes available once your website is purchased.${credits}`;
       }
     }
@@ -1396,7 +1406,7 @@ function renderWebsiteEditor(){
   if(websiteEditor.sending)fb.textContent='Sending to the SiteRemade team…';
   else if(st==='failed')fb.textContent=`${withNothingChanged(websiteEditor.error?.message)} Your text is still here.`;
   else if(st==='conflict')fb.textContent='This website changed since you opened it. Refresh before applying this update.';
-  else if(st==='planning')fb.textContent='Working out and saving your change — this can take up to a minute.';
+  else if(st==='planning')fb.textContent=websiteEditor.redesign?'Working out your redesign — SiteRemade is studying your whole site. This can take a minute or two.':'Working out and saving your change — this can take up to a minute.';
   else if(st==='applying')fb.textContent='Checking the saved version with the builder…';
   else if(st==='publishing')fb.textContent='Publishing…';
   else if(websiteEditor.sentToTeam)fb.textContent='Sent to the SiteRemade team. A person will review it — your website hasn’t changed yet. You can follow it under “Requests to the team” below.';
@@ -1410,7 +1420,7 @@ async function submitWebsiteEdit(){
   if(!websiteEditService.available()&&!editorDevMode()){renderWebsiteEditor();return;}
   websiteEditor.sentToTeam=null;
   if(websiteEditService.available()&&text.length>EDIT_MAX_CHARS){setEditorState('failed',{error:{message:`Please keep automatic updates under ${EDIT_MAX_CHARS} characters — or send longer requests to the SiteRemade team.`}});return;}
-  setEditorState('planning',{error:null,edit:null,published:null});
+  setEditorState('planning',{error:null,edit:null,published:null,redesign:looksLikeRedesign(text)});
   const c=canonicalWebsite.project;
   const res=await websiteEditService.requestEdit({projectId:c?.projectId||null,baseRevision:c?.revision??null,instruction:text});
   if(!res||!res.ok){
@@ -1419,7 +1429,7 @@ async function submitWebsiteEdit(){
   }
   // Saved by the builder. APPLYING = confirm that saved draft by re-reading
   // the builder project (a real call, not a timed animation).
-  setEditorState('applying',{edit:{revision:res.revision,changeSummary:res.changeSummary||[],creditsCharged:res.creditsCharged,creditsRemaining:res.creditsRemaining}});
+  setEditorState('applying',{redesign:res.mode==='deep',edit:{revision:res.revision,mode:res.mode==='deep'?'deep':'surgical',changeSummary:res.changeSummary||[],creditsCharged:res.creditsCharged,creditsRemaining:res.creditsRemaining}});
   if(Number.isFinite(res.creditsRemaining)&&workspaceCredits.data){workspaceCredits.data.remaining=res.creditsRemaining;safeRender('workspace-credits',renderWorkspaceCredits);}
   input.value='';
   await loadCanonicalWebsite(true);
