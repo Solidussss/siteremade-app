@@ -719,8 +719,16 @@ body .saved-website-link{font-size:13px;font-weight:650;color:var(--ink-900);tex
 body .saved-website-link:hover{text-decoration-color:currentColor}
 body .saved-website-current{font-size:12.5px;font-weight:650;color:var(--ink-500)}
 @media(max-width:640px){body .saved-websites-list{grid-template-columns:1fr}body .saved-websites{margin-top:32px;padding-top:24px}}
-body .site-project-pick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-500);margin:0 0 6px}
-body .site-project-pick select{height:34px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:0 10px;background:var(--surface);font:inherit;font-size:13px}
+/* The website switcher: a <select> is as wide as its longest option, so one long business name made the whole page
+   scroll sideways on a phone (and dragged the fixed bottom navigation with it). It now shrinks with the screen and
+   cuts a long name off inside the control instead. */
+body .site-project-pick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-500);margin:0 0 6px;min-width:0;max-width:100%}
+body .site-project-pick label{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;flex:1 1 auto}
+body .site-project-pick select{height:34px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:0 10px;background:var(--surface);font:inherit;font-size:13px;width:100%;min-width:0;max-width:100%;flex:1 1 auto;text-overflow:ellipsis}
+/* a percentage width makes the select compressible: without it, its full option width still counted toward the page
+   header's minimum size, so the header (and the page) kept widening between the phone and desktop layouts */
+body .site-project-pick{width:min(100%,520px)}
+body :is(.site-head-copy,.page-head>div){min-width:0}
 body .site-review{display:grid;gap:10px;margin:6px 0 14px;padding:16px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--line)}
 body .site-review label{font-size:13.5px;font-weight:700;color:var(--ink-900)}
 body .site-review textarea{width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;font:inherit;font-size:14px;resize:vertical}
@@ -983,4 +991,29 @@ body .st-toggle:focus-visible{outline:0;box-shadow:0 0 0 3px var(--accent-tint)}
   body .st-row{flex-direction:column;align-items:flex-start;gap:10px}
   body .st-conn-side{flex-wrap:wrap}
   body .st-section{padding-bottom:32px;margin-bottom:32px}
+}
+
+/* ---- Touch screens & phones (mobile QA pass) ------------------------------------------------------------------------
+   The app's phone layout starts at 820px (topbar + bottom navigation); touch laptops/tablets wider than that get the
+   same finger-sized controls through (pointer: coarse).
+   - Every control is at least 44px tall (Apple HIG / WCAG 2.5.5): buttons, selects, fields, the "Show as a table"
+     summary, and links that act as buttons (saved-website actions, builder links, settings tabs, "Forgot password?").
+   - Text fields are at least 16px: iOS zooms the whole page when a smaller field gets focus.
+   - Long unbroken words (addresses, emails, URLs) wrap instead of pushing a card wider than the screen. */
+@media (max-width:820px),(pointer:coarse){
+  body :is(button,select,summary,.secondary-button,.primary-action):not(.mobile-nav button){min-height:44px}
+  body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select){min-height:44px}
+  body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select,textarea){font-size:16px!important}
+  body :is(.saved-website-link,.site-support-link,.auth-forgot-link,a.secondary-button,.st-nav a,.settings-nav a,.text-link){display:inline-flex;align-items:center;min-height:44px}
+  body .site-project-pick select{height:44px}
+  body summary{display:flex;align-items:center}
+  body :is(.view,.auth-card,.modal-backdrop,.lead-drawer,.notification-popover) :is(p,li,dd,span,strong,h1,h2,h3){overflow-wrap:anywhere}
+  /* text a person has to read or press was 9-11px: the sign-in buttons and labels, notification messages, the ZIP button */
+  body #authScreen :is(.auth-tab,.auth-forgot-link){font-size:13px}
+  body #authScreen .auth-submit{font-size:15px}
+  body #authScreen label{font-size:12.5px}
+  body .notification-popover :is(span,small){font-size:12px}
+  body .website-handoff-download{font-size:14px}
+  body :is(.close-button,#closeNotifications){min-width:44px}
+  body #websiteCaptionLink{display:inline-flex;align-items:center;min-height:44px}
 }
