@@ -99,19 +99,47 @@ function provisionAnalyticsInBackground(c, summary, link) {
 
 const MAX_REQUEST_CHARS = 600; // the generator's own ceiling for an edit request
 
+// Owners can inspect every workspace, but may only use their personal
+// builder identity inside a workspace they are directly a member of.
+// This keeps customer workspaces isolated while allowing an owner to
+// manage their own business exactly like a normal customer.
+async function ownerMembership(c) {
+  const membership = await db.from('workspace_members').select('workspace_id').eq('user_id', c.user.id).eq('workspace_id', c.wid).maybeSingle();
+  if (membership.error) return { ok: false, status: 503, code: 'workspace_gate_unavailable', message: 'Website access could not be verified right now.' };
+  if (!membership.data) return { ok: false, status: 403, code: 'workspace_mismatch', message: 'Staff accounts see each customer’s delivery record here, not their own builder project.' };
+  return { ok: true };
+}
+// For "the canonical project" (no project id: the builder resolves the person's newest purchase), which has to assume
+// the person's website belongs to THIS workspace -- only safe when they have exactly one.
 async function workspaceGate(c) {
-  if (c.owner) {
-    // Owners can inspect every workspace, but may only use their personal
-    // builder identity inside a workspace they are directly a member of.
-    // This keeps customer workspaces isolated while allowing an owner to
-    // manage their own business exactly like a normal customer.
-    const membership = await db.from('workspace_members').select('workspace_id').eq('user_id', c.user.id).eq('workspace_id', c.wid).maybeSingle();
-    if (membership.error) return { ok: false, status: 503, code: 'workspace_gate_unavailable', message: 'Website access could not be verified right now.' };
-    if (!membership.data) return { ok: false, status: 403, code: 'workspace_mismatch', message: 'Staff accounts see each customer’s delivery record here, not their own builder project.' };
-    return { ok: true };
-  }
+  if (c.owner) return ownerMembership(c);
   if (!Array.isArray(c.workspaces) || c.workspaces.length !== 1) return { ok: false, status: 409, code: 'workspace_mismatch', message: 'This account belongs to more than one business, so the builder project can’t be matched to this one yet.' };
   return { ok: true };
+}
+// RELOAD FIX: for everything addressed by a project id -- the person's own saved websites (the builder re-verifies
+// ownership from their token on every call) and the websites THIS workspace has connected (forWorkspaceProject checks
+// the link too). Nothing is guessed there, so a person in several businesses still sees their own saved websites,
+// connects one to the business they are in explicitly, and opens a connected one. Staff still need direct membership.
+async function memberGate(c) {
+  if (c.owner) return ownerMembership(c);
+  if (!Array.isArray(c.workspaces) || !c.workspaces.some(w => w && w.id === c.wid)) return { ok: false, status: 403, code: 'workspace_mismatch', message: 'Website access could not be verified for this business.' };
+  return { ok: true };
+}
+// Is THIS workspace the person's only business? Only then is a website they bought connected to it automatically
+// (lib/website-links.js autoLinkVerifiedPurchases). A customer: getContext already lists their memberships. Staff:
+// getContext lists every workspace, so their own direct memberships are counted instead. Any doubt -> false.
+async function soleWorkspace(c) {
+  try {
+    if (!c || !c.wid) return false;
+    if (!c.owner) return Array.isArray(c.workspaces) && c.workspaces.length === 1 && c.workspaces[0].id === c.wid;
+    const r = await db.from('workspace_members').select('workspace_id').eq('user_id', c.user.id);
+    return !r.error && Array.isArray(r.data) && r.data.length === 1 && r.data[0].workspace_id === c.wid;
+  } catch (e) { return false; }
+}
+// Never breaks the caller: an auto-link problem just leaves the website unconnected for the next load to retry.
+async function autoLink(c, websites) {
+  try { return await websiteLinks.autoLinkVerifiedPurchases(c.wid, websites); }
+  catch (e) { console.warn('[website-links] auto-link skipped:', e && e.message); return { created: [], existing: [], skipped: [] }; }
 }
 
 // Maps a generator reply that is NOT a success into this app's response.
@@ -252,7 +280,13 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await canonical(c);
     if (!got.ok) return passThroughError(json, res, got.r);
-    const linked = await recordLink(c, got.summary);
+    let linked = await recordLink(c, got.summary);
+    // RELOAD FIX: the person's newest purchase, just re-verified by the builder from their own token, is connected to
+    // their only business here -- so it shows after a reload instead of the old delivery record. Drafts never are.
+    if (linked.status === 'not_linked' && got.summary.status === 'purchased' && await soleWorkspace(c)) {
+      const made = await autoLink(c, [{ projectId: got.summary.projectId, isPurchased: true, status: 'purchased', purchaseRef: got.summary.purchaseRef, revision: got.summary.revision }]);
+      if (made.created.length || made.existing.length) linked = await recordLink(c, got.summary);
+    }
     if (linked.status === 'linked' && hasSiteRemadeAccess(c)) provisionAnalyticsInBackground(c, got.summary, linked.link);
     await captureMismatchCandidates(c, linked);
     // Only the link STATUS reaches the browser (linked / not_linked /
@@ -294,26 +328,31 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
 
   // SAVED WEBSITES: every website saved to this person's SiteRemade account -- drafts included, not only purchases
   // (the candidates route above lists purchases only, for connecting). A fresh builder call with this request's own
-  // token on every load, behind the same workspace gate as every route in this file: the list is the signed-in
-  // person's own projects, shown only where the workspace is unambiguous.
+  // token on every load: the list is the signed-in person's own projects.
+  // RELOAD FIX: listed for any member of this workspace (memberGate) -- it is the person's own account, so a person in
+  // several businesses sees their websites too (and connects one here explicitly). For a person whose ONLY business
+  // this is, every website the builder reports as purchased is connected here automatically first (additive and
+  // idempotent -- see lib/website-links.js autoLinkVerifiedPurchases), so a new purchase can be opened right away.
   router.get('/api/app/websites', { auth: 'user' }, async (req, res, { c, json }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const r = await bridge.getWebsites(c.access);
     if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.websites)) return passThroughError(json, res, r);
+    const sole = await soleWorkspace(c);
+    const made = sole ? await autoLink(c, r.data.websites) : { created: [] };
     let linkedIds = new Set();
     try { linkedIds = new Set((await websiteLinks.listLinksForWorkspace(c.wid)).map(l => l.generator_project_id)); } catch (e) { console.warn('[website-links] saved websites: could not read links:', e && e.message); }
     const websites = savedWebsitesFrom(r.data.websites, linkedIds); // lib/saved-websites.js: metadata allowlist, newest first
-    return json(res, 200, { ok: true, websites });
+    return json(res, 200, { ok: true, websites, autoLinked: made.created.length, workspaceAmbiguous: !sole });
   });
 
   // A saved website's preview (the latest saved version by default; ?source=published for a purchased website's
   // published/purchased version) and a purchased website's files. The id only says WHICH of this person's websites:
   // the builder authorizes every request from the signed-in person's own token -- a website that isn't theirs is a
-  // 404, and a draft's files are refused (403 not_purchased: only a purchase hands over the files). Same workspace
-  // gate as the canonical /api/app/website/preview and /download, which likewise need no link.
+  // 404, and a draft's files are refused (403 not_purchased: only a purchase hands over the files). Like the Saved
+  // Websites list: memberGate, no link needed (the person's own website, never a guess about a workspace).
   router.get('/api/app/websites/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params, u }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     if (!websiteLinks.PROJECT_ID_RE.test(String(params.projectId || ''))) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
     const published = !!(u && u.searchParams && u.searchParams.get('source') === 'published');
@@ -323,7 +362,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     return res.end(r.text);
   });
   router.get('/api/app/websites/:projectId/download', { auth: 'user' }, async (req, res, { c, json, params }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     if (!websiteLinks.PROJECT_ID_RE.test(String(params.projectId || ''))) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
     return sendWebsiteDownload({ bridge, token: c.access, projectId: params.projectId, res, json });
@@ -337,7 +376,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // request's token, so what actually gets linked is always something the
   // builder just re-confirmed this signed-in person purchased.
   router.post('/api/app/website/connect', { auth: 'user' }, async (req, res, { c, json }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
     try { body = await readJsonBody(req, 2000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
@@ -374,7 +413,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // is still listed, flagged unavailable, rather than silently dropped --
   // losing a row here would look like "this project disappeared."
   router.get('/api/app/website/projects', { auth: 'user' }, async (req, res, { c, json }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let links;
     try { links = await websiteLinks.listLinksForWorkspace(c.wid); }
@@ -388,7 +427,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId', { auth: 'user' }, async (req, res, { c, json, params }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -396,7 +435,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId/download', { auth: 'user' }, async (req, res, { c, json, params }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -404,7 +443,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId/preview', { auth: 'user' }, async (req, res, { c, json, params, u }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -415,7 +454,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   });
 
   router.get('/api/app/website/projects/:projectId/deployment', { auth: 'user' }, async (req, res, { c, json, params }) => {
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -436,7 +475,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
   // before either handler touches website_analytics.
   router.get('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, u: url, json, params }) => {
     if (!requireSiteRemadeAccess(c, json, res)) return;
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -449,7 +488,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
 
   router.post('/api/app/website/projects/:projectId/analytics', { auth: 'user' }, async (req, res, { c, json, params }) => {
     if (!requireSiteRemadeAccess(c, json, res)) return;
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = await forWorkspaceProject(c, params.projectId);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
@@ -468,7 +507,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
 
   router.post('/api/app/website/projects/:projectId/edits', { auth: 'user' }, async (req, res, { c, json, params }) => {
     if (!requireSiteRemadeAccess(c, json, res)) return;
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
     try { body = await readJsonBody(req, 20000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
@@ -485,7 +524,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
 
   router.post('/api/app/website/projects/:projectId/publish', { auth: 'user' }, async (req, res, { c, json, params }) => {
     if (!requireSiteRemadeAccess(c, json, res)) return;
-    const gate = await workspaceGate(c);
+    const gate = await memberGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
     try { body = await readJsonBody(req, 20000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
@@ -555,13 +594,13 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
 
   // OWNERSHIP + CREDITS: what an update will use, before it runs (the builder prices it from the request itself)
   router.post('/api/app/website/quote', { auth: 'user' }, async (req, res, { c, json }) => {
-    const gate = await workspaceGate(c);
-    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     let body;
     try { body = await readJsonBody(req, 20000); } catch (e) { return json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); }
     const request = typeof body.request === 'string' ? body.request.trim() : '';
     if (!request) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Describe the change you want to make.' });
     if (request.length > MAX_REQUEST_CHARS) return json(res, 400, { ok: false, code: 'request_too_long', message: `Please keep automatic updates under ${MAX_REQUEST_CHARS} characters.` });
+    const gate = body.projectId ? await memberGate(c) : await workspaceGate(c);
+    if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
     const got = body.projectId ? await forWorkspaceProject(c, String(body.projectId)) : await canonical(c);
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
     const r = await bridge.postQuote(c.access, { operation: 'website_update', request, projectId: got.summary.projectId });

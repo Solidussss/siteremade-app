@@ -972,11 +972,37 @@ async function loadCanonicalWebsite(force){
   if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
   if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';
   canonicalWebsite.inflight=(async()=>{
-    const scoped=websiteView.selectedGeneratorProjectId||null;
+    syncWebsiteSelection();
     try{
-      const url=scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}`:'/api/app/website';
-      const r=await fetch(url,{headers:{'Content-Type':'application/json'}});
-      const d=await r.json().catch(()=>({}));
+      // RELOAD FIX: a fresh page load (closed tab, new device) starts from this business's remembered choice --
+      // validated against the websites it has connected, so a stale choice or an older website never hides a newer
+      // purchase (website-selection.js) -- else from the builder's own answer (its newest purchase, connected
+      // automatically for a one-business account), else from the best connected website (e.g. an account in several
+      // businesses, which can't use the builder's answer). Only then the delivery record.
+      let r=null,d=null;
+      if(websiteView.restorePending){
+        const remembered=websiteView.restorePending;websiteView.restorePending=null;
+        // the builder's default FIRST: for a one-business account that call also connects its newest purchase, so the
+        // remembered choice is weighed against it -- a website bought after the choice was made wins
+        ({r,d}=await fetchWebsiteSummary(null));
+        await loadWebsiteProjectsList(true);
+        const pick=window.WebsiteSelection?window.WebsiteSelection.chooseWebsiteProject(multiProject.list,remembered):null;
+        if(!pick||pick!==remembered.id)rememberWebsiteSelection(pick);
+        websiteView.selectedGeneratorProjectId=pick;
+      }
+      let scoped=websiteView.selectedGeneratorProjectId||null;
+      if(scoped||!r)({r,d}=await fetchWebsiteSummary(scoped));
+      // a chosen website this business can no longer open (disconnected, not found): forget it, use the default
+      if(scoped&&!websiteSummaryReady(r,d)){
+        if(r.status===403||r.status===404)rememberWebsiteSelection(null);
+        websiteView.selectedGeneratorProjectId=null;scoped=null;
+        ({r,d}=await fetchWebsiteSummary(null));
+      }
+      if(!scoped&&!websiteSummaryReady(r,d)&&d.code!=='identity_not_linked'&&r.status!==401){
+        await loadWebsiteProjectsList(true);
+        const pick=window.WebsiteSelection?window.WebsiteSelection.chooseWebsiteProject(multiProject.list,null):null;
+        if(pick){const y=await fetchWebsiteSummary(pick);if(websiteSummaryReady(y.r,y.d)){({r,d}=y);scoped=pick;websiteView.selectedGeneratorProjectId=pick;}}
+      }
       // Phase 8: a builder project existing is no longer enough to call this
       // "Connected" -- the workspace also has to actually be LINKED to it
       // (link.status !== 'not_linked'). A successful summary with
@@ -987,7 +1013,7 @@ async function loadCanonicalWebsite(force){
       // route never returns a `link` field at all -- forWorkspaceProject
       // already proved this workspace is linked to it before answering, so
       // `!d.link` alone correctly falls into the "ready" branch below.)
-      if(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&(!d.link||d.link.status!=='not_linked')){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null,scopedProjectId:scoped});if(!scoped)loadWebsiteProjectsList();}
+      if(websiteSummaryReady(r,d)){Object.assign(canonicalWebsite,{project:d,status:'ready',code:null,message:null,scopedProjectId:scoped});loadWebsiteProjectsList();}
       else if(!scoped&&r.ok&&d.ok&&d.source==='generator'&&d.projectId&&d.link&&d.link.status==='not_linked'){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'no_project',message:null,scopedProjectId:null});}
       else Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:d.code||'bridge_unavailable',message:d.message||null,scopedProjectId:null});
     }catch(e){Object.assign(canonicalWebsite,{project:null,status:'unavailable',code:'bridge_unavailable',message:null,scopedProjectId:null});}
@@ -995,13 +1021,29 @@ async function loadCanonicalWebsite(force){
   })();
   return canonicalWebsite.inflight;
 }
+async function fetchWebsiteSummary(scoped){
+  try{
+    const r=await fetch(scoped?`/api/app/website/projects/${encodeURIComponent(scoped)}`:'/api/app/website',{headers:{'Content-Type':'application/json'}});
+    return {r,d:await r.json().catch(()=>({}))};
+  }catch(e){return {r:{ok:false,status:0},d:{code:'bridge_unavailable'}};}
+}
+function websiteSummaryReady(r,d){return !!(r.ok&&d.ok&&d.source==='generator'&&d.projectId&&(!d.link||d.link.status!=='not_linked'));}
+// The remembered choice is per business (workspace): switching business starts from that business's own choice.
+function websiteSelectionStorage(){try{return window.localStorage;}catch(e){return null;}}
+function syncWebsiteSelection(){
+  const wid=(state.workspace&&state.workspace.id)||null;
+  if(websiteView.selectionWorkspace===wid)return;
+  websiteView.selectionWorkspace=wid;websiteView.selectedGeneratorProjectId=null;
+  websiteView.restorePending=window.WebsiteSelection?window.WebsiteSelection.remembered(websiteSelectionStorage(),wid):null;
+}
+function rememberWebsiteSelection(projectId){if(window.WebsiteSelection)window.WebsiteSelection.remember(websiteSelectionStorage(),(state.workspace&&state.workspace.id)||null,projectId||null);}
 // Phase 9: every SiteRemade website this workspace has actually connected
 // (not "could connect" -- that's websiteCandidates above). Powers the
 // project switcher in the Website/Analytics headers, shown only once
 // there's more than one -- for the common single-website case this list is
-// length <=1 and nothing in the UI changes. Loaded lazily, only once the
-// default/canonical project has confirmed this workspace has at least one
-// real connection (see loadCanonicalWebsite's success branch above).
+// length <=1 and nothing in the UI changes. Loaded by loadCanonicalWebsite:
+// after the default project loads, and before it when a remembered choice
+// has to be checked or the default can't be used (see above).
 const multiProject={status:'idle',list:[],loadedAt:0,inflight:null};
 async function loadWebsiteProjectsList(force){
   if(multiProject.inflight)return multiProject.inflight;
@@ -1027,6 +1069,7 @@ function switchToWebsiteProject(projectId){
   const next=projectId||null;
   if(websiteView.selectedGeneratorProjectId===next)return;
   websiteView.selectedGeneratorProjectId=next;
+  rememberWebsiteSelection(next); // the next page load opens the same website (website-selection.js re-checks it)
   canonicalWebsite.status='idle';canonicalWebsite.loadedAt=0;
   analyticsState.cache={}; // a different website's own numbers -- never show a stale cached read from the last one
   loadCanonicalWebsite(true);
@@ -1100,7 +1143,12 @@ async function loadSavedWebsites(force){
     try{
       const r=await fetch('/api/app/websites',{headers:{'Content-Type':'application/json'}});
       const d=await r.json().catch(()=>({}));
-      if(r.ok&&d.ok&&Array.isArray(d.websites))Object.assign(savedWebsites,{status:'ready',list:d.websites,message:null});
+      if(r.ok&&d.ok&&Array.isArray(d.websites)){
+        Object.assign(savedWebsites,{status:'ready',list:d.websites,message:null,ambiguous:!!d.workspaceAmbiguous});
+        // RELOAD FIX: the server just connected a website this person bought (their only business): show it now --
+        // in the switcher, and above if nothing is showing yet -- rather than on some later visit
+        if(d.autoLinked>0){loadWebsiteProjectsList(true);if(canonicalWebsite.status!=='ready')loadCanonicalWebsite(true);}
+      }
       else Object.assign(savedWebsites,{status:'unavailable',list:[],message:d.message||null});
     }catch(e){Object.assign(savedWebsites,{status:'unavailable',list:[],message:null});}
     finally{savedWebsites.loadedAt=Date.now();savedWebsites.inflight=null;safeRender('saved-websites',renderSavedWebsites);safeRender('website-builder',renderWebsiteBuilderBlock);}
@@ -1110,9 +1158,9 @@ async function loadSavedWebsites(force){
 function renderSavedWebsites(){
   const host=qs('#savedWebsites');if(!host||!window.SavedWebsitesView)return;
   const current=canonicalWebsite.status==='ready'&&canonicalWebsite.project?canonicalWebsite.project.projectId:null;
-  const sig=JSON.stringify([savedWebsites.status,savedWebsites.list,savedWebsites.message,current,savedWebsites.connecting,savedWebsites.error]);
+  const sig=JSON.stringify([savedWebsites.status,savedWebsites.list,savedWebsites.message,current,savedWebsites.connecting,savedWebsites.error,savedWebsites.ambiguous]);
   if(host.dataset.sig===sig)return;host.dataset.sig=sig;
-  host.innerHTML=window.SavedWebsitesView.listHtml(savedWebsites,{currentProjectId:current,busyProjectId:savedWebsites.connecting});
+  host.innerHTML=window.SavedWebsitesView.listHtml(savedWebsites,{currentProjectId:current,busyProjectId:savedWebsites.connecting,ambiguous:savedWebsites.ambiguous});
 }
 // An owned website that isn't connected to this business yet: the same verified connect as "Connect a website"
 // (POST /api/app/website/connect re-checks it against the builder's purchases), then it opens here.
@@ -1204,7 +1252,9 @@ function editorDevMode(){return EDITOR_DEV_REQUESTED&&state.user?.role==='owner'
 // generator project id means the customer explicitly picked a different
 // one of their connected websites. Distinct from projectId below, which is
 // the unrelated legacy delivery-record (website_projects) selection.
-const websiteView={device:null,frameSrc:'',projectId:null,selectedGeneratorProjectId:null};
+// selectionWorkspace/restorePending: which business the selection belongs to, and its remembered choice waiting to be
+// checked on the first load (syncWebsiteSelection, website-selection.js).
+const websiteView={device:null,frameSrc:'',projectId:null,selectedGeneratorProjectId:null,selectionWorkspace:undefined,restorePending:null};
 const EDIT_MAX_CHARS=600;
 
 // Only ever hand http(s) URLs to an <iframe>/<a>: these are free-text

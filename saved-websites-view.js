@@ -71,7 +71,10 @@
     const owned = list.filter(w => w.isPurchased === true && w.status === 'purchased').length;
     const summary = `${list.length} saved · ${owned} owned · ${list.length - owned} draft${list.length - owned === 1 ? '' : 's'}`;
     const error = s.error ? `<p class="saved-websites-empty" role="status">${esc(s.error)}</p>` : '';
-    return `${head}<p class="saved-websites-summary">${esc(summary)}</p>${error}<ul class="saved-websites-list">${list.map(w => rowHtml(w, opts)).join('')}</ul>`;
+    // an account in more than one business: nothing is connected automatically -- the person chooses where it belongs
+    const waiting = (opts && opts.ambiguous) && list.some(w => w.isPurchased === true && w.status === 'purchased' && !w.linked)
+      ? '<p class="saved-websites-empty" role="status">Your account belongs to more than one business, so a website you buy isn’t connected to one automatically. Use “Connect to this business” on the website that belongs here.</p>' : '';
+    return `${head}<p class="saved-websites-summary">${esc(summary)}</p>${error}${waiting}<ul class="saved-websites-list">${list.map(w => rowHtml(w, opts)).join('')}</ul>`;
   }
 
   const api = { rowHtml, listHtml, sortWebsites, STATUS, dateLabel };
