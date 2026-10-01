@@ -102,23 +102,6 @@
     </div>
   </div>
 
-  <div class="subscription-lock" id="subscriptionLock" hidden>
-    <div class="subscription-lock-card">
-      <img src="siteremade-logo-black.png?v=14" alt="SiteRemade" />
-      <p class="eyebrow">WORKPLACE ACTIVATION</p>
-      <h1>Connect your SiteRemade website</h1>
-      <p class="subscription-lock-copy"><strong>Subscribe to Workspace</strong> for this app — managing your website, AI updates, publishing, analytics and website operations — with 100 AI credits every month (unused credits don’t roll over). <strong>Buying a website</strong> is separate: each website is a one-time purchase in the builder, and a subscription does not include it.</p>
-      <div class="subscription-lock-price"><strong id="lockSubscriptionPrice">$39.99</strong><span>/ month · Subscribe to Workspace · 100 AI credits a month</span></div>
-      <div class="subscription-lock-price"><strong>$149.99 CAD</strong><span> · Buy a website · one time, per website</span></div>
-      <p class="helper-copy" id="lockCreditsLine" hidden></p>
-      <span class="status-pill neutral" id="lockSubscriptionStatus">INACTIVE</span>
-      <button class="primary-action subscription-lock-primary" id="lockStartSubscriptionButton" type="button">Subscribe to Workspace</button>
-      <button class="secondary-button" id="lockManageBillingButton" type="button">Manage billing</button>
-      <button class="text-button subscription-lock-signout" id="lockLogoutButton" type="button">Sign out</button>
-      <p class="helper-copy" id="lockBillingStatus">Secure billing is handled through Stripe.</p>
-    </div>
-  </div>
-
   <div class="app-shell">
     <aside class="sidebar">
       <a class="app-brand" href="/" aria-label="SiteRemade app home">
@@ -143,11 +126,14 @@
            "Website-first shell". data-view wiring is unchanged
            (switchView() matches by attribute). -->
       <nav class="side-nav primary-nav" aria-label="App navigation">
+        <!-- OWNERSHIP + CREDITS: the core loop -- My website -> ask SiteRemade -> see the credit quote -> approve. Ads,
+             Contact/Inbox, Leads and the other workspace tools are hidden from customers (their routes and data are kept). -->
         <button class="nav-item active" data-view="website"><span>◱</span><strong>My Websites</strong></button>
+        <button class="nav-item" data-view="create"><span>＋</span><strong>Create</strong></button>
+        <button class="nav-item" data-view="credits"><span>◎</span><strong>Credits</strong></button>
         <button class="nav-item" data-view="analytics"><span>↗</span><strong>Analytics</strong></button>
-        <button class="nav-item" data-view="ads"><span>◈</span><strong>Ads</strong></button>
-        <button class="nav-item" data-view="contact"><span>✉</span><strong>Contact</strong><em id="contactBadge" hidden>0</em></button>
-        <button class="nav-item" data-view="settings"><span>⚙</span><strong>Settings</strong></button>
+        <button class="nav-item" data-view="settings"><span>⚙</span><strong>Account</strong></button>
+        <button class="nav-item" data-view="support"><span>?</span><strong>Support</strong></button>
       </nav>
 
       <!-- Admin stays separate and owner-only (gated in renderWorkspace()). -->
@@ -497,12 +483,11 @@
 
         <div class="billing-grid">
           <article class="panel billing-card billing-primary">
-            <div class="panel-head"><div><p class="eyebrow">SITEREMADE BILLING</p><h2>Your monthly system</h2></div><span class="status-pill neutral" id="subscriptionStatus">INACTIVE</span></div>
-            <div class="billing-price"><strong id="subscriptionPrice">$250</strong><span>/ month</span></div>
-            <p>Your SiteRemade growth system: website operations, managed lead delivery, AI receptionist, scheduling, payments, analytics and optional prospecting. Includes 100 AI credits a month for building and updating websites. Buying a website is a separate one-time purchase.</p>
+            <div class="panel-head"><div><p class="eyebrow">SITEREMADE</p><h2>Ownership &amp; credits</h2></div><span class="status-pill" id="subscriptionStatus">NO SUBSCRIPTION</span></div>
+            <p>Websites are bought once and owned permanently. SiteRemade's AI work is paid with credits, priced before anything runs.</p>
             <p class="helper-copy" id="workspaceCreditsLine" hidden></p>
-            <div class="billing-actions"><button class="primary-action" id="startSubscriptionButton" type="button">Subscribe to Workspace</button><button class="secondary-button" id="manageBillingButton" type="button">Manage billing</button></div>
-            <p class="helper-copy" id="billingStatus">Billed by SiteRemade through Stripe.</p>
+            <div class="billing-actions"><button class="primary-action" id="paymentsBuyCredits" type="button" data-view="credits">Buy credits</button><button class="secondary-button" id="manageBillingButton" type="button" hidden>Manage legacy Workspace subscription</button></div>
+            <p class="helper-copy" id="billingStatus">Payments are handled by Stripe.</p>
           </article>
 
           <article class="panel billing-card feature-blocked ad-feature-blocked">
@@ -531,6 +516,25 @@
            no .metric-grid / .traffic-panel: v43-ad-control.js and
            v42-daily-workflow.js (still loaded for Admin/legacy screens)
            look for those inside #view-analytics to inject old panels. -->
+      <!-- OWNERSHIP + CREDITS: start a website in the builder (signed in through the existing handoff) -->
+      <section class="view" id="view-create" aria-labelledby="createTitle">
+        <div class="page-head compact-head"><div><p class="eyebrow">CREATE</p><h1 id="createTitle">Make a new website</h1><p>Describe it, see what it will use in credits, then approve. You buy a website only if you want to keep it — once, and it's yours.</p></div></div>
+        <div class="create-grid">
+          <a class="panel create-card" href="/handoff/website-builder?target=business"><p class="eyebrow">BUSINESS WEBSITE</p><h2>Clear, fast, built to bring in customers</h2><p>Services, trust, calls, forms and bookings. Generating one uses <strong id="createBusinessCredits">4</strong> credits.</p><span class="create-price" id="createBusinessPrice">Own it for $149.99 CAD, one time</span></a>
+          <a class="panel create-card" href="/handoff/website-builder?target=creative"><p class="eyebrow">CREATIVE WEBSITE</p><h2>Art-directed, cinematic, unforgettable</h2><p>Motion, depth and premium imagery. Generating one uses <strong id="createCreativeCredits">6</strong> credits (more with 3D depth or cinematic media — always quoted first).</p><span class="create-price" id="createCreativePrice">Own it for $499.99 CAD, one time</span></a>
+        </div>
+      </section>
+      <section class="view" id="view-credits" aria-labelledby="creditsTitle">
+        <div class="page-head compact-head"><div><p class="eyebrow">CREDITS</p><h1 id="creditsTitle">Credits</h1><p>Credits power what SiteRemade does for you — generating, redesigning, updating. You always see the cost before anything runs. Credits never expire.</p></div></div>
+        <div class="panel credits-balance"><p class="eyebrow">YOUR BALANCE</p><h2 id="creditsBalance">—</h2><p class="helper-copy" id="creditsBalanceDetail"></p></div>
+        <div class="credits-packs" id="creditsPacks"></div>
+        <p class="modal-status" id="creditsStatus" role="status"></p>
+        <div class="panel credits-history"><p class="eyebrow">HISTORY</p><div id="creditsHistory"><p class="helper-copy">Loading…</p></div></div>
+      </section>
+      <section class="view" id="view-support" aria-labelledby="supportTitle">
+        <div class="page-head compact-head"><div><p class="eyebrow">SUPPORT</p><h1 id="supportTitle">Help</h1><p>Questions about your website, a payment or your credits? We answer every message.</p></div></div>
+        <div class="panel"><p>Email <a href="mailto:support@siteremade.com">support@siteremade.com</a> with your website's name. Your websites are yours: you can download them from My Websites at any time.</p></div>
+      </section>
       <section class="view" id="view-analytics" aria-labelledby="analyticsTitle">
         <div class="page-head an-head">
           <div><p class="eyebrow">ANALYTICS</p><h1 id="analyticsTitle">How your website is doing</h1><p id="analyticsSubtitle">Visitors, what they look at, and how many get in touch.</p><div class="site-project-pick" id="analyticsProjectSwitcher" hidden></div></div>
@@ -597,7 +601,7 @@
             <a href="#st-account" data-st-jump="st-account">Account</a>
             <a href="#st-website" data-st-jump="st-website">Website</a>
             <a href="#st-domain" data-st-jump="st-domain">Domain &amp; hosting</a>
-            <a href="#st-billing" data-st-jump="st-billing">Billing</a>
+            <a href="#st-billing" data-st-jump="st-billing">Ownership &amp; credits</a>
             <a href="#st-connections" data-st-jump="st-connections">Connections</a>
             <a href="#st-advanced" data-st-jump="st-advanced">Advanced</a>
           </nav>
@@ -645,12 +649,13 @@
             </section>
 
             <section class="st-section" id="st-billing">
-              <h2>Billing</h2><p class="st-lede">Your SiteRemade plan. Payments are handled securely by Stripe.</p>
+              <h2>Ownership &amp; credits</h2><p class="st-lede">You own every website you buy, permanently. Credits pay for SiteRemade's AI work — no subscription.</p>
               <div class="st-rows">
-                <div class="st-row"><div><strong>SiteRemade plan</strong><span id="settingsPlanLine">—</span></div><span class="chip chip-neutral" id="settingsPlanStatus">—</span></div>
-                <div class="st-row"><div><strong>AI credits</strong><span id="settingsCreditsLine">—</span></div></div>
+                <div class="st-row"><div><strong>Your websites</strong><span>Bought once, yours to keep and download. Owning a website never needs credits or a plan.</span></div><span class="chip chip-success">Owned</span></div>
+                <div class="st-row"><div><strong>Credits</strong><span id="settingsCreditsLine">—</span></div></div>
+                <div class="st-row" id="settingsLegacyRow" hidden><div><strong>Workspace subscription (retired)</strong><span id="settingsPlanLine">—</span></div><span class="chip chip-neutral" id="settingsPlanStatus">—</span></div>
               </div>
-              <div class="st-form-actions"><button type="button" class="primary-action" id="settingsStartPlan">Subscribe to Workspace</button><button type="button" class="secondary-button" id="settingsManageBilling">Manage billing</button><p class="modal-status" id="settingsBillingStatus" role="status"></p></div>
+              <div class="st-form-actions"><button type="button" class="primary-action" id="settingsBuyCredits">Buy credits</button><button type="button" class="secondary-button" id="settingsManageBilling" hidden>Manage or cancel Workspace subscription</button><p class="modal-status" id="settingsBillingStatus" role="status"></p></div>
             </section>
 
             <section class="st-section" id="st-connections">
@@ -703,10 +708,10 @@
        breakpoint-specific column count. -->
   <nav class="mobile-nav" aria-label="Mobile navigation">
     <button class="active" data-view="website"><span>◱</span><small>Websites</small></button>
+    <button data-view="create"><span>＋</span><small>Create</small></button>
+    <button data-view="credits"><span>◎</span><small>Credits</small></button>
     <button data-view="analytics"><span>↗</span><small>Analytics</small></button>
-    <button data-view="ads"><span>◈</span><small>Ads</small></button>
-    <button data-view="contact"><span>✉</span><small>Contact</small><i class="mobile-nav-dot" id="mobileContactDot" hidden></i></button>
-    <button data-view="settings"><span>⚙</span><small>Settings</small></button>
+    <button data-view="settings"><span>⚙</span><small>Account</small></button>
     <button data-view="admin" id="mobileAdminNav" hidden><span>▦</span><small>Admin</small></button>
   </nav>
 

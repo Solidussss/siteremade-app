@@ -25,7 +25,8 @@ const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
 const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3999));
 const ADS_FEATURE_ENABLED = false; // V13: preserve ad data/code, but block new ad actions until integrations are ready.
-const hasSiteRemadeAccess=c=>c.owner||['active','trialing'].includes(String(c.workspace?.siteremade_subscription_status||'inactive').toLowerCase());
+// OWNERSHIP + CREDITS: no subscription gate -- every signed-in workspace member uses the app (see lib/context.js)
+const hasSiteRemadeAccess=c=>!!c;
 const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
 const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
@@ -555,13 +556,7 @@ async function api(req,res,u){
         return json(res,200,{ok:true,kind:meta.kind||''});
       }catch(e){return json(res,400,{ok:false,message:e.message});}
     }
-    if(m==='POST'&&p==='/api/app/billing/subscription/start'){
-      try{
-        const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;
-        const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Workplace','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid,'subscription_data[metadata][billingUserId]':c.user.id});
-        return json(res,200,{ok:true,url:session.url});
-      }catch(e){return json(res,400,{ok:false,message:e.message});}
-    }
+    if(m==='POST'&&p==='/api/app/billing/subscription/start')return json(res,410,{ok:false,code:'SUBSCRIPTION_RETIRED',message:'SiteRemade no longer sells a subscription. Your websites stay yours; buy credits whenever you want SiteRemade to do more work.'});
     if(m==='POST'&&p==='/api/app/billing/portal'){
       try{const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const portal=await stripeRequest('billing_portal/sessions',{customer,return_url:base+'/?billing=return'});return json(res,200,{ok:true,url:portal.url});}catch(e){return json(res,400,{ok:false,message:e.message});}
     }
@@ -744,15 +739,14 @@ return json(res,201,{ok:true,lead:mapLead(l)});
       return json(res,200,{ok:true,kind:meta.kind||''});
     }catch(e){return json(res,400,{ok:false,message:e.message});}
   }
-  if(m==='POST'&&p==='/api/app/billing/subscription/start'){
-    try{
-      const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;
-      const session=await stripeRequest('checkout/sessions',{customer,'line_items[0][price_data][currency]':(c.workspace.currency||'cad').toLowerCase(),'line_items[0][price_data][product_data][name]':'SiteRemade Workplace','line_items[0][price_data][unit_amount]':String(SITEREMADE_MONTHLY_PRICE_CENTS),'line_items[0][price_data][recurring][interval]':'month','line_items[0][quantity]':'1',mode:'subscription',success_url:base+'/?billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:base+'/?billing=canceled','metadata[kind]':'subscription','metadata[workspaceId]':c.wid,'subscription_data[metadata][workspaceId]':c.wid,'subscription_data[metadata][billingUserId]':c.user.id});
-      return json(res,200,{ok:true,url:session.url});
-    }catch(e){return json(res,400,{ok:false,message:e.message});}
-  }
+  // OWNERSHIP + CREDITS: the Workspace subscription is retired -- no new subscription can be started. A website is bought
+  // once and owned; AI work is paid with credits (bought in the builder or from the app's Credits view).
+  if(m==='POST'&&p==='/api/app/billing/subscription/start')return json(res,410,{ok:false,code:'SUBSCRIPTION_RETIRED',message:'SiteRemade no longer sells a subscription. Your websites stay yours; buy credits whenever you want SiteRemade to do more work.'});
+  // (kept only so an existing, legacy Workspace subscriber can manage or cancel what Stripe is still billing -- it never
+  // creates a Stripe customer for anyone else)
   if(m==='POST'&&p==='/api/app/billing/portal'){
-    try{const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const portal=await stripeRequest('billing_portal/sessions',{customer,return_url:base+'/?billing=return'});return json(res,200,{ok:true,url:portal.url});}catch(e){return json(res,400,{ok:false,message:e.message});}
+    if(!c.workspace?.siteremade_customer_id||!c.workspace?.siteremade_subscription_id)return json(res,404,{ok:false,code:'NO_LEGACY_SUBSCRIPTION',message:'There is no Workspace subscription to manage.'});
+    try{const base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const portal=await stripeRequest('billing_portal/sessions',{customer:c.workspace.siteremade_customer_id,return_url:base+'/?billing=return'});return json(res,200,{ok:true,url:portal.url});}catch(e){return json(res,400,{ok:false,message:e.message});}
   }
   if(m==='POST'&&p==='/api/app/ad-funds'){
     if(!ADS_FEATURE_ENABLED)return json(res,503,{ok:false,message:'Google + Meta advertising is coming soon.'});

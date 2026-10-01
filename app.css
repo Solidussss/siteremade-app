@@ -631,3 +631,6 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
 @media(max-width:640px){
   .website-handoff-download{width:100%;min-height:46px}
 }
+/* OWNERSHIP + CREDITS: Create (start a website) and Credits (balance, one-time packs, history) */
+.create-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.create-card{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:inherit;padding:24px;transition:transform .2s ease,box-shadow .2s ease}.create-card:hover{transform:translateY(-2px)}.create-card h2{margin:0;font-size:22px}.create-card p{margin:0;line-height:1.5}.create-price{margin-top:auto;font-weight:700}
+.credits-balance h2{margin:4px 0;font-size:34px}.credits-packs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}.credit-pack{display:flex;flex-direction:column;gap:4px;align-items:flex-start;cursor:pointer;padding:18px;border:1px solid var(--line,rgba(0,0,0,.1));font:inherit;text-align:left}.credit-pack strong{font-size:20px}.credit-pack small{opacity:.6}.credits-bonus{grid-column:1/-1;margin:0}.credits-history{margin-top:16px}

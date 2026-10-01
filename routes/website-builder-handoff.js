@@ -58,7 +58,10 @@ module.exports = function registerWebsiteBuilderHandoffRoutes(router) {
   router.get('/handoff/website-builder', { auth: 'session' }, async (req, res, ctx) => {
     const u = ctx && ctx.u ? ctx.u : new URL(req.url, 'http://internal');
     const mode = u.searchParams.get('mode') === 'link' ? 'link' : 'session';
-    const target = new URL(safeReturnBase(u.searchParams.get('return')));
+    // OWNERSHIP + CREDITS: the app's "Create" view asks for a kind of website, never a URL -- the builder's own origin
+    // with its Business form or its Creative studio
+    const kind = u.searchParams.get('target');
+    const target = new URL(kind === 'creative' ? GENERATOR_ORIGIN + '/?studio=creative' : kind === 'business' ? GENERATOR_ORIGIN + '/' : safeReturnBase(u.searchParams.get('return')));
     // c is this route's getAuthUser() result -- { user, profile, access }.
     // See this file's own header comment on why `access` (not a freshly
     // minted token) is what travels.

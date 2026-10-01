@@ -3,7 +3,10 @@ let liveRefreshing=false,lastLiveCounts={leads:0,unread:0},toastTimer=null;
 const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
 const money=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',maximumFractionDigits:0}).format(Number(n)||0);
 const subscriptionMoney=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
-const isSubscriptionLocked=()=>state.user?.role!=='owner'&&!!state.locked;
+// OWNERSHIP + CREDITS: there is no subscription, so nothing is ever locked. (Kept as a function: older code asks it.)
+const isSubscriptionLocked=()=>false;
+// screens for SiteRemade staff only now (their routes and data are kept): customers stay on the core loop
+const STAFF_ONLY_VIEWS=new Set(['ads','contact','home','leads','inbox','calendar','payments','prospecting','automations','website-projects','integrations','admin']);
 const FREE_VIEWS_WHEN_LOCKED=new Set(['website','settings']);
 const esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const initials=(n='')=>n.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'•';
@@ -174,11 +177,10 @@ const workspaceCredits={data:null,websitePrice:null};
 function creditDate(iso){try{return iso?new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';}catch(e){return '';}}
 function creditSummaryText(){
   const c=workspaceCredits.data;if(!c)return '';
-  const costs=c.costs||{};const price=costs.aiUpdate!=null?` An AI update costs ${costs.aiUpdate} credit (+${costs.imageSupport} for each new picture); a new Business website ${costs.businessGeneration}, a Creative page ${costs.creativePage}. Editing text yourself is free.`:'';
-  if(c.plan==='workspace'){const s=c.subscription||{};return `Workspace plan: ${c.remaining} AI credits left${s.renewsAt?` · renews ${creditDate(s.renewsAt)} with 100 credits (unused credits don’t roll over)`:s.endsAt?` · plan ends ${creditDate(s.endsAt)}`:''}.${price}`;}
+  const costs=c.costs||{};const price=costs.aiUpdate!=null?` Updates use ${costs.aiUpdate}–5 credits depending on what they change (you see the exact number first); a new Business website ${costs.businessGeneration}, a Creative website ${costs.creativePage}. Editing text yourself is free.`:'';
   if(c.plan==='tester')return `Tester allowance: ${c.remaining} credits${c.tester&&c.tester.resetsAt?` · resets ${new Date(c.tester.resetsAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`:''}.${price}`;
-  const problem=c.subscription&&c.subscription.paymentProblem?' Your last Workspace payment failed — update it under Manage billing to get this month’s credits.':'';
-  return `Free trial: ${c.remaining} of ${(c.trial&&c.trial.credits)||6} one-time credits left. A Workspace subscription adds 100 AI credits every month.${problem}${price}`;
+  const legacy=c.subscription&&c.subscription.remaining?` (${c.subscription.remaining} from your Workspace month${c.subscription.endsAt||c.subscription.renewsAt?` until ${creditDate(c.subscription.endsAt||c.subscription.renewsAt)}`:''})`:'';
+  return `${c.remaining} credit${c.remaining===1?'':'s'}${legacy}. Credits never expire.${price}`;
 }
 function renderWorkspaceCredits(){
   const t=creditSummaryText();
@@ -186,7 +188,10 @@ function renderWorkspaceCredits(){
   const note=qs('#siteEditorCost');if(note){const c=workspaceCredits.data;note.textContent=c&&c.costs&&c.costs.aiUpdate!=null?`Each automatic update costs ${c.costs.aiUpdate} credit, plus ${c.costs.imageSupport} for each new picture it makes. You have ${c.remaining}.`:'';note.hidden=!note.textContent;}
 }
 async function loadWorkspaceCredits(refresh){
-  try{const r=await fetch('/api/app/website/credits'+(refresh?'?refresh=1':''),{headers:{Accept:'application/json'}});const d=await r.json().catch(()=>({}));if(r.ok&&d.ok){workspaceCredits.data=d.credits||null;workspaceCredits.websitePrice=d.websitePrice||null;}}catch(e){/* informational: the balance line just stays empty */}
+  try{const r=await fetch('/api/app/website/credits'+(refresh?'?refresh=1':''),{headers:{Accept:'application/json'}});const d=await r.json().catch(()=>({}));if(r.ok&&d.ok){workspaceCredits.data=d.credits||null;workspaceCredits.websitePrice=d.websitePrice||null;workspaceCredits.catalog=d.catalog||null;}}catch(e){/* informational: the balance line just stays empty */}
+  const cat=workspaceCredits.catalog,cc=workspaceCredits.data&&workspaceCredits.data.costs;
+  if(cat&&cat.websites){const b=qs('#createBusinessPrice'),cr=qs('#createCreativePrice');if(b&&cat.websites.business)b.textContent=`Own it for ${cat.websites.business.display}, one time`;if(cr&&cat.websites.creative)cr.textContent=`Own it for ${cat.websites.creative.display}, one time`;}
+  if(cc){const b=qs('#createBusinessCredits'),cr=qs('#createCreativeCredits');if(b&&cc.businessGeneration!=null)b.textContent=cc.businessGeneration;if(cr&&cc.creativePage!=null)cr.textContent=cc.creativePage;}
   safeRender('workspace-credits',renderWorkspaceCredits);
 }
 function renderSubscriptionGate(){
@@ -335,8 +340,10 @@ function renderPayments(){
   // journey with no way back to the customer record at all.
   qs('#transactionList').innerHTML=state.invoices.length?state.invoices.map(i=>{const lead=i.leadId?state.leads.find(l=>l.id===i.leadId):null;const nameHtml=lead?`<button type="button" class="customer-id customer-id-link" data-open-invoice-lead="${lead.id}"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></button>`:`<div class="customer-id"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></div>`;return `<div>${nameHtml}<span>${esc(i.description)}</span><em>${money(i.amount)}</em><select class="invoice-status ${i.status.toLowerCase()}" data-invoice="${i.id}">${['Draft','Pending','Paid','Void'].map(x=>`<option ${x===i.status?'selected':''}>${x}</option>`).join('')}</select><button class="transaction-delete" data-delete-invoice="${i.id}" title="Delete invoice">×</button></div>`}).join(''):'<div class="empty-state">No customer invoices yet.</div>';qsa('[data-invoice]').forEach(sel=>sel.onchange=()=>updateInvoice(sel.dataset.invoice,sel.value));qsa('[data-delete-invoice]').forEach(btn=>btn.onclick=()=>deleteInvoice(btn.dataset.deleteInvoice));qsa('[data-open-invoice-lead]').forEach(btn=>btn.onclick=()=>{switchView('leads');setTimeout(()=>openLead(btn.dataset.openInvoiceLead),50)});
   const monthly=(Number(state.billing?.monthlyCents)||0)/100,status=state.billing?.status||state.workspace.siteRemadeSubscriptionStatus||'inactive';
-  qs('#subscriptionPrice').textContent=subscriptionMoney(monthly);const ss=qs('#subscriptionStatus');ss.textContent=String(status).replace('_',' ').toUpperCase();ss.classList.toggle('neutral',!['active','trialing'].includes(status));
-  qs('#startSubscriptionButton').textContent=['active','trialing'].includes(status)?'Subscription active':'Subscribe to Workspace';qs('#startSubscriptionButton').disabled=['active','trialing'].includes(status);
+  // OWNERSHIP + CREDITS: no subscription is sold; a legacy one still billing can be managed (and cancelled) here
+  const legacySub=!!state.billing?.subscriptionId&&['active','trialing','past_due'].includes(status);void monthly;
+  const ss=qs('#subscriptionStatus');if(ss)ss.textContent=legacySub?'LEGACY SUBSCRIPTION':'NO SUBSCRIPTION';
+  const mbb=qs('#manageBillingButton');if(mbb)mbb.hidden=!legacySub;
   const funded=(state.adFunds||[]).filter(f=>f.status==='Funded').reduce((x,f)=>x+Number(f.amount||0),0),spent=(state.adSpend||[]).reduce((x,a)=>x+Number(a.spend||0),0),available=Math.max(0,funded-spent);
   qs('#adFundedTotal').textContent=money(funded);qs('#adFundSpent').textContent=money(spent);qs('#adFundAvailable').textContent=money(available);
   qs('#adFundHistory').innerHTML=(state.adFunds||[]).length?state.adFunds.map(f=>`<div><span class="payment-icon">↗</span><strong>${esc(f.platform)} ads</strong><span>${dateLabel(f.createdAt)}</span><em>${money(f.amount)}</em><span class="status-pill ${f.status==='Funded'?'':'neutral'}">${esc(f.status)}</span></div>`).join(''):'<div class="empty-state">No advertising funds added yet.</div>';const fundForm=qs('#adFundForm');if(fundForm){fundForm.style.display=state.user?.role==='owner'?'none':'grid';if(state.user?.role==='owner')qs('#adFundStatus').textContent='Client approves/funds the advertising budget. You manage campaign delivery and record performance from this workspace.';}
@@ -1131,9 +1138,7 @@ if(qs('#savedWebsites'))qs('#savedWebsites').addEventListener('click',e=>{
 // nothing is ever reported as applied unless the builder said it saved it.
 const websiteEditService={
   available(){const p=canonicalWebsite.project;return !isSubscriptionLocked()&&canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
-  _unavailable(){return isSubscriptionLocked()
-    ?{ok:false,code:'SUBSCRIPTION_REQUIRED',message:'Your purchased website is still yours. Start Workspace to make AI updates from the app.'}
-    :{ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
+  _unavailable(){return {ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
   async _post(url,payload){
     try{
       const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -1158,7 +1163,17 @@ const websiteEditService={
     if(!this._attempt||this._attempt.key!==key)this._attempt={key,id:'edit_'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)};
     const requestId=this._attempt.id;
     const scoped=canonicalWebsite.scopedProjectId;
-    const res=scoped?await this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/edits`,{baseRevision,request:instruction,requestId}):await this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId,requestId});
+    // OWNERSHIP + CREDITS: see the credit quote, approve, then SiteRemade makes the change (nothing runs or is charged
+    // before the owner says yes)
+    let quote=this._attempt.quote;
+    if(!quote){
+      const q=await this._post('/api/app/website/quote',{request:instruction,projectId:scoped||projectId||''});
+      if(!q.ok)return q;
+      if(!window.confirm(`${q.quote.message}${typeof q.creditsRemaining==='number'?`\n\nYou have ${q.creditsRemaining} credit${q.creditsRemaining===1?'':'s'}.`:''}\n\nMake this change?`))return {ok:false,code:'not_confirmed',message:'No changes made — nothing was charged.'};
+      quote=this._attempt.quote=q.quote;
+    }
+    const res=scoped?await this._post(`/api/app/website/projects/${encodeURIComponent(scoped)}/edits`,{baseRevision,request:instruction,requestId,quoteId:quote.id}):await this._post('/api/app/website/edits',{baseRevision,request:instruction,expectedProjectId:projectId,requestId,quoteId:quote.id});
+    if(res&&res.code==='confirmation_required')this._attempt.quote=null;
     if(res&&res.ok)this._attempt=null;
     return res;
   },
@@ -1707,11 +1722,13 @@ function renderSettings(){
     <p class="st-note">Live and preview addresses come from your SiteRemade delivery record. Domain and hosting status come from your SiteRemade builder project. A domain marked “reachable” only means it answered a web request — it isn’t proof of ownership.</p>`
     :`<div class="st-row"><div><strong>Domain status &amp; SSL</strong><span>Not reported yet — SiteRemade manages this for you. Ask your SiteRemade contact about domain changes.</span></div><span class="chip chip-neutral">Managed</span></div>
     <p class="st-note">Addresses come from your SiteRemade delivery record. Live DNS, SSL and deployment status will appear here once the SiteRemade builder is connected to this app.</p>`}`;
-  // Billing
-  const b=state.billing||{},status=String(b.status||w.siteRemadeSubscriptionStatus||'inactive'),active=['active','trialing'].includes(status);
-  const pl=qs('#settingsPlanLine');if(pl)pl.textContent=`${money((Number(b.monthlyCents)||0)/100)} per month`;
-  setChip(qs('#settingsPlanStatus'),status.replace('_',' ').replace(/^./,c=>c.toUpperCase()),active?'success':status==='past_due'?'warning':'neutral');
-  const sp=qs('#settingsStartPlan');if(sp)sp.hidden=active;
+  // Ownership & credits. A legacy Workspace subscription (no longer sold) is shown only while it exists, with the way
+  // to manage or cancel it.
+  const b=state.billing||{},status=String(b.status||w.siteRemadeSubscriptionStatus||'inactive'),legacy=!!b.subscriptionId&&!['inactive','canceled','incomplete_expired'].includes(status);
+  const lr=qs('#settingsLegacyRow');if(lr)lr.hidden=!legacy;
+  const pl=qs('#settingsPlanLine');if(pl)pl.textContent=legacy?'Still billing at Stripe. It is no longer needed for anything — your credits and websites stay if you cancel it.':'';
+  setChip(qs('#settingsPlanStatus'),status.replace('_',' ').replace(/^./,c=>c.toUpperCase()),status==='past_due'?'warning':'neutral');
+  const mb=qs('#settingsManageBilling');if(mb)mb.hidden=!legacy;
   // Advanced — notification automations (real automations rows)
   const AUTO_COPY={'lead-alert':['Tell me when someone gets in touch','Email and text you as soon as a new contact form or chat comes in.'],'lead-confirmation':['Send an automatic “we got your message” reply','Confirms to the person that their message arrived.'],'appointment-reminder':['Appointment reminders','Reminds customers before a booked appointment.']};
   const au=qs('#settingsAutomations');
@@ -1776,19 +1793,35 @@ qsa('[data-st-jump]').forEach(a=>a.onclick=e=>{e.preventDefault();qs('#'+a.datas
 if(qs('#settingsSignOut'))qs('#settingsSignOut').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload();};
 if(qs('#settingsCopyEmbed'))qs('#settingsCopyEmbed').onclick=async()=>{const t=qs('#settingsEmbedCode').textContent,b=qs('#settingsCopyEmbed');try{await navigator.clipboard.writeText(t);b.textContent='Copied';}catch{b.textContent='Select and copy';}setTimeout(()=>b.textContent='Copy',1600);};
 if(qs('#settingsDomainForm'))qs('#settingsDomainForm').onsubmit=async e=>{e.preventDefault();const out=qs('#settingsDomainStatus');out.textContent='Saving…';try{const d=await api('/api/app/analytics/website',{method:'POST',body:JSON.stringify({domain:qs('#settingsDomain').value,businessName:state.workspace.businessName})});state.websiteAnalytics={...(state.websiteAnalytics||{}),...(d.websiteAnalytics||{}),domain:d.domain||d.websiteAnalytics?.domain};analyticsState.cache={};out.textContent='Saved. Visits will show in Analytics once your site sends them.';renderWebsite();}catch(err){out.textContent=err.message;}};
-const planStart=async(btn,out)=>{out.textContent='Opening secure billing…';try{const d=await api('/api/app/billing/subscription/start',{method:'POST'});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message;}};
-if(qs('#settingsStartPlan'))qs('#settingsStartPlan').onclick=()=>planStart(qs('#settingsStartPlan'),qs('#settingsBillingStatus'));
+if(qs('#settingsBuyCredits'))qs('#settingsBuyCredits').onclick=()=>switchView('credits');
+// OWNERSHIP + CREDITS: the Credits view -- balance, one-time packs (Stripe checkout run by the builder; credits arrive
+// when the payment is confirmed), and the history of every credit movement
+const CREDIT_EVENT_COPY={purchased:'Credits bought',first_website_bonus:'First website bonus',trial:'Welcome credits',tester:'Tester allowance',legacy_subscription:'Workspace month',admin_adjustment:'Adjustment',reserved:'Held for work',charged:'Used',released:'Returned (work did not run)',refunded:'Returned (not needed)',revoked:'Removed (refund)'};
+async function loadCreditsView(){
+  await loadWorkspaceCredits(true);
+  const c=workspaceCredits.data,cat=workspaceCredits.catalog;
+  const bal=qs('#creditsBalance');if(bal)bal.textContent=c?`${c.remaining} credit${c.remaining===1?'':'s'}`:'Not connected yet';
+  const det=qs('#creditsBalanceDetail');if(det)det.textContent=c?creditSummaryText():'Connect your SiteRemade account from My Websites to see your credits.';
+  const packs=qs('#creditsPacks');
+  if(packs)packs.innerHTML=cat&&cat.packs&&cat.packs.length?cat.packs.map(p=>`<button type="button" class="panel credit-pack" data-pack="${esc(p.id)}"><strong>${esc(String(p.credits))} credits</strong><span>${esc(p.display)}</span><small>one time</small></button>`).join('')+(cat.firstWebsiteBonus?`<p class="helper-copy credits-bonus">Your first purchased website includes ${esc(String(cat.firstWebsiteBonus))} bonus credits.</p>`:''):'';
+  qsa('[data-pack]').forEach(b=>b.onclick=async()=>{const out=qs('#creditsStatus');out.textContent='Opening secure checkout…';b.disabled=true;try{const d=await api('/api/app/credits/checkout',{method:'POST',body:JSON.stringify({packId:b.dataset.pack})});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message||'Checkout could not start.';}finally{b.disabled=false;}});
+  const hist=qs('#creditsHistory');
+  try{const d=await api('/api/app/credits/history');const ev=(d.events||[]).filter(e=>e.type!=='reserved');hist.innerHTML=ev.length?ev.map(e=>`<div class="st-row"><div><strong>${esc(CREDIT_EVENT_COPY[e.type]||e.type)}</strong><span>${esc(new Date(e.at).toLocaleString())}</span></div><span class="chip ${['charged','revoked'].includes(e.type)?'chip-neutral':'chip-success'}">${['charged','revoked'].includes(e.type)?'−':'+'}${esc(String(e.amount))}</span></div>`).join(''):'<p class="helper-copy">No credit activity yet.</p>';}catch(e){if(hist)hist.innerHTML='<p class="helper-copy">History is unavailable right now.</p>';}
+}
 if(qs('#settingsManageBilling'))qs('#settingsManageBilling').onclick=async()=>{const out=qs('#settingsBillingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message;}};
 // Returning from Gmail / Stripe OAuth lands on /?mailbox=… or /?stripe=… —
 // open Settings → Connections and say what happened. (Google Ads returns
 // are still handled by v44, which opens Admin.)
 function handleConnectionReturn(){
-  const q=new URLSearchParams(location.search),mb=q.get('mailbox'),sp=q.get('stripe'),billing=q.get('billing');if(!mb&&!sp&&!billing)return;
+  const q=new URLSearchParams(location.search),mb=q.get('mailbox'),sp=q.get('stripe'),billing=q.get('billing'),cr=q.get('credits');
+  // back from a credit-pack checkout: the credits are granted when Stripe confirms the payment (never by this URL)
+  if(cr){switchView('credits');showToast(cr==='purchased'?'Payment received':'Checkout cancelled',cr==='purchased'?'Your credits appear as soon as the payment is confirmed.':'Nothing was charged.');['credits','purchase'].forEach(k=>q.delete(k));const rest=q.toString();history.replaceState({},'',location.pathname+(rest?'?'+rest:''));if(cr==='purchased')setTimeout(()=>loadCreditsView(),2500);}
+  if(!mb&&!sp&&!billing)return;
   if(mb||sp){switchView('settings');setTimeout(()=>qs('#st-connections')?.scrollIntoView({block:'start'}),80);}
   if(mb==='connected')showToast('Gmail connected','Enquiry replies can now come from your inbox.');
   else if(mb==='error')showToast('Gmail wasn’t connected',q.get('reason')||'Please try again.');
   if(sp==='connected')showToast('Stripe','Returned from Stripe setup.');
-  if(billing==='canceled'){showToast('Subscription checkout canceled','Nothing was charged. You can activate Workplace whenever you’re ready.');q.delete('billing');}
+  if(billing==='canceled'){q.delete('billing');}
   ['mailbox','reason','stripe'].forEach(k=>q.delete(k));const rest=q.toString();history.replaceState({},'',location.pathname+(rest?'?'+rest:''));
   if(mb||sp)loadConnections(true);
 }
@@ -1838,8 +1871,8 @@ async function refreshLight(){const d=await api('/api/app/bootstrap');Object.ass
 // Settings → Connections) do it when they are opened, not on every 5-second
 // live-refresh tick. Each hook is looked up lazily so it can be defined
 // anywhere in this file.
-const VIEW_SHOWN_HOOKS={website:()=>loadCanonicalWebsite(),analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections()};
-function switchView(v){if(isSubscriptionLocked()&&!FREE_VIEWS_WHEN_LOCKED.has(v))v='website';if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
+const VIEW_SHOWN_HOOKS={website:()=>loadCanonicalWebsite(),analytics:()=>loadWebsiteAnalytics(),ads:()=>loadAds(),settings:()=>loadConnections(),credits:()=>loadCreditsView(),create:()=>loadWorkspaceCredits(false)};
+function switchView(v){if(STAFF_ONLY_VIEWS.has(v)&&state.user?.role!=='owner')v='website';if(!qs(`#view-${v}`))v='website';qsa('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${v}`));qsa('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));const sheet=qs('#mobileMoreSheet'),more=qs('#mobileMoreButton');if(sheet)sheet.hidden=true;if(more)more.setAttribute('aria-expanded','false');window.scrollTo({top:0,behavior:'smooth'});const hook=VIEW_SHOWN_HOOKS[v];if(hook){try{hook();}catch(err){console.error('View hook failed:',v,err);}}}
 function showModal(id){qs('#'+id).hidden=false;}function hideModal(id){qs('#'+id).hidden=true;}
 
 qsa('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
@@ -1890,10 +1923,7 @@ async function deleteInvoice(id){
   }catch(e){alert(e.message)}
 }
 async function updateWebsiteRequest(id,status){try{await api(`/api/app/website-updates/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refreshLight();}catch(e){alert(e.message)}}
-if(qs('#lockStartSubscriptionButton'))qs('#lockStartSubscriptionButton').onclick=async()=>{const out=qs('#lockBillingStatus');out.textContent='Opening secure billing…';try{const d=await api('/api/app/billing/subscription/start',{method:'POST'});if(d.url)location.href=d.url}catch(e){out.textContent=e.message}};
-if(qs('#lockManageBillingButton'))qs('#lockManageBillingButton').onclick=async()=>{const out=qs('#lockBillingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url}catch(e){out.textContent=e.message}};
 if(qs('#lockLogoutButton'))qs('#lockLogoutButton').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload()};
-if(qs('#startSubscriptionButton'))qs('#startSubscriptionButton').onclick=async()=>{const out=qs('#billingStatus');out.textContent='Opening secure billing…';try{const d=await api('/api/app/billing/subscription/start',{method:'POST'});if(d.url)location.href=d.url}catch(e){out.textContent=e.message}};
 if(qs('#manageBillingButton'))qs('#manageBillingButton').onclick=async()=>{const out=qs('#billingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url}catch(e){out.textContent=e.message}};
 if(qs('#adFundForm'))qs('#adFundForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#adFundStatus');out.textContent='Opening secure checkout…';try{const d=await api('/api/app/ad-funds',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(d.url)location.href=d.url}catch(err){out.textContent=err.message}};
 

@@ -51,12 +51,14 @@ test('the lead drawer fits the visible phone screen (dvh, not vh)', () => {
   assert.match(APP, /\.lead-modal\{[^}]*max-height:calc\(100dvh - 24px\);overflow:auto/, 'modals fit and scroll inside');
 });
 
-test('the bottom navigation has every customer view and keeps clear of the home indicator', () => {
+test('the bottom navigation has every customer view (My Websites, Create, Credits, Analytics, Account) and keeps clear of the home indicator', () => {
   const nav = /<nav class="mobile-nav"[\s\S]*?<\/nav>/.exec(HTML)[0];
-  for (const v of ['website', 'analytics', 'ads', 'contact', 'settings']) {
+  for (const v of ['website', 'create', 'credits', 'analytics', 'settings']) {
     assert.match(nav, new RegExp(`data-view="${v}"`), v);
     assert.match(HTML, new RegExp(`id="view-${v}"`), `${v} view exists`);
   }
+  // OWNERSHIP + CREDITS: Ads and Contact/Inbox are no longer customer destinations
+  for (const v of ['ads', 'contact', 'leads', 'inbox']) assert.doesNotMatch(nav, new RegExp(`data-view="${v}"`), v);
   assert.match(APP, /\.mobile-nav\{[^}]*env\(safe-area-inset-bottom\)/);
   assert.match(HTML, /name="viewport" content="width=device-width, initial-scale=1/);
 });
