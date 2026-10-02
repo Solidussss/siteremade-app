@@ -27,7 +27,15 @@
   function nameOf(w) { return w.businessName || w.name || 'Untitled website'; }
   const enc = id => encodeURIComponent(id);
 
-  // opts: { currentProjectId, busyProjectId }
+  // WEBSITE DELETION (the website admin only -- the server says so: canDeleteWebsites; both servers check it again): a
+  // deliberate "•••" menu holding one destructive action, never a button in the row's own actions
+  function deleteMenuHtml(w, opts) {
+    const o = opts || {}; if (!o.canDelete) return '';
+    const owned = w.isPurchased === true && w.status === 'purchased'; const busy = !!o.deletingProjectId; const mine = o.deletingProjectId === w.projectId;
+    return `<details class="saved-website-more"><summary aria-label="More actions for ${esc(nameOf(w))}">•••</summary><div class="saved-website-menu">` +
+      `<button type="button" class="danger-button" data-saved-delete="${esc(w.projectId)}" data-saved-name="${esc(nameOf(w))}" data-saved-owned="${owned ? '1' : '0'}"${busy ? ' disabled' : ''}>${mine ? 'Deleting…' : 'Delete website'}</button></div></details>`;
+  }
+  // opts: { currentProjectId, busyProjectId, canDelete, deletingProjectId }
   function rowHtml(w, opts) {
     const o = opts || {};
     const owned = w.isPurchased === true && w.status === 'purchased';
@@ -57,8 +65,21 @@
       <div class="saved-website-main"><strong class="saved-website-name">${esc(nameOf(w))}</strong><span class="chip chip-${status.tone}">${esc(status.label)}</span></div>
       <p class="saved-website-meta">${meta.map(esc).join(' · ')}</p>
       <p class="saved-website-note">${esc(note)}</p>
-      <div class="saved-website-actions">${actions.join('')}</div>
+      <div class="saved-website-actions">${actions.join('')}</div>${deleteMenuHtml(w, o)}
     </li>`;
+  }
+  // THE WEBSITE ADMIN'S LIST: every active website in SiteRemade, any account (GET /api/app/admin/websites), each with its
+  // owner's email and the same Delete menu. state: { status, list, message }; opts: { deletingProjectId, error }
+  function adminListHtml(state, opts) {
+    const s = state || {}; const o = Object.assign({ canDelete: true }, opts || {});
+    const head = '<p class="eyebrow">SITEREMADE ADMIN</p><h3>All websites</h3><p class="saved-website-note">Every website saved in SiteRemade, in every account. Deleting one removes it from every account and business — its purchase and payment records are kept, and files already downloaded are not affected.</p>';
+    if (s.status === 'loading' || s.status === 'idle') return `${head}<p class="saved-websites-empty">Loading every website…</p>`;
+    if (s.status !== 'ready') return `${head}<p class="saved-websites-empty">${esc(s.message || 'The list of websites couldn’t be loaded right now.')}</p>`;
+    const error = o.error ? `<p class="saved-websites-empty" role="alert">${esc(o.error)}</p>` : '';
+    const list = sortWebsites(s.list); if (!list.length) return `${head}${error}<p class="saved-websites-empty">No websites.</p>`;
+    return `${head}${error}<ul class="saved-websites-list">${list.map(w => { const owned = w.isPurchased === true && w.status === 'purchased'; const st = owned ? STATUS.purchased : (STATUS[w.status] && w.status !== 'purchased' ? STATUS[w.status] : STATUS.draft);
+      return `<li class="saved-website" data-admin-website="${esc(w.projectId)}"><div class="saved-website-main"><strong class="saved-website-name">${esc(nameOf(w))}</strong><span class="chip chip-${st.tone}">${esc(st.label)}</span></div>` +
+        `<p class="saved-website-meta">${[w.ownerEmail || 'unknown owner', MODE[w.mode] || MODE.business, w.updatedAt ? `Updated ${dateLabel(w.updatedAt)}` : ''].filter(Boolean).map(esc).join(' · ')}</p>${deleteMenuHtml(w, o)}</li>`; }).join('')}</ul>`;
   }
   // state: { status: 'idle'|'loading'|'ready'|'unavailable', list, message, error }
   function listHtml(state, opts) {
@@ -74,10 +95,11 @@
     // an account in more than one business: nothing is connected automatically -- the person chooses where it belongs
     const waiting = (opts && opts.ambiguous) && list.some(w => w.isPurchased === true && w.status === 'purchased' && !w.linked)
       ? '<p class="saved-websites-empty" role="status">Your account belongs to more than one business, so a website you buy isn’t connected to one automatically. Use “Connect to this business” on the website that belongs here.</p>' : '';
-    return `${head}<p class="saved-websites-summary">${esc(summary)}</p>${error}${waiting}<ul class="saved-websites-list">${list.map(w => rowHtml(w, opts)).join('')}</ul>`;
+    const delError = opts && opts.deleteError ? `<p class="saved-websites-empty" role="alert">${esc(opts.deleteError)}</p>` : '';
+    return `${head}<p class="saved-websites-summary">${esc(summary)}</p>${error}${delError}${waiting}<ul class="saved-websites-list">${list.map(w => rowHtml(w, opts)).join('')}</ul>`;
   }
 
-  const api = { rowHtml, listHtml, sortWebsites, STATUS, dateLabel };
+  const api = { rowHtml, listHtml, adminListHtml, deleteMenuHtml, sortWebsites, STATUS, dateLabel };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SavedWebsitesView = api;
 })(typeof window !== 'undefined' ? window : this);

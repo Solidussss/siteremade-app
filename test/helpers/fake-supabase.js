@@ -1,6 +1,6 @@
 'use strict';
 // An in-memory stand-in for the Supabase query builder -- only the calls lib/website-links.js and routes/
-// website-bridge.js make (select / eq / not-is-null / order / limit / maybeSingle / single / insert / update), with the
+// website-bridge.js make (select / eq / not-is-null / order / limit / maybeSingle / single / insert / update / delete), with the
 // one constraint that matters here: website_project_links.generator_project_id is UNIQUE (V52/V54), so a second link
 // for the same project fails exactly like Postgres ("duplicate key value violates unique constraint"). Every write is
 // recorded, so a test can prove what was (and wasn't) inserted or updated. Nothing reaches a real database.
@@ -23,6 +23,11 @@ function createFakeSupabase(seed) {
         all.push(...made); writes.push({ op: 'insert', table, rows: made.map(r => ({ ...r })) });
         return { data: made.map(r => ({ ...r })), error: null };
       }
+      if (q.op === 'delete') {
+        const hit = all.filter(match); tables[table] = all.filter(r => !match(r));
+        writes.push({ op: 'delete', table, count: hit.length, rows: hit.map(r => ({ ...r })) });
+        return { data: hit.map(r => ({ ...r })), error: null };
+      }
       if (q.op === 'update') {
         const hit = all.filter(match); hit.forEach(r => Object.assign(r, q.payload));
         writes.push({ op: 'update', table, count: hit.length, patch: { ...q.payload } });
@@ -41,6 +46,7 @@ function createFakeSupabase(seed) {
       limit(n) { q.max = n; return api; },
       insert(payload) { q.op = 'insert'; q.payload = payload; return api; },
       update(patch) { q.op = 'update'; q.payload = patch; return api; },
+      delete() { q.op = 'delete'; return api; },
       async maybeSingle() { const r = run(); if (r.error) return r; if (r.data.length > 1) return { data: null, error: { message: 'multiple rows' } }; return { data: r.data[0] || null, error: null }; },
       async single() { const r = run(); if (r.error) return r; if (r.data.length !== 1) return { data: null, error: { message: 'not exactly one row' } }; return { data: r.data[0], error: null }; },
       then(resolve, reject) { try { resolve(run()); } catch (e) { reject(e); } },

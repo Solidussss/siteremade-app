@@ -24,7 +24,7 @@ function readJsonBody(req, maxBytes = 1_000_000) {
   });
 }
 
-// people: { name: { userId, owner, access, workspaces: [{id, business_name}], wid } }
+// people: { name: { userId, owner, access, workspaces: [{id, business_name}], wid, email?, emailConfirmed? (default true) } }
 async function startApp({ seed, people, builderUrl }) {
   const db = createFakeSupabase(seed);
   process.env.WEBSITE_BUILDER_URL = builderUrl;
@@ -32,7 +32,7 @@ async function startApp({ seed, people, builderUrl }) {
     const p = people[req.headers['x-test-as']];
     if (!p) return null;
     const wid = p.wid || p.workspaces[0].id;
-    return { user: { id: p.userId, email: `${p.userId}@example.com` }, profile: { role: p.owner ? 'owner' : 'client' }, access: p.access, owner: !!p.owner, workspaces: p.workspaces, wid, workspace: p.workspaces.find(w => w.id === wid) };
+    return { user: { id: p.userId, email: p.email || `${p.userId}@example.com`, email_confirmed_at: p.emailConfirmed === false ? null : '2026-01-01T00:00:00.000Z' }, profile: { role: p.owner ? 'owner' : 'client' }, access: p.access, owner: !!p.owner, workspaces: p.workspaces, wid, workspace: p.workspaces.find(w => w.id === wid) };
   };
   // lib/context.js, as every route module sees it in this process
   const contextPath = require.resolve(path.join(ROOT, 'lib', 'context.js'));

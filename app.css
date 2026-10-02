@@ -634,3 +634,12 @@ body.subscription-locked .app-shell{visibility:hidden;pointer-events:none}
 /* OWNERSHIP + CREDITS: Create (start a website) and Credits (balance, one-time packs, history) */
 .create-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.create-card{display:flex;flex-direction:column;gap:8px;text-decoration:none;color:inherit;padding:24px;transition:transform .2s ease,box-shadow .2s ease}.create-card:hover{transform:translateY(-2px)}.create-card h2{margin:0;font-size:22px}.create-card p{margin:0;line-height:1.5}.create-price{margin-top:auto;font-weight:700}
 .credits-balance h2{margin:4px 0;font-size:34px}.credits-packs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}.credit-pack{display:flex;flex-direction:column;gap:4px;align-items:flex-start;cursor:pointer;padding:18px;border:1px solid var(--line,rgba(0,0,0,.1));font:inherit;text-align:left}.credit-pack strong{font-size:20px}.credit-pack small{opacity:.6}.credits-bonus{grid-column:1/-1;margin:0}.credits-history{margin-top:16px}
+
+/* website deletion (app.js confirmWebsiteDelete, saved-websites-view.js deleteMenuHtml): a deliberate menu, a destructive dialog */
+.saved-website-more{margin-top:8px}.saved-website-more>summary{list-style:none;cursor:pointer;display:inline-block;padding:2px 10px;border-radius:8px;border:1px solid var(--line);font-weight:700;letter-spacing:.1em}
+.saved-website-more>summary::-webkit-details-marker{display:none}.saved-website-menu{margin-top:8px}
+.website-delete-dialog{position:fixed;inset:0;z-index:200;background:rgba(10,14,28,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.website-delete-card{background:var(--surface,#fff);color:inherit;max-width:460px;width:100%;border-radius:14px;padding:20px 22px;border:1px solid var(--danger,#b3261e);box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.website-delete-card h3{margin:0 0 10px;color:var(--danger,#b3261e)}.website-delete-note{opacity:.8;font-size:.92em}
+.website-delete-card input{width:100%;margin:6px 0 4px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font:inherit}
+.website-delete-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}

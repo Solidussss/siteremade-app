@@ -1134,7 +1134,7 @@ async function connectWebsite(projectId){
 // purchased websites, so a project saved to the account as a draft never appeared here. Rendering lives in
 // saved-websites-view.js. Opening a website HERE (editing, publishing) still needs it to be an owned website connected
 // to this business -- a draft is previewed here and continued in the builder.
-const savedWebsites={status:'idle',list:[],loadedAt:0,inflight:null,message:null,connecting:null,error:null};
+const savedWebsites={status:'idle',list:[],loadedAt:0,inflight:null,message:null,connecting:null,error:null,canDelete:false};
 async function loadSavedWebsites(force){
   if(savedWebsites.inflight)return savedWebsites.inflight;
   if(!force&&savedWebsites.status!=='idle'&&Date.now()-savedWebsites.loadedAt<60000)return;
@@ -1144,7 +1144,8 @@ async function loadSavedWebsites(force){
       const r=await fetch('/api/app/websites',{headers:{'Content-Type':'application/json'}});
       const d=await r.json().catch(()=>({}));
       if(r.ok&&d.ok&&Array.isArray(d.websites)){
-        Object.assign(savedWebsites,{status:'ready',list:d.websites,message:null,ambiguous:!!d.workspaceAmbiguous});
+        Object.assign(savedWebsites,{status:'ready',list:d.websites,message:null,ambiguous:!!d.workspaceAmbiguous,canDelete:d.canDeleteWebsites===true});
+        if(savedWebsites.canDelete&&adminWebsites.status==='idle')loadAdminWebsites();
         // RELOAD FIX: the server just connected a website this person bought (their only business): show it now --
         // in the switcher, and above if nothing is showing yet -- rather than on some later visit
         if(d.autoLinked>0){loadWebsiteProjectsList(true);if(canonicalWebsite.status!=='ready')loadCanonicalWebsite(true);}
@@ -1158,9 +1159,10 @@ async function loadSavedWebsites(force){
 function renderSavedWebsites(){
   const host=qs('#savedWebsites');if(!host||!window.SavedWebsitesView)return;
   const current=canonicalWebsite.status==='ready'&&canonicalWebsite.project?canonicalWebsite.project.projectId:null;
-  const sig=JSON.stringify([savedWebsites.status,savedWebsites.list,savedWebsites.message,current,savedWebsites.connecting,savedWebsites.error,savedWebsites.ambiguous]);
+  const sig=JSON.stringify([savedWebsites.status,savedWebsites.list,savedWebsites.message,current,savedWebsites.connecting,savedWebsites.error,savedWebsites.ambiguous,savedWebsites.canDelete,websiteDelete.pending,websiteDelete.error]);
   if(host.dataset.sig===sig)return;host.dataset.sig=sig;
-  host.innerHTML=window.SavedWebsitesView.listHtml(savedWebsites,{currentProjectId:current,busyProjectId:savedWebsites.connecting,ambiguous:savedWebsites.ambiguous});
+  host.innerHTML=window.SavedWebsitesView.listHtml(savedWebsites,{currentProjectId:current,busyProjectId:savedWebsites.connecting,ambiguous:savedWebsites.ambiguous,canDelete:savedWebsites.canDelete,deletingProjectId:websiteDelete.pending,deleteError:websiteDelete.error});
+  safeRender('admin-websites',renderAdminWebsites);
 }
 // An owned website that isn't connected to this business yet: the same verified connect as "Connect a website"
 // (POST /api/app/website/connect re-checks it against the builder's purchases), then it opens here.
@@ -1174,6 +1176,84 @@ async function connectSavedWebsite(projectId){
     switchToWebsiteProject(projectId);
   }catch(e){savedWebsites.connecting=null;savedWebsites.error=e.message||'Couldn’t connect that website right now.';renderSavedWebsites();}
 }
+// ---- WEBSITE DELETION: the website admin only (one named account -- lib/website-admin.js on both servers, which check
+// it on their own; this page only shows the action when the server says so). Deleting removes the website from
+// SiteRemade -- every account and business -- while its purchase and payment records are kept; downloaded files are the
+// customer's. One deletion at a time (a second click while one is on its way does nothing); asking twice is safe.
+const adminWebsites={status:'idle',list:[],loadedAt:0,inflight:null,message:null};
+const websiteDelete={pending:null,error:null};
+async function loadAdminWebsites(force){
+  if(adminWebsites.inflight)return adminWebsites.inflight;
+  if(!force&&adminWebsites.status!=='idle'&&Date.now()-adminWebsites.loadedAt<60000)return;
+  if(adminWebsites.status==='idle')adminWebsites.status='loading';
+  adminWebsites.inflight=(async()=>{
+    try{
+      const r=await fetch('/api/app/admin/websites',{headers:{'Content-Type':'application/json'}});const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok&&Array.isArray(d.websites))Object.assign(adminWebsites,{status:'ready',list:d.websites,message:null});
+      else Object.assign(adminWebsites,{status:'unavailable',list:[],message:d.message||null});
+    }catch(e){Object.assign(adminWebsites,{status:'unavailable',list:[],message:null});}
+    finally{adminWebsites.loadedAt=Date.now();adminWebsites.inflight=null;safeRender('admin-websites',renderAdminWebsites);}
+  })();
+  return adminWebsites.inflight;
+}
+function renderAdminWebsites(){
+  const host=qs('#adminWebsites');if(!host||!window.SavedWebsitesView)return;
+  if(!savedWebsites.canDelete){host.hidden=true;host.innerHTML='';host.dataset.sig='';return;}
+  const sig=JSON.stringify([adminWebsites.status,adminWebsites.list,adminWebsites.message,websiteDelete.pending,websiteDelete.error]);
+  if(host.dataset.sig===sig)return;host.dataset.sig=sig;host.hidden=false;
+  host.innerHTML=window.SavedWebsitesView.adminListHtml(adminWebsites,{deletingProjectId:websiteDelete.pending,error:websiteDelete.error});
+}
+// the deletion itself -> {ok, alreadyRemoved?, status?, message?}
+async function deleteWebsite(projectId){
+  if(websiteDelete.pending)return {ok:false,busy:true};
+  websiteDelete.pending=projectId;websiteDelete.error=null;safeRender('saved-websites',renderSavedWebsites);
+  try{
+    const r=await fetch('/api/app/admin/websites/'+encodeURIComponent(projectId),{method:'DELETE',headers:{'Content-Type':'application/json'}});const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){websiteDelete.error=d.message||'The website couldn’t be deleted.';return {ok:false,status:r.status,message:websiteDelete.error};}
+    await afterWebsiteDeleted(projectId);
+    return {ok:true,alreadyRemoved:!!d.alreadyRemoved};
+  }catch(e){websiteDelete.error='The website couldn’t be deleted right now.';return {ok:false,message:websiteDelete.error};}
+  finally{websiteDelete.pending=null;safeRender('saved-websites',renderSavedWebsites);}
+}
+// after a deletion: it is gone from every list; if the Website view was showing it (or would open it next), that choice
+// is forgotten and the view moves to another website this business has -- or to its empty state. Never a broken preview.
+async function afterWebsiteDeleted(projectId){
+  savedWebsites.list=savedWebsites.list.filter(w=>w.projectId!==projectId);adminWebsites.list=adminWebsites.list.filter(w=>w.projectId!==projectId);
+  multiProject.list=multiProject.list.filter(p=>p.projectId!==projectId);
+  const wid=(state.workspace&&state.workspace.id)||null;
+  const remembered=window.WebsiteSelection?window.WebsiteSelection.remembered(websiteSelectionStorage(),wid):null;
+  const showing=websiteView.selectedGeneratorProjectId===projectId||!!(canonicalWebsite.project&&canonicalWebsite.project.projectId===projectId)||!!(remembered&&remembered.id===projectId);
+  if(showing){rememberWebsiteSelection(null);websiteView.selectedGeneratorProjectId=null;websiteView.restorePending=null;websiteView.frameSrc='';canonicalWebsite.project=null;canonicalWebsite.status='idle';canonicalWebsite.loadedAt=0;}
+  await Promise.all([loadSavedWebsites(true),loadWebsiteProjectsList(true),loadWebsiteCandidates(true),loadAdminWebsites(true)].concat(showing?[loadCanonicalWebsite(true)]:[]));
+  safeRender('website',renderWebsite);
+}
+// the deliberate confirmation: "Delete this website? This cannot be undone." -- and for a PURCHASED website a second step,
+// typing DELETE. Cancel is the default (Escape, a click outside). -> Promise<boolean>
+function confirmWebsiteDelete(name,owned){
+  return new Promise(resolve=>{
+    const old=qs('#websiteDeleteDialog');if(old)old.remove();
+    const box=document.createElement('div');box.id='websiteDeleteDialog';box.className='website-delete-dialog';box.setAttribute('role','alertdialog');box.setAttribute('aria-modal','true');box.setAttribute('aria-labelledby','websiteDeleteTitle');
+    let step=1;
+    const draw=()=>{
+      box.innerHTML=step===1
+        ?`<div class="website-delete-card"><h3 id="websiteDeleteTitle">Delete this website? This cannot be undone.</h3><p><strong>${esc(name)}</strong> will be removed from SiteRemade — from every account and business, with its preview and files here.</p><p class="website-delete-note">Website files already downloaded are not affected. Purchase and payment records are kept.</p><div class="website-delete-actions"><button type="button" class="secondary-button" data-act="cancel">Cancel</button><button type="button" class="danger-button" data-act="next">${owned?'Continue':'Delete website'}</button></div></div>`
+        :`<div class="website-delete-card"><h3 id="websiteDeleteTitle">This website was purchased</h3><p>Deleting <strong>${esc(name)}</strong> removes a purchased website from its owner’s account. Its purchase and payment records are kept. Type <strong>DELETE</strong> to confirm.</p><input type="text" id="websiteDeleteTyped" autocomplete="off" spellcheck="false" aria-label="Type DELETE to confirm"><div class="website-delete-actions"><button type="button" class="secondary-button" data-act="cancel">Cancel</button><button type="button" class="danger-button" data-act="confirm" disabled>Delete purchased website</button></div></div>`;
+      const focus=box.querySelector(step===1?'[data-act="cancel"]':'#websiteDeleteTyped');if(focus)focus.focus();
+    };
+    const key=e=>{if(e.key==='Escape'){e.stopPropagation();done(false);}};
+    const done=v=>{document.removeEventListener('keydown',key,true);box.remove();resolve(v);};
+    box.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('[data-act]');if(!a){if(e.target===box)done(false);return;}const act=a.dataset.act;if(act==='cancel')return done(false);if(act==='next'){if(owned){step=2;draw();}else done(true);return;}if(act==='confirm'&&!a.disabled)done(true);});
+    box.addEventListener('input',e=>{if(e.target&&e.target.id==='websiteDeleteTyped'){const b=box.querySelector('[data-act="confirm"]');if(b)b.disabled=e.target.value.trim()!=='DELETE';}});
+    document.addEventListener('keydown',key,true);document.body.appendChild(box);draw();
+  });
+}
+async function deleteWebsiteFlow(btn){
+  if(websiteDelete.pending||!btn)return;
+  const details=btn.closest('details');if(details)details.open=false;
+  if(!(await confirmWebsiteDelete(btn.dataset.savedName||'This website',btn.dataset.savedOwned==='1')))return;
+  await deleteWebsite(btn.dataset.savedDelete);
+}
+['#savedWebsites','#adminWebsites'].forEach(sel=>{const host=qs(sel);if(host)host.addEventListener('click',e=>{const del=e.target.closest&&e.target.closest('[data-saved-delete]');if(del){e.preventDefault();deleteWebsiteFlow(del);}});});
 if(qs('#savedWebsites'))qs('#savedWebsites').addEventListener('click',e=>{
   const open=e.target.closest&&e.target.closest('[data-saved-open]');
   if(open){switchToWebsiteProject(open.dataset.savedOpen);window.scrollTo({top:0,behavior:'smooth'});return;}

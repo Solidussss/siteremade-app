@@ -55,6 +55,7 @@ const { sendWebsiteDownload } = require('../lib/website-download');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
 const { savedWebsitesFrom } = require('../lib/saved-websites');
+const websiteAdmin = require('../lib/website-admin');
 const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
 
 // Phase 5: a linked workspace gets its analytics site set up server-side,
@@ -349,7 +350,40 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     let linkedIds = new Set();
     try { linkedIds = new Set((await websiteLinks.listLinksForWorkspace(c.wid)).map(l => l.generator_project_id)); } catch (e) { console.warn('[website-links] saved websites: could not read links:', e && e.message); }
     const websites = savedWebsitesFrom(r.data.websites, linkedIds); // lib/saved-websites.js: metadata allowlist, newest first
-    return json(res, 200, { ok: true, websites, autoLinked: made.created.length, workspaceAmbiguous: !sole });
+    // (canDeleteWebsites: the one website-admin account -- lib/website-admin.js -- sees Delete; the server checks it again)
+    return json(res, 200, { ok: true, websites, autoLinked: made.created.length, workspaceAmbiguous: !sole, canDeleteWebsites: websiteAdmin.isWebsiteAdmin(c) });
+  });
+
+  // ---- WEBSITE DELETION: the website admin ONLY (lib/website-admin.js -- one named account, by its verified, confirmed
+  // email; no role grants it: not a business owner or admin, not a member, not SiteRemade staff). Checked here first,
+  // before anything is asked of the builder, and by the builder again on its own. A deletion removes the website from
+  // SiteRemade -- from every account and every business (its links here go too) -- while its purchase, payments, credit
+  // ledger and stored files are kept (a soft delete in the builder: migrations/0013_project_removal.sql). Files a
+  // customer already downloaded are theirs and untouched. Asking again for a deleted website is safe: alreadyRemoved.
+  const notAdmin = (json, res) => json(res, 403, { ok: false, code: 'FORBIDDEN', message: 'Only the SiteRemade admin account can delete websites.' });
+  router.get('/api/app/admin/websites', { auth: 'user' }, async (req, res, { c, json }) => {
+    if (!websiteAdmin.isWebsiteAdmin(c)) return notAdmin(json, res);
+    const r = await bridge.adminWebsites(c.access);
+    if (r.status !== 200 || !r.data || !r.data.ok || !Array.isArray(r.data.websites)) return r.status === 403 ? notAdmin(json, res) : passThroughError(json, res, r);
+    const websites = r.data.websites.filter(w => w && websiteLinks.PROJECT_ID_RE.test(String(w.projectId || ''))).map(w => ({ projectId: w.projectId, name: String(w.name || '').slice(0, 200), mode: w.mode === 'creative' ? 'creative' : 'business', status: String(w.status || ''), isPurchased: w.isPurchased === true, ownerEmail: String(w.ownerEmail || '').slice(0, 254), updatedAt: w.updatedAt || null }));
+    return json(res, 200, { ok: true, websites });
+  });
+  router.delete('/api/app/admin/websites/:projectId', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    if (!websiteAdmin.isWebsiteAdmin(c)) {
+      console.warn('[website-admin] ' + JSON.stringify({ step: 'refused', userId: c && c.user && c.user.id, workspaceId: c && c.wid }));
+      return notAdmin(json, res);
+    }
+    const projectId = String(params.projectId || '');
+    if (!websiteLinks.PROJECT_ID_RE.test(projectId)) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
+    const r = await bridge.adminRemoveWebsite(c.access, projectId);
+    if (r.status === 403) return notAdmin(json, res);
+    if (r.status === 404) return json(res, 404, { ok: false, code: 'not_found', message: 'Website not found.' });
+    if (r.status !== 200 || !r.data || !r.data.ok) return passThroughError(json, res, r);
+    // (the builder removed it -- or had already: the links here go either way, so a retried request finishes the job)
+    let unlinked = []; try { unlinked = await websiteLinks.unlinkProjectEverywhere(projectId); } catch (e) { console.warn('[website-admin] links not removed:', e && e.message); }
+    try { await db.from('audit_logs').insert({ user_id: c.user.id, workspace_id: c.wid || null, action: 'website.delete', detail: JSON.stringify({ projectId, alreadyRemoved: !!r.data.alreadyRemoved, status: r.data.status || '', unlinkedWorkspaces: unlinked.length }).slice(0, 1000) }); } catch (e) { /* the audit trail never blocks the answer */ }
+    console.log('[website-admin] ' + JSON.stringify({ step: 'deleted', projectId, by: c.user.id, alreadyRemoved: !!r.data.alreadyRemoved, unlinkedWorkspaces: unlinked.length }));
+    return json(res, 200, { ok: true, projectId, alreadyRemoved: !!r.data.alreadyRemoved, wasPurchased: r.data.status === 'purchased', unlinkedWorkspaces: unlinked.length });
   });
 
   // A saved website's preview (the latest saved version by default; ?source=published for a purchased website's

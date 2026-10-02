@@ -23,11 +23,13 @@ function cutConst(name) {
   if (!m) throw new Error(`app.js has no const ${name}`);
   return m[0].trim();
 }
-const CONSTS = ['canonicalWebsite', 'multiProject', 'websiteCandidates', 'savedWebsites', 'websiteView'];
+const CONSTS = ['canonicalWebsite', 'multiProject', 'websiteCandidates', 'savedWebsites', 'websiteView', 'adminWebsites', 'websiteDelete'];
 const FUNCTIONS = ['loadCanonicalWebsite', 'fetchWebsiteSummary', 'websiteSummaryReady', 'websiteSelectionStorage', 'syncWebsiteSelection', 'rememberWebsiteSelection',
-  'loadWebsiteProjectsList', 'loadWebsiteCandidates', 'loadSavedWebsites', 'switchToWebsiteProject', 'safeSiteUrl', 'siteHost', 'deliveryProjects', 'currentDeliveryProject', 'websiteSnapshot'];
+  'loadWebsiteProjectsList', 'loadWebsiteCandidates', 'loadSavedWebsites', 'switchToWebsiteProject', 'safeSiteUrl', 'siteHost', 'deliveryProjects', 'currentDeliveryProject', 'websiteSnapshot',
+  // website deletion (the website admin only)
+  'loadAdminWebsites', 'deleteWebsite', 'afterWebsiteDeleted'];
 const SOURCE = CONSTS.map(cutConst).join('\n') + '\n' + FUNCTIONS.map(cutFunction).join('\n') +
-  '\n;globalThis.__app={canonicalWebsite,multiProject,savedWebsites,websiteView,loadCanonicalWebsite,loadSavedWebsites,loadWebsiteProjectsList,switchToWebsiteProject,websiteSnapshot};';
+  '\n;globalThis.__app={canonicalWebsite,multiProject,savedWebsites,websiteView,loadCanonicalWebsite,loadSavedWebsites,loadWebsiteProjectsList,switchToWebsiteProject,websiteSnapshot,adminWebsites,websiteDelete,loadAdminWebsites,deleteWebsite};';
 
 function memoryStorage(initial) {
   const m = new Map(Object.entries(initial || {}));
@@ -43,7 +45,7 @@ function openTab({ base, as, workspaceId, storage, websiteProjects }) {
     state: { user: { id: as }, workspace: { id: workspaceId }, websiteProjects: websiteProjects || [] },
     window: { WebsiteSelection: require(path.join(ROOT, 'website-selection.js')), localStorage: storage || memoryStorage(), matchMedia: () => ({ matches: false }) },
     analyticsState: { cache: {} },
-    safeRender: () => {}, renderWebsite: () => {}, renderSettings: () => {}, renderAnalytics: () => {}, renderSavedWebsites: () => {}, renderWebsiteBuilderBlock: () => {},
+    safeRender: () => {}, renderWebsite: () => {}, renderSettings: () => {}, renderAnalytics: () => {}, renderSavedWebsites: () => {}, renderWebsiteBuilderBlock: () => {}, renderAdminWebsites: () => {},
     loadWebsiteAnalytics: () => {}, qs: () => null,
   };
   vm.createContext(ctx); vm.runInContext(SOURCE, ctx, { filename: 'app.js (website functions)' });
