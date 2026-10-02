@@ -234,6 +234,12 @@ async function forWorkspaceProject(c, projectId) {
 }
 
 // ?source=draft: preview the latest saved draft (after an update, before publishing) instead of the published website
+// THE POLICY A WEBSITE PREVIEW RUNS UNDER (all three preview routes). The builder sends one self-contained page: its
+// scripts inline, and every file it needs inlined as a data: URL -- including, on a Creative page with 3D, the 3D engine
+// (which the page's loader adds as <script src="data:...">) and the GLB (which the engine fetch()es from its data: URL,
+// then decodes the textures inside it through blob: URLs). So scripts may come from the page and from data: URLs, and
+// fetch() may read data: and blob: URLs -- never the network: connect-src names no host, not even this one.
+const PREVIEW_CSP = "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline' data:; connect-src data: blob:; form-action 'none'; frame-ancestors 'self'";
 function previewWantsDraft(u) { return !!(u && u.searchParams && u.searchParams.get('source') === 'draft'); }
 // BILLING PASS: the browser sends one id per update attempt; a retry of the same attempt reuses it
 function requestIdFrom(body) { const v = typeof body.requestId === 'string' ? body.requestId.trim() : ''; return /^[A-Za-z0-9_.:-]{8,120}$/.test(v) ? v : null; }
@@ -358,7 +364,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     const published = !!(u && u.searchParams && u.searchParams.get('source') === 'published');
     const r = await bridge.getPreview(c.access, params.projectId, { draft: !published });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status === 404 ? 404 : (r.status || 502), { ok: false, code: r.status === 404 ? 'not_found' : 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
     return res.end(r.text);
   });
   router.get('/api/app/websites/:projectId/download', { auth: 'user' }, async (req, res, { c, json, params }) => {
@@ -449,7 +455,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
     const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
     return res.end(r.text);
   });
 
@@ -553,7 +559,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!got.ok) return passThroughError(json, res, got.r);
     const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors 'self'" });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
     return res.end(r.text);
   });
 
