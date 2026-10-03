@@ -45,7 +45,7 @@ function png(w, h) {
   // (one scene left the way a save before "Fix text layout" left it: staged as giant type for a few words, then its heading
   // changed to a sentence by the Studio's own save -- which keeps the old layout -- so the review presses the fix for real)
   let o2 = await bridge('GET', `/api/app-bridge/website/${sc.projectId}/creative`);
-  const stale = o2.outline.scenes.find(s => s.compositions.some(k => k.id === 'type-takeover'));
+  const stale = o2.outline.scenes.slice(1).find(s => s.compositions.some(k => k.id === 'type-takeover')) || o2.outline.scenes.find(s => s.compositions.some(k => k.id === 'type-takeover'));
   let e = await bridge('POST', `/api/app-bridge/website/${sc.projectId}/creative/edit`, { baseRevision: o2.revision, op: { type: 'text', sceneId: stale.id, field: 'heading', value: 'Pure cold' } });
   e = await bridge('POST', `/api/app-bridge/website/${sc.projectId}/creative/edit`, { baseRevision: e.revision, op: { type: 'composition', sceneId: stale.id, composition: 'type-takeover' } });
   const { client } = require(path.join(BUILDER_DIR, 'test', 'helpers', 'server-process.js')); const studio = client(builder.port);
@@ -53,9 +53,15 @@ function png(w, h) {
   const proj = (await studio('GET', `/api/projects/${sc.projectId}`)).body.project; const ds = proj.directionsState; const cr = ds.directions[0].creative;
   [].concat(cr.assets || [], (cr.threeD && cr.threeD.assets) || []).forEach(x => { if (x && x.assetRef && x.dataUrl) delete x.dataUrl; });
   cr.plan.scenes.find(s => s.id === stale.id).text.heading = 'Every summer the whole world raises one glass of Kolaro together';
+  // (and the website as it was saved before today's text-layout rules: its opening title THE WORLD RAISES ONE GLASS in poster
+  // typography's staggered lines, no scene marked with today's rules -- then PUBLISHED that way, the broken split live)
+  const hero = cr.plan.scenes[0]; if (hero.id === stale.id) throw new Error('the stale scene is the opening one');
+  cr.plan.art = Object.assign({}, cr.plan.art, { typo: 'poster' }); hero.text.heading = 'THE WORLD RAISES ONE GLASS'; cr.plan.scenes.forEach(s => { delete s.text.fit; });
   const put = await studio('PUT', `/api/projects/${sc.projectId}`, { name: proj.name, expectedRevision: proj.revision, directionsState: ds });
   if (!put.body.ok) throw new Error('could not prepare the stale scene: ' + JSON.stringify(put.body).slice(0, 200));
   const staleBefore = (await studio('GET', `/api/projects/${sc.projectId}`)).body.project.directionsState.directions[0].creative.plan.scenes.find(s => s.id === stale.id).text;
+  const rev0 = (await bridge('GET', `/api/app-bridge/website/${sc.projectId}/creative`)).revision; const pub = await bridge('POST', `/api/app-bridge/website/${sc.projectId}/publish`, { revision: rev0 });
+  if (!pub.ok) throw new Error('could not publish the old website: ' + JSON.stringify(pub).slice(0, 200));
   const app = await startApp({ seed: { website_project_links: [{ id: 'l_review', workspace_id: 'ws_one', generator_project_id: sc.projectId, status: 'linked', linked_at: new Date().toISOString(), linked_by: 'u_owner' }], workspace_members: [], audit_logs: [] },
     builderUrl: `http://127.0.0.1:${builder.port}`, people: { owner: { userId: 'u_owner', access: 'test-access-token-owner', workspaces: [{ id: 'ws_one', business_name: 'Aurelia Tonic' }] } } });
   const front = await mock.start(0); const frontPort = front.address().port; const appUrl = new URL(app.base);
@@ -69,7 +75,7 @@ function png(w, h) {
   });
   await new Promise(r => door.listen(0, '127.0.0.1', r));
   const job = path.join(outDir, 'editor.job.json');
-  fs.writeFileSync(job, JSON.stringify({ baseUrl: `http://127.0.0.1:${door.address().port}/`, outDir, widths: [1440, 390], staleScene: stale.id }));
+  fs.writeFileSync(job, JSON.stringify({ baseUrl: `http://127.0.0.1:${door.address().port}/`, outDir, widths: [1440, 390], staleScene: stale.id, heroScene: hero.id, projectId: sc.projectId }));
   const before = providerCalls(env.MOCK_CALL_LOG).length;
   const eenv = Object.assign({}, process.env); delete eenv.ELECTRON_RUN_AS_NODE;
   await new Promise(resolve => { const child = spawn(ELECTRON, [path.join(__dirname, 'website-editor-capture.js'), job], { stdio: 'inherit', env: eenv }); const t = setTimeout(() => child.kill(), 600000); child.on('exit', () => { clearTimeout(t); resolve(); }); });

@@ -12,7 +12,9 @@
 // in a hidden sandboxed frame and handed back here (postMessage), then sent to the builder, which checks the file itself.
 (function () {
   'use strict';
-  var ED = { projectId: null, revision: null, outline: null, jobs: [], scene: null, open: null, busy: false, msg: '', tone: '', pending: null, poll: null, loadedFor: '' };
+  // drafts: what the owner is typing and has not saved -- keyed text:<scene>:<field>, ask:<scene>, site -- kept here (never in the
+  // DOM alone, never in storage) so no redraw can lose it; html: the markup each part was last drawn with
+  var ED = { projectId: null, revision: null, outline: null, jobs: [], scene: null, open: null, busy: false, msg: '', tone: '', pending: null, poll: null, loadedFor: '', drafts: {}, html: {} };
   var qs = function (s, el) { return (el || document).querySelector(s); };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>'"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]; }); };
   var base = function () { return '/api/app/website/projects/' + encodeURIComponent(ED.projectId) + '/creative'; };
@@ -41,11 +43,12 @@
   }
   function credits(n) { try { if (typeof workspaceCredits !== 'undefined' && workspaceCredits.data) { workspaceCredits.data.remaining = n; if (typeof safeRender === 'function' && typeof renderWorkspaceCredits === 'function') safeRender('workspace-credits', renderWorkspaceCredits); } } catch (e) { /* display only */ } }
   // after a saved change: the builder's new draft -- the summary (draft chip, Publish), the preview and this outline
-  function afterChange(r, okMsg) {
+  function afterChange(r, okMsg, draft) {
     if (Number.isFinite(r.body.creditsRemaining)) credits(r.body.creditsRemaining);
     var summary = (r.body.changeSummary || []).join(' · ') + ((r.body.fitted || []).length ? ': ' + r.body.fitted.join('; ') + '.' : '');
     // (nothing needed changing: nothing was saved -- no new draft)
     if (r.body.unchanged) { say((summary || 'Nothing needed changing').replace(/[.!]?$/, '.') + ' Nothing was saved. No credits were used.', 'success'); ED.open = null; ED.pending = null; draw(); return; }
+    if (draft) delete ED.drafts[draft]; // (the change it was typed for is saved)
     var cost = Number.isFinite(r.body.creditsCharged) && r.body.creditsCharged > 0 ? ' This used ' + r.body.creditsCharged + ' credit' + (r.body.creditsCharged === 1 ? '' : 's') + '.' : ' No credits were used.';
     say((summary || okMsg || 'Saved.') + ' Saved as a draft — your published website hasn’t changed.' + cost, 'success');
     ED.open = null; ED.pending = null;
@@ -59,12 +62,12 @@
   }
 
   // ---- free changes
-  function edit(op, okMsg) {
+  function edit(op, okMsg, draft) {
     if (ED.busy) return; ED.busy = true; draw();
-    return call('POST', base() + '/edit', { baseRevision: ED.revision, op: op }).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } return afterChange(r, okMsg); });
+    return call('POST', base() + '/edit', { baseRevision: ED.revision, op: op }).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } return afterChange(r, okMsg, draft); });
   }
   // ---- paid actions: the builder's quote -> the owner confirms -> start (once) -> follow the job
-  function quote(action, extra) {
+  function quote(action, extra, draft) {
     if (ED.busy) return; ED.busy = true; say('Asking SiteRemade for the cost…'); draw();
     return call('POST', base() + '/quote', Object.assign({ action: action }, extra || {})).then(function (r) {
       ED.busy = false;
@@ -74,7 +77,7 @@
         if (action === 'model3d' && r.body.modelId) return edit({ type: 'model-place', modelId: r.body.modelId, sectionId: ED.scene }, 'Placed your existing 3D model — free.');
         say(r.body.message || 'Already made — kept for free.', 'success'); draw(); return;
       }
-      ED.pending = { action: action, extra: extra || {}, quote: r.body.quote, enough: r.body.enough, needsRender: !!r.body.needsRender };
+      ED.pending = { action: action, extra: extra || {}, quote: r.body.quote, enough: r.body.enough, needsRender: !!r.body.needsRender, draft: draft || null };
       say(''); draw();
     });
   }
@@ -86,7 +89,7 @@
         ED.busy = false; ED.pending = null;
         if (!r.ok) { failed(r); draw(); return; }
         if (r.body.job) { say(r.body.reused ? 'Already being made — following it.' : (r.body.job.kind === 'model3d' ? 'Your 3D model is being made. You can keep working; it joins the page as a draft when it’s ready.' : 'Your cinematic clip is being made. You can keep working; it joins the picture as a draft when it’s ready.'), 'info'); load(true); return; }
-        return afterChange(r);
+        return afterChange(r, null, p.draft);
       });
     };
     if (p.needsRender) return still().then(send, function () { ED.busy = false; say('The still of your 3D model couldn’t be drawn in this browser. Nothing was charged.', 'error'); draw(); });
@@ -142,13 +145,13 @@
     var n = p.quote && p.quote.credits; var label = PRICE[p.action] || 'This change';
     return '<div class="ce-confirm" role="group" aria-label="Confirm cost"><p><strong>' + esc(label) + '</strong> uses <strong>' + esc(n) + ' credit' + (n === 1 ? '' : 's') + '</strong>' +
       (p.quote && p.quote.items && p.quote.items[0] && p.quote.items[0].optional ? ' — only if it is made' : '') + '.' + (p.enough === false ? ' Your balance isn’t enough — add credits first.' : '') + '</p>' +
-      '<div class="ce-row"><button type="button" class="ce-btn ce-primary" data-ce="confirm"' + (p.enough === false || ED.busy ? ' disabled' : '') + '>Confirm · ' + esc(n) + ' credit' + (n === 1 ? '' : 's') + '</button><button type="button" class="ce-btn" data-ce="cancel">Cancel</button></div></div>';
+      '<div class="ce-row"><button type="button" class="ce-btn ce-primary" data-ce="confirm"' + (p.enough === false ? ' data-off="1"' : '') + '>Confirm · ' + esc(n) + ' credit' + (n === 1 ? '' : 's') + '</button><button type="button" class="ce-btn" data-ce="cancel">Cancel</button></div></div>';
   }
   function textBlock(s) {
     var fields = [['kicker', 'Small heading', 70], ['heading', 'Headline', 110], ['body', 'Paragraph', 520]];
     return '<div class="ce-group"><h3>Words</h3>' + fields.filter(function (f) { return f[0] !== 'kicker' || s.text.kicker; }).map(function (f) {
       var key = 'text:' + f[0]; var v = s.text[f[0]] || '';
-      if (ED.open === key) return '<div class="ce-item is-open"><label class="ce-label" for="ceText">' + esc(f[1]) + '</label><textarea id="ceText" rows="' + (f[0] === 'body' ? 4 : 2) + '" maxlength="' + f[2] + '">' + esc(v) + '</textarea>' +
+      if (ED.open === key) return '<div class="ce-item is-open"><label class="ce-label" for="ceText">' + esc(f[1]) + '</label><textarea id="ceText" data-draft="text:' + esc(s.id) + ':' + f[0] + '" rows="' + (f[0] === 'body' ? 4 : 2) + '" maxlength="' + f[2] + '">' + esc(v) + '</textarea>' +
         '<div class="ce-row"><button type="button" class="ce-btn ce-primary" data-ce="save-text" data-field="' + f[0] + '">Save · free</button>' + (s.actions.indexOf('ai-text') >= 0 && f[0] !== 'kicker' ? '<button type="button" class="ce-btn" data-ce="ai-text" data-field="' + f[0] + '">AI rewrite…</button>' : '') + '<button type="button" class="ce-btn ce-quiet" data-ce="close">Cancel</button></div></div>';
       return '<button type="button" class="ce-item" data-ce="open" data-key="' + key + '"><span class="ce-label">' + esc(f[1]) + '</span><span class="ce-value">' + esc(v || 'Empty') + '</span></button>';
     }).join('') +
@@ -197,7 +200,7 @@
     return '<div class="ce-group"><h3>Scene</h3>' +
       '<div class="ce-row ce-swatches" role="group" aria-label="Scene colour (from your page’s own palette)">' + pal.map(function (p) { return '<button type="button" class="ce-swatch' + (p.hex === s.background ? ' is-on' : '') + '" data-ce="colour" data-role="' + esc(p.role) + '" style="--sw:' + esc(p.hex) + '" title="' + esc(p.label) + '"><span class="sr-only">' + esc(p.label) + '</span></button>'; }).join('') + '<span class="ce-note">colour · free</span></div>' +
       (s.compositions.length ? '<div class="ce-row"><select class="ce-select" data-ce="composition" aria-label="Composition"><option value="">Composition: ' + esc(s.composition.replace(/-/g, ' ')) + '</option>' + s.compositions.map(function (k) { return '<option value="' + esc(k.id) + '" title="' + esc(k.label) + '">' + esc(k.id.replace(/-/g, ' ')) + '</option>'; }).join('') + '</select><span class="ce-note">free</span></div>' : '') +
-      (s.actions.indexOf('ai-scene') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSceneAsk" maxlength="400" placeholder="Optional: what should change?" aria-label="What should change in this scene"><button type="button" class="ce-btn" data-ce="ai-scene">Redesign this scene…</button></div>' : '') + '</div>';
+      (s.actions.indexOf('ai-scene') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSceneAsk" data-draft="ask:' + esc(s.id) + '" maxlength="400" placeholder="Optional: what should change?" aria-label="What should change in this scene"><button type="button" class="ce-btn" data-ce="ai-scene">Redesign this scene…</button></div>' : '') + '</div>';
   }
   function jobsBlock() {
     var live = (ED.jobs || []).filter(function (j) { return !j.terminal; }); if (!live.length) return '';
@@ -206,30 +209,41 @@
   function draw() {
     var box = qs('#creativeEditor'); if (!box || box.hidden || !ED.outline) return;
     var pill = qs('#creativeEditorPill'); if (pill) pill.textContent = ED.busy ? 'Working…' : 'Draft edits';
-    var list = qs('#ceScenes');
-    list.innerHTML = ED.outline.scenes.map(function (s, i) { return '<li><button type="button" class="ce-scene' + (s.id === ED.scene ? ' is-on' : '') + '" data-ce="scene" data-scene="' + esc(s.id) + '" aria-pressed="' + (s.id === ED.scene) + '"><span class="ce-num">' + (i + 1) + '</span><span class="ce-sname">' + esc(s.name) + '</span></button></li>'; }).join('');
-    var s = sceneOf(ED.scene); var panel = qs('#cePanel');
-    panel.innerHTML = s ? (jobsBlock() + costRow() + textBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '';
-    var whole = qs('#ceWhole');
-    whole.innerHTML = '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
-      ((ED.outline.actions || []).indexOf('ai-site') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSiteAsk" maxlength="600" placeholder="Describe a new direction for the whole page" aria-label="Describe a new direction for the whole page"><button type="button" class="ce-btn" data-ce="ai-site">Redesign the page…</button></div>' : '') + '</div>';
+    // (what the owner is typing, and where: given back if its field has to be drawn again)
+    var act = document.activeElement; var typing = act && box.contains(act) && act.dataset && act.dataset.draft ? { key: act.dataset.draft, start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection, top: act.scrollTop } : null;
+    var s = sceneOf(ED.scene);
+    // a part is drawn again only when its markup changed -- a job poll, a credit update or the app's own render that changes
+    // nothing leaves the fields (their text, caret and input method) exactly as they are
+    var put = function (el, key, html) { if (!el || (ED.html[key] === html && el.childNodes.length)) return; el.innerHTML = html; ED.html[key] = html; };
+    put(qs('#ceScenes'), 'scenes', ED.outline.scenes.map(function (x, i) { return '<li><button type="button" class="ce-scene' + (x.id === ED.scene ? ' is-on' : '') + '" data-ce="scene" data-scene="' + esc(x.id) + '" aria-pressed="' + (x.id === ED.scene) + '"><span class="ce-num">' + (i + 1) + '</span><span class="ce-sname">' + esc(x.name) + '</span></button></li>'; }).join(''));
+    put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + textBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
+    put(qs('#ceWhole'), 'whole', '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
+      ((ED.outline.actions || []).indexOf('ai-site') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSiteAsk" data-draft="site" maxlength="600" placeholder="Describe a new direction for the whole page" aria-label="Describe a new direction for the whole page"><button type="button" class="ce-btn" data-ce="ai-site">Redesign the page…</button></div>' : '') + '</div>');
+    // every free-form field shows the owner's unsaved words when there are any (a field drawn again starts from them)
+    var fields = box.querySelectorAll('[data-draft]'); var back = null;
+    for (var i = 0; i < fields.length; i++) { var el = fields[i]; var k = el.dataset.draft; if (Object.prototype.hasOwnProperty.call(ED.drafts, k) && el.value !== ED.drafts[k]) el.value = ED.drafts[k]; if (typing && k === typing.key) back = el; }
+    if (typing && back && document.activeElement !== back) { try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.start, typing.end, typing.dir || 'none'); back.scrollTop = typing.top; } catch (e) { /* a field that takes no caret */ } }
     qs('#ceFeedback').textContent = ED.msg; qs('#ceFeedback').className = 'ce-feedback' + (ED.tone ? ' is-' + ED.tone : '');
-    box.querySelectorAll('button,select,input,textarea').forEach(function (el) { if (el.dataset.ce !== 'cancel') el.disabled = el.disabled || ED.busy; });
+    // (while a change is on its way the actions wait; what the owner is typing never does)
+    box.querySelectorAll('button,select,input,textarea').forEach(function (el) { el.disabled = el.hasAttribute('data-off') || (ED.busy && el.dataset.ce !== 'cancel' && !el.hasAttribute('data-draft')); });
   }
+  function onInput(e) { var el = e.target; if (el && el.dataset && el.dataset.draft && qs('#creativeEditor').contains(el)) ED.drafts[el.dataset.draft] = el.value; }
+  // (a scene's unsaved words belong to that scene: leaving it lets them go -- the whole-page words stay)
+  function dropScene(id) { Object.keys(ED.drafts).forEach(function (k) { if (k.split(':')[1] === id) delete ED.drafts[k]; }); }
 
   // ---- events (one delegated listener)
   function onClick(e) {
     var b = e.target.closest('[data-ce]'); if (!b || !qs('#creativeEditor').contains(b)) return;
     var k = b.dataset.ce; var s = sceneOf(ED.scene);
-    if (k === 'scene') { ED.scene = b.dataset.scene; ED.open = null; ED.pending = null; say(''); draw(); return; }
+    if (k === 'scene') { if (b.dataset.scene !== ED.scene) dropScene(ED.scene); ED.scene = b.dataset.scene; ED.open = null; ED.pending = null; say(''); draw(); return; }
     if (k === 'open') { ED.open = b.dataset.key; draw(); var t = qs('#ceText'); if (t) t.focus(); return; }
-    if (k === 'close') { ED.open = null; draw(); return; }
+    if (k === 'close') { if (ED.open && ED.open.indexOf('text:') === 0) delete ED.drafts['text:' + ED.scene + ':' + ED.open.slice(5)]; ED.open = null; draw(); return; }
     if (k === 'cancel') { ED.pending = null; say(''); draw(); return; }
     if (k === 'confirm') { confirmPending(); return; }
-    if (k === 'save-text') { var v = qs('#ceText').value; edit({ type: 'text', sceneId: s.id, field: b.dataset.field, value: v }); return; }
-    if (k === 'ai-text') { quote('ai-text', { sceneId: s.id, field: b.dataset.field, request: qs('#ceText').value !== (s.text[b.dataset.field] || '') ? 'Use this as the starting point: ' + qs('#ceText').value : '' }); return; }
-    if (k === 'ai-scene') { quote('ai-scene', { sceneId: s.id, request: (qs('#ceSceneAsk') || {}).value || '' }); return; }
-    if (k === 'ai-site') { var ask = ((qs('#ceSiteAsk') || {}).value || '').trim(); if (!ask) { say('Describe the new direction first.', 'error'); return; } quote('ai-site', { request: ask }); return; }
+    if (k === 'save-text') { var v = qs('#ceText').value; edit({ type: 'text', sceneId: s.id, field: b.dataset.field, value: v }, null, 'text:' + s.id + ':' + b.dataset.field); return; }
+    if (k === 'ai-text') { quote('ai-text', { sceneId: s.id, field: b.dataset.field, request: qs('#ceText').value !== (s.text[b.dataset.field] || '') ? 'Use this as the starting point: ' + qs('#ceText').value : '' }, 'text:' + s.id + ':' + b.dataset.field); return; }
+    if (k === 'ai-scene') { quote('ai-scene', { sceneId: s.id, request: (qs('#ceSceneAsk') || {}).value || '' }, 'ask:' + s.id); return; }
+    if (k === 'ai-site') { var ask = ((qs('#ceSiteAsk') || {}).value || '').trim(); if (!ask) { say('Describe the new direction first.', 'error'); return; } quote('ai-site', { request: ask }, 'site'); return; }
     if (k === 'remove-pic') { edit({ type: 'picture-remove', sceneId: s.id, layerId: b.dataset.layer }); return; }
     if (k === 'colour') { edit({ type: 'colour', sceneId: s.id, role: b.dataset.role }); return; }
     if (k === 'paid') { quote(b.dataset.action, { assetId: b.dataset.asset, sceneId: s.id, layerId: b.dataset.layer, fresh: b.dataset.fresh === '1' }); return; }
@@ -259,11 +273,11 @@
     var creative = !!(c && c.kind === 'creative');
     box.hidden = !creative; if (biz) biz.hidden = creative;
     if (!creative) { if (ED.poll) { clearTimeout(ED.poll); ED.poll = null; } return; }
-    if (ED.projectId !== c.projectId) { ED.outline = null; ED.scene = null; ED.pending = null; ED.open = null; say(''); }
+    if (ED.projectId !== c.projectId) { ED.outline = null; ED.scene = null; ED.pending = null; ED.open = null; ED.drafts = {}; ED.html = {}; say(''); }
     load(false).then(draw);
   }
   var wired = false;
-  function wire() { if (wired) return; var box = qs('#creativeEditor'); if (!box) return; wired = true; box.addEventListener('click', onClick); box.addEventListener('change', onChange); }
+  function wire() { if (wired) return; var box = qs('#creativeEditor'); if (!box) return; wired = true; box.addEventListener('click', onClick); box.addEventListener('change', onChange); box.addEventListener('input', onInput); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
   window.CreativeEditor = { render: render, reload: function () { return load(true); }, _state: ED };
 })();
