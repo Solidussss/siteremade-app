@@ -2,9 +2,6 @@ const state={workspace:{},workspaces:[],user:null,locked:false,integrations:{},l
 let liveRefreshing=false,lastLiveCounts={leads:0,unread:0},toastTimer=null;
 const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
 const money=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',maximumFractionDigits:0}).format(Number(n)||0);
-const subscriptionMoney=n=>new Intl.NumberFormat('en-CA',{style:'currency',currency:state.workspace.currency||'CAD',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
-// OWNERSHIP + CREDITS: there is no subscription, so nothing is ever locked. (Kept as a function: older code asks it.)
-const isSubscriptionLocked=()=>false;
 // screens for SiteRemade staff only now (their routes and data are kept): customers stay on the core loop
 const STAFF_ONLY_VIEWS=new Set(['ads','contact','home','leads','inbox','calendar','payments','prospecting','automations','website-projects','integrations','admin']);
 const FREE_VIEWS_WHEN_LOCKED=new Set(['website','settings']);
@@ -194,29 +191,6 @@ async function loadWorkspaceCredits(refresh){
   if(cc){const b=qs('#createBusinessCredits'),cr=qs('#createCreativeCredits');if(b&&cc.businessGeneration!=null)b.textContent=cc.businessGeneration;if(cr&&cc.creativePage!=null)cr.textContent=cc.creativePage;}
   safeRender('workspace-credits',renderWorkspaceCredits);
 }
-function renderSubscriptionGate(){
-  const lock=qs('#subscriptionLock');if(!lock)return;
-  const locked=isSubscriptionLocked();
-  // Buying a website is permanent ownership. An inactive Workspace plan must
-  // never hide the Website area or strand the customer's purchased files.
-  // The subscription only gates ongoing Workspace features.
-  lock.hidden=true;
-  document.body.classList.remove('subscription-locked');
-  document.body.classList.toggle('subscription-limited',locked);
-  qsa('[data-view]').forEach(b=>{
-    const view=b.dataset.view;
-    if(!view)return;
-    const paidOnly=locked&&!FREE_VIEWS_WHEN_LOCKED.has(view);
-    b.disabled=paidOnly;
-    if(paidOnly)b.title='Workspace subscription required';
-    else if(b.title==='Workspace subscription required')b.removeAttribute('title');
-  });
-  const active=qs('.view.active')?.id?.replace(/^view-/,'');
-  if(locked&&active&&!FREE_VIEWS_WHEN_LOCKED.has(active))switchView('website');
-  const cents=Number(state.billing?.monthlyCents||3999),status=String(state.billing?.status||'inactive');
-  if(qs('#lockSubscriptionPrice'))qs('#lockSubscriptionPrice').textContent=subscriptionMoney(cents/100);
-  if(qs('#lockSubscriptionStatus'))qs('#lockSubscriptionStatus').textContent=status.toUpperCase();
-}
 function safeRender(name,fn){try{fn();}catch(err){console.error('Render failed:',name,err);}}
 // The purchased-website ZIP downloads in place: the file is fetched, and only a real ZIP becomes a browser download
 // (with the builder's filename); anything else shows a readable message next to the button -- never a JSON page or
@@ -254,7 +228,7 @@ document.addEventListener('click',async e=>{
 });
 function renderAll(){
   [
-    ['subscription',renderSubscriptionGate],['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['ads',renderAds],['dashboard',renderDashboard],
+    ['workspace',renderWorkspace],['website',renderWebsite],['contact',renderContact],['ads',renderAds],['dashboard',renderDashboard],
     ['leads',renderLeads],['inbox',renderInbox],['calendar',renderCalendar],['payments',renderPayments],
     ['analytics',renderAnalytics],['website-traffic',renderWebsiteTraffic],['website-updates',renderWebsiteUpdates],['website-projects',renderWebsiteProjects],
     ['automations',renderAutomations],['settings',renderSettings],['notifications',renderNotifications],
@@ -339,11 +313,6 @@ function renderPayments(){
   // inventing one -- previously Payments was the one screen in the
   // journey with no way back to the customer record at all.
   qs('#transactionList').innerHTML=state.invoices.length?state.invoices.map(i=>{const lead=i.leadId?state.leads.find(l=>l.id===i.leadId):null;const nameHtml=lead?`<button type="button" class="customer-id customer-id-link" data-open-invoice-lead="${lead.id}"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></button>`:`<div class="customer-id"><span class="avatar small">${initials(i.customer)}</span><strong>${esc(i.customer)}</strong></div>`;return `<div>${nameHtml}<span>${esc(i.description)}</span><em>${money(i.amount)}</em><select class="invoice-status ${i.status.toLowerCase()}" data-invoice="${i.id}">${['Draft','Pending','Paid','Void'].map(x=>`<option ${x===i.status?'selected':''}>${x}</option>`).join('')}</select><button class="transaction-delete" data-delete-invoice="${i.id}" title="Delete invoice">×</button></div>`}).join(''):'<div class="empty-state">No customer invoices yet.</div>';qsa('[data-invoice]').forEach(sel=>sel.onchange=()=>updateInvoice(sel.dataset.invoice,sel.value));qsa('[data-delete-invoice]').forEach(btn=>btn.onclick=()=>deleteInvoice(btn.dataset.deleteInvoice));qsa('[data-open-invoice-lead]').forEach(btn=>btn.onclick=()=>{switchView('leads');setTimeout(()=>openLead(btn.dataset.openInvoiceLead),50)});
-  const monthly=(Number(state.billing?.monthlyCents)||0)/100,status=state.billing?.status||state.workspace.siteRemadeSubscriptionStatus||'inactive';
-  // OWNERSHIP + CREDITS: no subscription is sold; a legacy one still billing can be managed (and cancelled) here
-  const legacySub=!!state.billing?.subscriptionId&&['active','trialing','past_due'].includes(status);void monthly;
-  const ss=qs('#subscriptionStatus');if(ss)ss.textContent=legacySub?'LEGACY SUBSCRIPTION':'NO SUBSCRIPTION';
-  const mbb=qs('#manageBillingButton');if(mbb)mbb.hidden=!legacySub;
   const funded=(state.adFunds||[]).filter(f=>f.status==='Funded').reduce((x,f)=>x+Number(f.amount||0),0),spent=(state.adSpend||[]).reduce((x,a)=>x+Number(a.spend||0),0),available=Math.max(0,funded-spent);
   qs('#adFundedTotal').textContent=money(funded);qs('#adFundSpent').textContent=money(spent);qs('#adFundAvailable').textContent=money(available);
   qs('#adFundHistory').innerHTML=(state.adFunds||[]).length?state.adFunds.map(f=>`<div><span class="payment-icon">↗</span><strong>${esc(f.platform)} ads</strong><span>${dateLabel(f.createdAt)}</span><em>${money(f.amount)}</em><span class="status-pill ${f.status==='Funded'?'':'neutral'}">${esc(f.status)}</span></div>`).join(''):'<div class="empty-state">No advertising funds added yet.</div>';const fundForm=qs('#adFundForm');if(fundForm){fundForm.style.display=state.user?.role==='owner'?'none':'grid';if(state.user?.role==='owner')qs('#adFundStatus').textContent='Client approves/funds the advertising budget. You manage campaign delivery and record performance from this workspace.';}
@@ -1265,7 +1234,7 @@ if(qs('#savedWebsites'))qs('#savedWebsites').addEventListener('click',e=>{
 // otherwise it answers contract_unavailable WITHOUT a network call, and
 // nothing is ever reported as applied unless the builder said it saved it.
 const websiteEditService={
-  available(){const p=canonicalWebsite.project;return !isSubscriptionLocked()&&canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
+  available(){const p=canonicalWebsite.project;return canonicalWebsite.status==='ready'&&!!(p&&p.canEdit);},
   _unavailable(){return {ok:false,code:'contract_unavailable',message:'Your site isn’t connected to the SiteRemade builder yet, so this app can’t change it.'};},
   async _post(url,payload){
     try{
@@ -1394,7 +1363,7 @@ function renderWebsite(){
   qs('#websiteDomainLine').textContent=s.domain||'No web address yet';
   const view_=qs('#websiteViewLink');if(view_){view_.hidden=!s.url;if(s.url){view_.href=s.url;view_.textContent=s.draft?'Open draft preview ↗':s.live?'View website ↗':'Open preview ↗';}}
   // Publish: builder-only (contract §9). Never shown from delivery data.
-  const pub=qs('#websitePublishButton');if(pub){pub.hidden=isSubscriptionLocked()||!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=isSubscriptionLocked()||EDITOR_BUSY_STATES.includes(websiteEditor.state);}
+  const pub=qs('#websitePublishButton');if(pub){pub.hidden=!(c&&c.canPublish&&c.hasUnpublishedChanges)||EDITOR_BUSY_STATES.includes(websiteEditor.state);pub.disabled=EDITOR_BUSY_STATES.includes(websiteEditor.state);}
   // Status rail
   const stateVal=qs('#websiteStateValue');if(stateVal)stateVal.innerHTML=c?`<span class="chip chip-${status.tone}">${esc(status.chip)}</span>`:`<span class="chip chip-${copy.tone}">${esc(s.key==='building'&&p?`Being built · ${p.status}`:copy.chip)}</span>`;
   const dom=qs('#websiteDomainValue');if(dom){const bd=c&&c.domains&&c.domains[0];dom.textContent=bd?`${bd.domain} · ${DOMAIN_STATE_COPY[bd.state]||bd.state}`:(s.domain||'Not set');}
@@ -1854,13 +1823,6 @@ function renderSettings(){
     <p class="st-note">Live and preview addresses come from your SiteRemade delivery record. Domain and hosting status come from your SiteRemade builder project. A domain marked “reachable” only means it answered a web request — it isn’t proof of ownership.</p>`
     :`<div class="st-row"><div><strong>Domain status &amp; SSL</strong><span>Not reported yet — SiteRemade manages this for you. Ask your SiteRemade contact about domain changes.</span></div><span class="chip chip-neutral">Managed</span></div>
     <p class="st-note">Addresses come from your SiteRemade delivery record. Live DNS, SSL and deployment status will appear here once the SiteRemade builder is connected to this app.</p>`}`;
-  // Ownership & credits. A legacy Workspace subscription (no longer sold) is shown only while it exists, with the way
-  // to manage or cancel it.
-  const b=state.billing||{},status=String(b.status||w.siteRemadeSubscriptionStatus||'inactive'),legacy=!!b.subscriptionId&&!['inactive','canceled','incomplete_expired'].includes(status);
-  const lr=qs('#settingsLegacyRow');if(lr)lr.hidden=!legacy;
-  const pl=qs('#settingsPlanLine');if(pl)pl.textContent=legacy?'Still billing at Stripe. It is no longer needed for anything — your credits and websites stay if you cancel it.':'';
-  setChip(qs('#settingsPlanStatus'),status.replace('_',' ').replace(/^./,c=>c.toUpperCase()),status==='past_due'?'warning':'neutral');
-  const mb=qs('#settingsManageBilling');if(mb)mb.hidden=!legacy;
   // Advanced — notification automations (real automations rows)
   const AUTO_COPY={'lead-alert':['Tell me when someone gets in touch','Email and text you as soon as a new contact form or chat comes in.'],'lead-confirmation':['Send an automatic “we got your message” reply','Confirms to the person that their message arrived.'],'appointment-reminder':['Appointment reminders','Reminds customers before a booked appointment.']};
   const au=qs('#settingsAutomations');
@@ -1940,7 +1902,6 @@ async function loadCreditsView(){
   const hist=qs('#creditsHistory');
   try{const d=await api('/api/app/credits/history');const ev=(d.events||[]).filter(e=>e.type!=='reserved');hist.innerHTML=ev.length?ev.map(e=>`<div class="st-row"><div><strong>${esc(CREDIT_EVENT_COPY[e.type]||e.type)}</strong><span>${esc(new Date(e.at).toLocaleString())}</span></div><span class="chip ${['charged','revoked'].includes(e.type)?'chip-neutral':'chip-success'}">${['charged','revoked'].includes(e.type)?'−':'+'}${esc(String(e.amount))}</span></div>`).join(''):'<p class="helper-copy">No credit activity yet.</p>';}catch(e){if(hist)hist.innerHTML='<p class="helper-copy">History is unavailable right now.</p>';}
 }
-if(qs('#settingsManageBilling'))qs('#settingsManageBilling').onclick=async()=>{const out=qs('#settingsBillingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url;}catch(e){out.textContent=e.message;}};
 // Returning from Gmail / Stripe OAuth lands on /?mailbox=… or /?stripe=… —
 // open Settings → Connections and say what happened. (Google Ads returns
 // are still handled by v44, which opens Admin.)
@@ -2056,7 +2017,6 @@ async function deleteInvoice(id){
 }
 async function updateWebsiteRequest(id,status){try{await api(`/api/app/website-updates/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refreshLight();}catch(e){alert(e.message)}}
 if(qs('#lockLogoutButton'))qs('#lockLogoutButton').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.reload()};
-if(qs('#manageBillingButton'))qs('#manageBillingButton').onclick=async()=>{const out=qs('#billingStatus');out.textContent='Opening billing portal…';try{const d=await api('/api/app/billing/portal',{method:'POST'});if(d.url)location.href=d.url}catch(e){out.textContent=e.message}};
 if(qs('#adFundForm'))qs('#adFundForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,out=qs('#adFundStatus');out.textContent='Opening secure checkout…';try{const d=await api('/api/app/ad-funds',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});if(d.url)location.href=d.url}catch(err){out.textContent=err.message}};
 
 async function toggleAutomation(id){const a=state.automations.find(x=>x.id===id);if(!a)return;try{await api(`/api/app/automations/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!a.enabled})});await refreshLight();}catch(e){alert(e.message)}}
