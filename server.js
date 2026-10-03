@@ -368,7 +368,7 @@ async function api(req,res,u){
       if(made.error)throw made.error;userId=made.data.user.id;
       await q(db.from('profiles').upsert({id:userId,name,role:'client'}));
       const w=await q(db.from('workspaces').insert({business_name:businessName,email,phone,timezone:'America/Edmonton',currency:'CAD',plan:'Growth',ai_enabled:true,ai_services:services,ai_service_area:serviceArea,ai_tone:'Helpful, concise, professional'}).select('*').single());wid=w.id;
-      await q(db.from('workspace_members').insert({workspace_id:wid,user_id:userId,role:'admin'}));
+      await q(db.from('workspace_members').insert({workspace_id:wid,user_id:userId,role:'member'}));
       await q(db.from('automations').insert([
         {workspace_id:wid,automation_key:'lead-confirmation',name:'Instant lead confirmation',description:'When a new lead arrives → create/send a confirmation.',enabled:true},
         {workspace_id:wid,automation_key:'lead-alert',name:'New lead alert',description:'When a lead arrives → notify the business immediately.',enabled:true},
@@ -535,7 +535,7 @@ async function api(req,res,u){
   }
   if(m==='POST'&&p==='/api/app/users'){
     if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});const b=await body(req),email=clean(b.email,254).toLowerCase(),password=clean(b.password,500),wid=clean(b.workspaceId,80)||c.wid;if(!email||!password)return json(res,400,{ok:false,message:'Email and temporary password are required.'});if(!c.workspaces.some(w=>w.id===wid))return json(res,403,{ok:false,message:'No access to workspace.'});
-    const made=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name:clean(b.name,120)||email}});if(made.error)return json(res,400,{ok:false,message:made.error.message});const u2=made.data.user;await db.from('profiles').upsert({id:u2.id,name:clean(b.name,120)||email,role:b.role==='owner'?'owner':'client'});await db.from('workspace_members').upsert({workspace_id:wid,user_id:u2.id,role:b.role==='owner'?'owner':'admin'});await audit(c.user.id,wid,'user.create',email);return json(res,201,{ok:true,user:{id:u2.id,name:clean(b.name,120)||email,email,role:b.role==='owner'?'owner':'client'}});
+    const made=await db.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{name:clean(b.name,120)||email}});if(made.error)return json(res,400,{ok:false,message:made.error.message});const u2=made.data.user;await db.from('profiles').upsert({id:u2.id,name:clean(b.name,120)||email,role:b.role==='owner'?'owner':'client'});await db.from('workspace_members').upsert({workspace_id:wid,user_id:u2.id,role:b.role==='owner'?'owner':'member'});await audit(c.user.id,wid,'user.create',email);return json(res,201,{ok:true,user:{id:u2.id,name:clean(b.name,120)||email,email,role:b.role==='owner'?'owner':'client'}});
   }
 
   if(m==='POST'&&p==='/api/app/assistant'){const b=await body(req),message=clean(b.message,3000);if(!message)return json(res,400,{ok:false,message:'Ask a question first.'});const result=await businessAssistant(c,message);return json(res,200,{ok:true,...result});}
