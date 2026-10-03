@@ -822,18 +822,10 @@ return json(res,201,{ok:true,lead:mapLead(l)});
   return json(res,404,{ok:false,message:'Not found.'});
 }
 
-function mime(f){return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.json':'application/json; charset=utf-8','.webmanifest':'application/manifest+json','.sql':'text/plain; charset=utf-8'}[path.extname(f)]||'application/octet-stream');}
-// Performance review: this codebase's ~300KB of JS/CSS was being served
-// completely uncompressed (no Content-Encoding at all). Text compresses
-// ~70-80% with gzip, so this alone materially cuts transfer time on every
-// page load, especially on mobile — a pure transport-layer optimization
-// that changes zero bytes of the actual response body once decompressed,
-// and every HTTP client (browsers, fetch/undici, Playwright) decompresses
-// gzip transparently, so nothing downstream needed to change.
-const COMPRESSIBLE = /^(text\/|application\/javascript|application\/json|application\/manifest\+json)/;
-function serve(res,p,req){let rel=p==='/'?'index.html':decodeURIComponent(p.slice(1));const f=path.normalize(path.join(ROOT,rel));if(!f.startsWith(ROOT)||!fs.existsSync(f)||!fs.statSync(f).isFile())return false;const type=mime(f),cacheControl=rel==='index.html'?'no-store':'public,max-age=300';const acceptsGzip=COMPRESSIBLE.test(type)&&/\bgzip\b/.test(req?.headers?.['accept-encoding']||'');if(acceptsGzip){res.writeHead(200,{'Content-Type':type,'Cache-Control':cacheControl,'Content-Encoding':'gzip','Vary':'Accept-Encoding'});fs.createReadStream(f).pipe(zlib.createGzip()).pipe(res);}else{res.writeHead(200,{'Content-Type':type,'Cache-Control':cacheControl});fs.createReadStream(f).pipe(res);}return true;}
+// static files: only the explicit public allow-list in lib/static-files.js -- never whatever happens to sit in the repo
+const { serveStatic } = require('./lib/static-files');
 
 setInterval(processAppointmentReminders,15*60*1000).unref();
 setTimeout(processAppointmentReminders,5000).unref();
 
-http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(await router.dispatch(req,res,u,json))return;if(u.pathname.startsWith('/api/'))return await api(req,res,u);if(serve(res,u.pathname,req))return;serve(res,'/',req);}catch(e){console.error('Unhandled request error',{message:e?.message||'',code:e?.code||'',details:e?.details||'',hint:e?.hint||'',stack:e?.stack||''});if(!res.headersSent)json(res,500,{ok:false,message:e?.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
+http.createServer(async(req,res)=>{try{const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(req.method==='OPTIONS'&&u.pathname.startsWith('/api/public/')){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'POST,OPTIONS'});return res.end();}if(u.pathname.startsWith('/api/public/'))res.setHeader('Access-Control-Allow-Origin','*');if(await router.dispatch(req,res,u,json))return;if(u.pathname.startsWith('/api/'))return await api(req,res,u);serveStatic(req,res,u.pathname);}catch(e){console.error('Unhandled request error',{message:e?.message||'',code:e?.code||'',details:e?.details||'',hint:e?.hint||'',stack:e?.stack||''});if(!res.headersSent)json(res,500,{ok:false,message:e?.message||'Server error'});}}).listen(PORT,'0.0.0.0',()=>console.log(`SiteRemade V16 running on http://localhost:${PORT}${configured?' · Supabase connected':' · SUPABASE NOT CONFIGURED'}`));
