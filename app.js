@@ -176,8 +176,7 @@ function creditSummaryText(){
   const c=workspaceCredits.data;if(!c)return '';
   const costs=c.costs||{};const price=costs.aiUpdate!=null?` Updates use ${costs.aiUpdate}–5 credits depending on what they change (you see the exact number first); a new Business website ${costs.businessGeneration}, a Creative website ${costs.creativePage}. Editing text yourself is free.`:'';
   if(c.plan==='tester')return `Tester allowance: ${c.remaining} credits${c.tester&&c.tester.resetsAt?` · resets ${new Date(c.tester.resetsAt).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`:''}.${price}`;
-  const legacy=c.subscription&&c.subscription.remaining?` (${c.subscription.remaining} from your Workspace month${c.subscription.endsAt||c.subscription.renewsAt?` until ${creditDate(c.subscription.endsAt||c.subscription.renewsAt)}`:''})`:'';
-  return `${c.remaining} credit${c.remaining===1?'':'s'}${legacy}. Credits never expire.${price}`;
+  return `${c.remaining} credit${c.remaining===1?'':'s'}. Credits never expire.${price}`;
 }
 function renderWorkspaceCredits(){
   const t=creditSummaryText();
@@ -935,8 +934,6 @@ function renderDrawerProject(l){
 // way, since both endpoints return the same summary shape.
 const canonicalWebsite={project:null,status:'idle',code:null,message:null,loadedAt:0,inflight:null,scopedProjectId:null};
 async function loadCanonicalWebsite(force){
-  // (no subscription check: a purchased website -- its preview and its ZIP -- belongs to the customer whether or not
-  // they subscribe; the server routes behind this are not subscription-gated either)
   if(canonicalWebsite.inflight)return canonicalWebsite.inflight;
   if(!force&&canonicalWebsite.status!=='idle'&&Date.now()-canonicalWebsite.loadedAt<60000)return;
   if(canonicalWebsite.status==='idle')canonicalWebsite.status='loading';
@@ -1890,7 +1887,7 @@ if(qs('#settingsDomainForm'))qs('#settingsDomainForm').onsubmit=async e=>{e.prev
 if(qs('#settingsBuyCredits'))qs('#settingsBuyCredits').onclick=()=>switchView('credits');
 // OWNERSHIP + CREDITS: the Credits view -- balance, one-time packs (Stripe checkout run by the builder; credits arrive
 // when the payment is confirmed), and the history of every credit movement
-const CREDIT_EVENT_COPY={purchased:'Credits bought',first_website_bonus:'First website bonus',trial:'Welcome credits',tester:'Tester allowance',legacy_subscription:'Workspace month',admin_adjustment:'Adjustment',reserved:'Held for work',charged:'Used',released:'Returned (work did not run)',refunded:'Returned (not needed)',revoked:'Removed (refund)'};
+const CREDIT_EVENT_COPY={purchased:'Credits bought',first_website_bonus:'First website bonus',trial:'Welcome credits',tester:'Tester allowance',admin_adjustment:'Adjustment',reserved:'Held for work',charged:'Used',released:'Returned (work did not run)',refunded:'Returned (not needed)',revoked:'Removed (refund)'};
 async function loadCreditsView(){
   await loadWorkspaceCredits(true);
   const c=workspaceCredits.data,cat=workspaceCredits.catalog;
@@ -2026,7 +2023,7 @@ qsa('[data-close]').forEach(b=>b.onclick=()=>hideModal(b.dataset.close));qsa('.m
 
 
 function renderWorkspaceMenu(){const menu=qs('#workspaceMenu');if(!menu)return;menu.innerHTML=(state.workspaces||[]).map(w=>`<button data-workspace="${w.id}" class="workspace-option ${w.id===state.workspace.id?'active':''}"><span>${esc(w.businessName)}</span><small>${esc(w.plan||'Client')}</small></button>`).join('');qsa('[data-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.workspace})});menu.hidden=true;await refreshLight();});}
-async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><span class="status-pill ${['active','trialing'].includes(w.siteRemadeSubscriptionStatus)?'':'neutral'}">${esc((w.siteRemadeSubscriptionStatus||'inactive').toUpperCase())}</span><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('website');});renderAdminWebsite(d);}catch{}}
+async function renderAdmin(){if(state.user?.role!=='owner')return;try{const d=await api('/api/app/admin');qs('#adminWorkspaceList').innerHTML=d.workspaces.map(w=>`<div class="admin-row growth-admin-row"><div><strong>${esc(w.businessName)}</strong><span>${esc(w.email||'No email')} · ${Number(w.leads||0)} leads · ${money(w.adFunded||0)} funded · ${money(w.adSpent||0)} spent</span></div><div class="admin-actions"><button class="secondary-button" data-open-workspace="${w.id}">Open workspace</button></div></div>`).join('');qs('#adminWorkspaceSelect').innerHTML=d.workspaces.map(w=>`<option value="${w.id}">${esc(w.businessName)}</option>`).join('');qsa('[data-open-workspace]').forEach(b=>b.onclick=async()=>{await api('/api/app/workspaces/switch',{method:'POST',body:JSON.stringify({workspaceId:b.dataset.openWorkspace})});await refreshLight();switchView('website');});renderAdminWebsite(d);}catch{}}
 // Phase 5: staff-only "Website links" list — which builder project each
 // workspace is linked to (by id, never domain), the last revision the app
 // saw, whether its analytics site exists, and the server-wide contact
