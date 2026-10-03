@@ -38,3 +38,23 @@
 .ce-feedback{margin:0;font-size:13px;min-height:1em}
 .ce-feedback.is-error{color:var(--danger,#b42318)}.ce-feedback.is-success{color:var(--success,#067647)}
 @media (max-width:640px){.ce-scene{max-width:70vw}.ce-row>.ce-btn{flex:1 1 100%}}
+/* fonts: pairings as chips, a row per role, and an in-panel menu grouped by category -- every name in its own face; the
+   menu scrolls inside itself and is never wider than the panel (no popover to escape the screen on a phone) */
+.ce-presets{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.ce-preset{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line,rgba(0,0,0,.2));background:var(--surface,#fff);color:inherit;font:inherit;font-size:15px;cursor:pointer;max-width:100%}
+.ce-preset.is-on,.ce-fontopt.is-on{border-color:var(--accent,#2f6bff);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#2f6bff) 25%,transparent)}
+.ce-fontrow{display:flex;align-items:center;gap:10px;min-height:52px;width:100%;padding:8px 12px;border-radius:12px;border:1px solid var(--line,rgba(0,0,0,.14));background:var(--surface,#fff);color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.ce-fontrow .ce-label{flex:0 0 auto;min-width:72px;font-size:13px;opacity:.75}
+.ce-fontrow .ce-fontsample{flex:1 1 auto;min-width:0;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ce-fontrow.is-open{border-color:var(--accent,#2f6bff)}
+.ce-chev{flex:0 0 auto;opacity:.6}.ce-fontrow.is-open .ce-chev{transform:rotate(180deg)}
+.ce-fontmenu{display:flex;flex-direction:column;gap:2px;max-height:min(60vh,420px);overflow-y:auto;overscroll-behavior:contain;padding:6px;border-radius:12px;border:1px solid var(--line,rgba(0,0,0,.14));background:var(--surface,#fff);min-width:0;max-width:100%;box-sizing:border-box;scrollbar-width:thin}
+.ce-fontcat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ce-fontcatname{position:sticky;top:-6px;z-index:1;margin:8px 0 2px;padding:6px 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.75;background:var(--surface,#fff)}
+.ce-fontopt{display:flex;align-items:center;gap:10px;min-height:44px;width:100%;padding:6px 10px;border-radius:10px;border:1px solid transparent;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.ce-fontopt:hover,.ce-fontopt:focus-visible{background:color-mix(in srgb,var(--accent,#2f6bff) 9%,transparent)}
+.ce-fontopt .ce-fontsample{flex:1 1 auto;min-width:0;font-size:20px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ce-fontsample{font-weight:700}
+.ce-fonttag{flex:0 0 auto;font-size:11px;opacity:.6}
+.ce-tick{flex:0 0 18px;text-align:center;color:var(--accent,#2f6bff);font-weight:700}
+@media (max-width:480px){.ce-fontopt{flex-wrap:wrap;row-gap:0}.ce-fontopt .ce-fontsample{flex-basis:calc(100% - 28px)}.ce-fonttag{order:3;flex-basis:100%;margin-top:-2px}}

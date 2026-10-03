@@ -40,6 +40,7 @@ function page() {
     querySelectorAll(sel) {
       const els = [].concat(this.all(), ...(this.parts || []).map(p => p.all()));
       if (sel === '[data-draft]') return els.filter(e => e.dataset.draft != null);
+      if (sel === '.ce-fontsample[data-ff]') return els.filter(e => e.dataset.ff != null); // (names shown in their face: spans, not fields)
       if (sel === 'button,select,input,textarea') return els.filter(e => ['BUTTON', 'SELECT', 'INPUT', 'TEXTAREA'].includes(e.tagName));
       throw new Error('selector not modelled: ' + sel);
     }
@@ -57,7 +58,8 @@ function page() {
   return { doc, box, parts, fire: (type, el) => (box.listeners[type] || []).forEach(fn => fn({ target: el })) };
 }
 
-const OUTLINE = () => ({ kind: 'creative', palette: [{ role: 'primary', label: 'Brand', hex: '#cc0000' }], pictures: [], models: [], media: [], threeDCompositions: [], actions: ['reapply-look', 'ai-site'],
+const OUTLINE = () => ({ kind: 'creative', palette: [{ role: 'primary', label: 'Brand', hex: '#cc0000' }], pictures: [], models: [], media: [], threeDCompositions: [], actions: ['reapply-look', 'fonts', 'ai-site'],
+  fonts: { fonts: [{ id: 'inter', label: 'Inter', kind: 'sans-serif', source: 'web', caps: false, categories: ['apple'], stack: '"SR Inter", sans-serif', specimen: { file: 'inter-800.woff2', weight: 800 } }], categories: [{ id: 'apple', label: 'Apple / Clean UI', fonts: ['inter'] }], presets: [{ id: 'minimal', name: 'Minimal', headline: 'inter', body: 'inter', label: 'inter' }], current: null },
   scenes: ['opening', 'scene-2'].map((id, i) => ({ id, index: i, name: id === 'opening' ? 'Kolaro' : 'Second', composition: 'object-stage', background: '#ffffff', text: { kicker: '', heading: id === 'opening' ? 'Kolaro' : 'Second', body: 'Saved paragraph', items: [] }, pictures: [], models: [], compositions: [], actions: ['text', 'text-layout', 'colour', 'composition', 'ai-text', 'ai-scene'] })) });
 
 async function editor() {

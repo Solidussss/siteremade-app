@@ -287,7 +287,7 @@ function creditsFrom(x) {
 // ---- THE CREATIVE WEBSITE EDITOR: what the app passes on (explicit allowlists, like summaryFrom) ----------------------
 // an owner picture as a PNG data URL: up to 8 MB of picture (the builder refuses anything bigger), base64 and JSON around it
 const CREATIVE_UPLOAD_MAX_CHARS = 12 * 1024 * 1024;
-const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId'];
+const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId', 'preset', 'headline', 'body', 'label'];
 function creativeOpFrom(op) {
   const out = {}; CREATIVE_OP_KEYS.forEach(k => { const v = op[k]; if (typeof v === 'string') out[k] = v.slice(0, k === 'value' ? 600 : 60); else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v; });
   return out;
@@ -336,11 +336,46 @@ function creativeOutlineFrom(d) {
       models: (o.models || []).slice(0, 4).map(m => ({ id: s(m.id, 60), sourceAssetId: s(m.sourceAssetId, 60), placedIn: acts(m.placedIn) })),
       media: (o.media || []).slice(0, 12).map(m => ({ assetId: s(m.assetId, 60), mediaId: s(m.mediaId, 60) })),
       threeDCompositions: acts(o.threeDCompositions), actions: acts(o.actions),
+      fonts: creativeFontsFrom(o.fonts),
     },
+  };
+}
+// the page's typefaces as the picker needs them: ids, names, categories, pairings, the face file a name is shown in, and the
+// CSS stack it is shown with -- each checked against a strict shape (a stack is names and commas only, never CSS)
+const FONT_ID = /^[a-z0-9-]{2,40}$/; const FONT_FILE = /^[a-z0-9-]{2,40}-[1-9]00\.woff2$/; const FONT_STACK = /^[A-Za-z0-9 ,"'.-]{1,240}$/;
+function creativeFontsFrom(f) {
+  if (!f || typeof f !== 'object' || !Array.isArray(f.fonts)) return null;
+  const id = v => (typeof v === 'string' && FONT_ID.test(v) ? v : ''); const s = (v, k) => (typeof v === 'string' ? v.slice(0, k) : '');
+  const fonts = f.fonts.slice(0, 80).filter(x => x && id(x.id) && typeof x.stack === 'string' && FONT_STACK.test(x.stack)).map(x => ({
+    id: x.id, label: s(x.label, 60), kind: ['sans-serif', 'serif', 'monospace'].includes(x.kind) ? x.kind : 'sans-serif', source: x.source === 'web' ? 'web' : 'system', caps: !!x.caps,
+    categories: (Array.isArray(x.categories) ? x.categories : []).map(id).filter(Boolean).slice(0, 6), stack: x.stack,
+    specimen: x.specimen && typeof x.specimen.file === 'string' && FONT_FILE.test(x.specimen.file) ? { file: x.specimen.file, weight: Number.isInteger(x.specimen.weight) ? x.specimen.weight : 400 } : null }));
+  const known = new Set(fonts.map(x => x.id)); const pick = v => (known.has(v) ? v : '');
+  const cur = f.current && typeof f.current === 'object' ? f.current : null;
+  return {
+    fonts,
+    categories: (Array.isArray(f.categories) ? f.categories : []).slice(0, 16).filter(c => c && id(c.id)).map(c => ({ id: c.id, label: s(c.label, 60), fonts: (Array.isArray(c.fonts) ? c.fonts : []).map(pick).filter(Boolean).slice(0, 16) })),
+    presets: (Array.isArray(f.presets) ? f.presets : []).slice(0, 16).filter(p => p && id(p.id) && pick(p.headline) && pick(p.body) && pick(p.label)).map(p => ({ id: p.id, name: s(p.name, 40), headline: p.headline, body: p.body, label: p.label })),
+    current: cur ? { headline: pick(cur.headline), body: pick(cur.body), label: pick(cur.label), preset: id(cur.preset) } : null,
   };
 }
 
 module.exports = function registerWebsiteBridgeRoutes(router) {
+  // the Creative editor's font picker shows each name in its own face: the builder's open-source font files, through this
+  // origin (exactly a vendored file's name -- nothing else is ever asked for), kept once in memory
+  const fontCache = new Map();
+  router.get('/api/app/website/fonts/:file', { auth: 'user' }, async (req, res, { json, params }) => {
+    const file = String(params.file || '');
+    if (!FONT_FILE.test(file)) return json(res, 404, { ok: false });
+    let got = fontCache.get(file);
+    if (!got) {
+      const r = await bridge.getCreativeFont(file);
+      if (r.status !== 200 || !r.buffer || !r.buffer.length || r.buffer.length > 400000 || !/font\/woff2/.test(r.type || '')) return json(res, r.status === 404 ? 404 : 502, { ok: false });
+      got = r.buffer; if (fontCache.size < 120) fontCache.set(file, got);
+    }
+    res.writeHead(200, { 'Content-Type': 'font/woff2', 'Content-Length': got.length, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+    return res.end(got);
+  });
   router.get('/api/app/website', { auth: 'user' }, async (req, res, { c, json }) => {
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });

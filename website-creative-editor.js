@@ -14,7 +14,7 @@
   'use strict';
   // drafts: what the owner is typing and has not saved -- keyed text:<scene>:<field>, ask:<scene>, site -- kept here (never in the
   // DOM alone, never in storage) so no redraw can lose it; html: the markup each part was last drawn with
-  var ED = { projectId: null, revision: null, outline: null, jobs: [], scene: null, open: null, busy: false, msg: '', tone: '', pending: null, poll: null, loadedFor: '', drafts: {}, html: {} };
+  var ED = { projectId: null, revision: null, outline: null, jobs: [], scene: null, open: null, busy: false, msg: '', tone: '', pending: null, poll: null, loadedFor: '', drafts: {}, html: {}, fontOpen: null };
   var qs = function (s, el) { return (el || document).querySelector(s); };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>'"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]; }); };
   var base = function () { return '/api/app/website/projects/' + encodeURIComponent(ED.projectId) + '/creative'; };
@@ -206,6 +206,43 @@
     var live = (ED.jobs || []).filter(function (j) { return !j.terminal; }); if (!live.length) return '';
     return '<div class="ce-jobs" role="status">' + live.map(function (j) { return '<p><span class="ce-dot" aria-hidden="true"></span>' + esc(j.message || (j.kind === 'model3d' ? 'Creating 3D model…' : 'Creating cinematic clip…')) + '</p>'; }).join('') + '</div>';
   }
+  // ---- fonts: the page's typefaces (the builder's registry -- ids only). A pairing, or a face per role, from a menu grouped
+  // by category in which every name is shown in its own face; a face's file is fetched only when its name is on screen.
+  var ROLE_NAME = { headline: 'Headlines', body: 'Text', label: 'Labels' };
+  function fontOf(id) { var f = ED.outline && ED.outline.fonts; return f && f.fonts.find(function (x) { return x.id === id; }) || null; }
+  function sample(f, text) { return '<span class="ce-fontsample" data-ff="' + esc(f ? f.stack : '') + '">' + esc(text) + '</span>'; }
+  function fontsBlock() {
+    var F = ED.outline.fonts; if (!F || !(ED.outline.actions || []).some(function (a) { return a === 'fonts'; })) return '';
+    var cur = F.current || {};
+    var presets = '<div class="ce-presets" role="group" aria-label="Font pairings">' + F.presets.map(function (p) {
+      var on = cur.preset === p.id; return '<button type="button" class="ce-preset' + (on ? ' is-on' : '') + '" data-ce="font-preset" data-preset="' + esc(p.id) + '" aria-pressed="' + on + '">' + sample(fontOf(p.headline), p.name) + '</button>'; }).join('') + '</div>';
+    var rows = ['headline', 'body', 'label'].map(function (r) {
+      var f = fontOf(cur[r]); var open = ED.fontOpen === r;
+      var btn = '<button type="button" class="ce-fontrow' + (open ? ' is-open' : '') + '" data-ce="font-open" data-role="' + r + '" aria-haspopup="listbox" aria-expanded="' + open + '"><span class="ce-label">' + ROLE_NAME[r] + '</span>' + (f ? sample(f, f.label) : '<span class="ce-fontsample">The page’s own</span>') + '<span class="ce-chev" aria-hidden="true">▾</span></button>';
+      if (!open) return btn;
+      var pickedId = cur[r] || '';
+      var opt = function (id, label, f2) { var sel = id === pickedId; return '<button type="button" role="option" class="ce-fontopt' + (sel ? ' is-on' : '') + '" aria-selected="' + sel + '" data-ce="font-pick" data-role="' + r + '" data-font="' + esc(id) + '">' + (f2 ? sample(f2, label) : '<span class="ce-fontsample">' + esc(label) + '</span>') + (f2 && f2.source === 'system' ? '<span class="ce-fonttag">on the device</span>' : '') + '<span class="ce-tick" aria-hidden="true">' + (sel ? '✓' : '') + '</span></button>'; };
+      return btn + '<div class="ce-fontmenu" role="listbox" aria-label="' + ROLE_NAME[r] + ' font" id="ceFontMenu">' + opt('', 'The page’s own', null) +
+        F.categories.map(function (c) { return '<div class="ce-fontcat" role="group" aria-label="' + esc(c.label) + '"><p class="ce-fontcatname">' + esc(c.label) + '</p>' + c.fonts.map(function (id) { var f2 = fontOf(id); return f2 ? opt(id, f2.label, f2) : ''; }).join('') + '</div>'; }).join('') + '</div>';
+    }).join('');
+    return '<div class="ce-group ce-fonts"><h3>Fonts</h3><p class="ce-note">Pairings · free</p>' + presets + rows + '</div>';
+  }
+  // the faces the picker may show: declared once, under the same names the website uses (the builder's stacks name them);
+  // a face is only fetched when a name set in it is drawn on screen (below)
+  var facesDeclared = false;
+  function declareFaces() {
+    var F = ED.outline && ED.outline.fonts; if (facesDeclared || !F) return; facesDeclared = true;
+    var css = F.fonts.filter(function (f) { return f.specimen; }).map(function (f) { return '@font-face{font-family:"SR ' + f.label.replace(/["\\]/g, '') + '";font-weight:' + f.specimen.weight + ';font-display:swap;src:url("/api/app/website/fonts/' + encodeURIComponent(f.specimen.file) + '") format("woff2")}'; }).join('');
+    var st = document.createElement('style'); st.id = 'ceFontFaces'; st.textContent = css; document.head.appendChild(st);
+  }
+  var seen = null;
+  function showFaces(box) {
+    var els = box.querySelectorAll('.ce-fontsample[data-ff]'); if (!els.length) return; declareFaces();
+    var apply = function (el) { if (el.dataset.ff && !el.style.fontFamily) el.style.fontFamily = el.dataset.ff; };
+    if (typeof IntersectionObserver !== 'function') { for (var i = 0; i < els.length; i++) apply(els[i]); return; }
+    if (!seen) seen = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { apply(e.target); seen.unobserve(e.target); } }); }, { rootMargin: '120px' });
+    for (var j = 0; j < els.length; j++) if (!els[j].style.fontFamily) seen.observe(els[j]);
+  }
   function draw() {
     var box = qs('#creativeEditor'); if (!box || box.hidden || !ED.outline) return;
     var pill = qs('#creativeEditorPill'); if (pill) pill.textContent = ED.busy ? 'Working…' : 'Draft edits';
@@ -217,12 +254,13 @@
     var put = function (el, key, html) { if (!el || (ED.html[key] === html && el.childNodes.length)) return; el.innerHTML = html; ED.html[key] = html; };
     put(qs('#ceScenes'), 'scenes', ED.outline.scenes.map(function (x, i) { return '<li><button type="button" class="ce-scene' + (x.id === ED.scene ? ' is-on' : '') + '" data-ce="scene" data-scene="' + esc(x.id) + '" aria-pressed="' + (x.id === ED.scene) + '"><span class="ce-num">' + (i + 1) + '</span><span class="ce-sname">' + esc(x.name) + '</span></button></li>'; }).join(''));
     put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + textBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
-    put(qs('#ceWhole'), 'whole', '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
+    put(qs('#ceWhole'), 'whole', fontsBlock() + '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
       ((ED.outline.actions || []).indexOf('ai-site') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSiteAsk" data-draft="site" maxlength="600" placeholder="Describe a new direction for the whole page" aria-label="Describe a new direction for the whole page"><button type="button" class="ce-btn" data-ce="ai-site">Redesign the page…</button></div>' : '') + '</div>');
     // every free-form field shows the owner's unsaved words when there are any (a field drawn again starts from them)
     var fields = box.querySelectorAll('[data-draft]'); var back = null;
     for (var i = 0; i < fields.length; i++) { var el = fields[i]; var k = el.dataset.draft; if (Object.prototype.hasOwnProperty.call(ED.drafts, k) && el.value !== ED.drafts[k]) el.value = ED.drafts[k]; if (typing && k === typing.key) back = el; }
     if (typing && back && document.activeElement !== back) { try { back.focus({ preventScroll: true }); back.setSelectionRange(typing.start, typing.end, typing.dir || 'none'); back.scrollTop = typing.top; } catch (e) { /* a field that takes no caret */ } }
+    showFaces(box);
     qs('#ceFeedback').textContent = ED.msg; qs('#ceFeedback').className = 'ce-feedback' + (ED.tone ? ' is-' + ED.tone : '');
     // (while a change is on its way the actions wait; what the owner is typing never does)
     box.querySelectorAll('button,select,input,textarea').forEach(function (el) { el.disabled = el.hasAttribute('data-off') || (ED.busy && el.dataset.ce !== 'cancel' && !el.hasAttribute('data-draft')); });
@@ -240,6 +278,9 @@
     if (k === 'close') { if (ED.open && ED.open.indexOf('text:') === 0) delete ED.drafts['text:' + ED.scene + ':' + ED.open.slice(5)]; ED.open = null; draw(); return; }
     if (k === 'cancel') { ED.pending = null; say(''); draw(); return; }
     if (k === 'confirm') { confirmPending(); return; }
+    if (k === 'font-open') { ED.fontOpen = ED.fontOpen === b.dataset.role ? null : b.dataset.role; draw(); var m = qs('#ceFontMenu'); var on = m && m.querySelector('.is-on'); if (on) m.scrollTop = Math.max(0, m.scrollTop + on.getBoundingClientRect().top - m.getBoundingClientRect().top - (m.clientHeight - on.offsetHeight) / 2); /* (the current choice, in the middle of the menu) */ return; }
+    if (k === 'font-pick') { var op = { type: 'fonts' }; op[b.dataset.role] = b.dataset.font; ED.fontOpen = null; edit(op); return; }
+    if (k === 'font-preset') { ED.fontOpen = null; edit({ type: 'fonts', preset: b.dataset.preset }); return; }
     if (k === 'save-text') { var v = qs('#ceText').value; edit({ type: 'text', sceneId: s.id, field: b.dataset.field, value: v }, null, 'text:' + s.id + ':' + b.dataset.field); return; }
     if (k === 'ai-text') { quote('ai-text', { sceneId: s.id, field: b.dataset.field, request: qs('#ceText').value !== (s.text[b.dataset.field] || '') ? 'Use this as the starting point: ' + qs('#ceText').value : '' }, 'text:' + s.id + ':' + b.dataset.field); return; }
     if (k === 'ai-scene') { quote('ai-scene', { sceneId: s.id, request: (qs('#ceSceneAsk') || {}).value || '' }, 'ask:' + s.id); return; }
@@ -277,7 +318,7 @@
     load(false).then(draw);
   }
   var wired = false;
-  function wire() { if (wired) return; var box = qs('#creativeEditor'); if (!box) return; wired = true; box.addEventListener('click', onClick); box.addEventListener('change', onChange); box.addEventListener('input', onInput); }
+  function wire() { if (wired) return; var box = qs('#creativeEditor'); if (!box) return; wired = true; box.addEventListener('click', onClick); box.addEventListener('change', onChange); box.addEventListener('input', onInput); box.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ED.fontOpen) { var r = ED.fontOpen; ED.fontOpen = null; draw(); var b = qs('#creativeEditor').querySelector('[data-ce="font-open"][data-role="' + r + '"]'); if (b) b.focus(); } }); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
   window.CreativeEditor = { render: render, reload: function () { return load(true); }, _state: ED };
 })();

@@ -75,7 +75,7 @@ function png(w, h) {
   });
   await new Promise(r => door.listen(0, '127.0.0.1', r));
   const job = path.join(outDir, 'editor.job.json');
-  fs.writeFileSync(job, JSON.stringify({ baseUrl: `http://127.0.0.1:${door.address().port}/`, outDir, widths: [1440, 390], staleScene: stale.id, heroScene: hero.id, projectId: sc.projectId }));
+  fs.writeFileSync(job, JSON.stringify({ baseUrl: `http://127.0.0.1:${door.address().port}/`, outDir, widths: process.env.REVIEW_WIDTHS ? process.env.REVIEW_WIDTHS.split(',').map(Number) : [1440, 390], staleScene: stale.id, heroScene: hero.id, projectId: sc.projectId }));
   const before = providerCalls(env.MOCK_CALL_LOG).length;
   const eenv = Object.assign({}, process.env); delete eenv.ELECTRON_RUN_AS_NODE;
   await new Promise(resolve => { const child = spawn(ELECTRON, [path.join(__dirname, 'website-editor-capture.js'), job], { stdio: 'inherit', env: eenv }); const t = setTimeout(() => child.kill(), 600000); child.on('exit', () => { clearTimeout(t); resolve(); }); });

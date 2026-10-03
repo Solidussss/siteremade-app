@@ -16,6 +16,8 @@ function startFixtureBuilder(accounts) {
     const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
     seen.push({ method: req.method, url: req.url, token });
     const send = (status, body, type) => { const b = type ? body : JSON.stringify(body); res.writeHead(status, Object.assign({ 'Content-Type': type || 'application/json' }, type === 'application/zip' ? { 'Content-Disposition': 'attachment; filename="site.zip"' } : {})); res.end(b); };
+    // (the public font files: no token -- one face is known, everything else is not)
+    if (u0(req).pathname.startsWith('/creative-fonts/')) { const f = u0(req).pathname.slice(16); if (f !== 'inter-800.woff2') return send(404, { ok: false }); res.writeHead(200, { 'Content-Type': 'font/woff2' }); return res.end(Buffer.from('wOF2fixturebytes')); }
     const account = accounts[token];
     if (!account) return send(401, { ok: false, error: { code: 'unauthenticated', message: 'Sign in again.' } });
     const projects = account.projects;
@@ -66,7 +68,15 @@ function startFixtureBuilder(accounts) {
           outline: { name: p.name, secretNote: 'sk_live_NOTAKEY', look: { family: 'campaign', devices: ['colour-field', 'bleed-crop'] }, palette: [{ role: 'primary', label: 'Brand colour', hex: '#e30613' }],
             scenes: [{ id: 'opening', index: 0, name: 'Opening', composition: 'object-stage', background: '#ffffff', text: { kicker: '', heading: 'Kolaro', body: '', items: [] }, actions: ['text', 'colour'], compositions: [],
               pictures: [{ layerId: 'l1', assetId: 'u1', role: 'focal', dataUrl: 'data:image/png;base64,AAAA', source: { kind: 'upload', rootId: 'u1', title: 'Can', assetRef: 'f'.repeat(64) }, actions: ['replace', 'motion'] }], models: [] }],
-            pictures: [], models: [], media: [], threeDCompositions: ['scroll-rotate'], actions: ['reapply-look'] } });
+            pictures: [], models: [], media: [], threeDCompositions: ['scroll-rotate'], actions: ['reapply-look', 'fonts'],
+            // (a font catalogue with what the app must drop: a stack that is CSS, a file that is a path, an unknown pairing face)
+            fonts: { fonts: [{ id: 'inter', label: 'Inter', kind: 'sans-serif', source: 'web', categories: ['apple'], stack: '"SR Inter", "Helvetica Neue", Arial, sans-serif', specimen: { file: 'inter-800.woff2', weight: 800 }, sha256: 'ffff' },
+              { id: 'apple-system', label: 'Apple / System', kind: 'sans-serif', source: 'system', categories: ['apple'], stack: '-apple-system, BlinkMacSystemFont, "SF Pro Display", Arial, sans-serif', specimen: null },
+              { id: 'evil', label: 'Evil', kind: 'serif', source: 'web', categories: ['apple'], stack: 'x;}body{background:url(//e.example)}', specimen: { file: 'evil-400.woff2', weight: 400 } },
+              { id: 'path', label: 'Path', kind: 'serif', source: 'web', categories: ['apple'], stack: 'Georgia, serif', specimen: { file: '../server.js', weight: 400 } }],
+              categories: [{ id: 'apple', label: 'Apple / Clean UI', fonts: ['apple-system', 'inter', 'evil', 'path'] }],
+              presets: [{ id: 'minimal', name: 'Minimal', headline: 'inter', body: 'inter', label: 'inter' }, { id: 'broken', name: 'Broken', headline: 'comic-sans', body: 'inter', label: 'inter' }],
+              current: { headline: 'inter', body: 'comic-sans', label: '', preset: 'minimal' } } } });
         let raw = ''; req.on('data', c => { raw += c; }); req.on('end', () => { let body = {}; try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; } seen[seen.length - 1].body = body;
           if (parts[5] === 'quote') return send(200, { ok: true, quote: { id: 'q_fixture000001', credits: 12, minCredits: 0, message: 'This premium media will use up to 12 credits.', items: [{ label: 'Cinematic clip', credits: 12, optional: true, source: { ref: 'f'.repeat(64) } }] }, creditsRemaining: 40, enough: true, ceilingUsd: 9 });
           // (Fix text layout: a scene whose words already fit comes back unchanged; one that did not, with what was re-set)

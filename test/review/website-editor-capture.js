@@ -80,6 +80,38 @@ app.whenReady().then(async () => {
       steps.push([`and at ${width < 700 ? 1440 : 390}px too`, !!other && JSON.stringify(other.lines) === JSON.stringify(['THE WORLD RAISES', 'ONE GLASS']) && other.inside]);
       steps.push(['the published site keeps its old render until Publish', !!live && JSON.stringify(live.lines) === JSON.stringify(['THE WORLD', 'RAISES ONE', 'GLASS'])]);
       if (before) steps.push(['before the fix the draft showed the broken split', width !== job.widths[0] || JSON.stringify(before.lines) === JSON.stringify(['THE WORLD', 'RAISES ONE', 'GLASS'])]);
+      // ---- FONTS: the picker -- grouped, each name in its own face, scrolling inside the panel; a face and a pairing chosen
+      const fontsAt = () => js('[...document.querySelectorAll("#ceWhole .ce-fontrow")].map(b => b.textContent.replace(/▾/, "").trim())');
+      await js('document.querySelector("#ceWhole .ce-fonts").scrollIntoView({ block: "start" }); true'); await sleep(300);
+      steps.push(['fonts: pairings and a row per role shown', await js('document.querySelectorAll("#ceWhole .ce-preset").length === 10 && document.querySelectorAll("#ceWhole .ce-fontrow").length === 3')]);
+      await js('document.querySelector(\'[data-ce="font-open"][data-role="headline"]\').click(); true'); await sleep(700);
+      await shot('6a-font-menu-open'); await sleep(300); // (a frame drawn: what is on screen is what the owner sees)
+      const menu = await js(`(() => { const m = document.querySelector('#ceFontMenu'); const r = m.getBoundingClientRect(); const vw = document.documentElement.clientWidth;
+        const opts = [...m.querySelectorAll('.ce-fontopt')]; const shown = opts.filter(o => { const q = o.getBoundingClientRect(); return q.bottom > r.top && q.top < r.bottom; });
+        return { left: r.left, right: r.right, vw, scrolls: m.scrollHeight > m.clientHeight + 4, options: opts.length, groups: m.querySelectorAll('.ce-fontcat').length, small: opts.filter(o => o.getBoundingClientRect().height < 43.5).length,
+          ownFace: shown.filter(o => { const s = o.querySelector('.ce-fontsample'); return s && s.dataset.ff && s.style.fontFamily; }).length, shown: shown.length,
+          loaded: performance.getEntriesByType('resource').filter(e => /\\/api\\/app\\/website\\/fonts\\//.test(e.name)).length }; })()`);
+      out.widths[width].fontMenu = menu;
+      const centred = await js("(() => { const m = document.querySelector('#ceFontMenu'); const on = m.querySelector('.ce-fontopt.is-on'); if (!on) return false; const r = m.getBoundingClientRect(), q = on.getBoundingClientRect(); return q.top >= r.top - 1 && q.bottom <= r.bottom + 1; })()");
+      steps.push(['fonts: the menu opens on the current choice', centred]);
+      steps.push(['fonts: the menu is grouped by category and fits the screen', menu.groups === 10 && menu.left >= 0 && menu.right <= menu.vw + 0.5]);
+      steps.push(['fonts: the menu scrolls inside itself with touch-sized options', menu.scrolls && menu.options >= 50 && menu.small === 0]);
+      steps.push(['fonts: names on screen are set in their own face; faces off screen are not fetched', menu.ownFace >= Math.min(4, menu.shown - 1) && menu.loaded < 43]);
+      await shot('6-font-menu');
+      await js('document.querySelector(\'#ceFontMenu [data-font="space-grotesk"]\').scrollIntoView({ block: "center" }); document.querySelector(\'#ceFontMenu [data-font="space-grotesk"]\').click(); true');
+      steps.push(['fonts: a headline face chosen, saved as a draft for free', await until('/Fonts: headlines in Space Grotesk/.test(document.querySelector("#ceFeedback").textContent) && /No credits were used/.test(document.querySelector("#ceFeedback").textContent)', 30000)]);
+      await until('[...document.querySelectorAll("#ceWhole .ce-fontrow")].some(b => /Space Grotesk/.test(b.textContent))', 20000);
+      const dp = await preview('draft', width); out.widths[width].fontPreview = dp && dp.why ? { family: dp.why.family, lines: dp.lines, inside: dp.inside } : dp;
+      steps.push(['fonts: the draft preview sets its headlines in Space Grotesk, inside the screen', !!dp && /SR Space Grotesk/.test(dp.why.family) && dp.inside]);
+      await js(`document.querySelector('[data-ce="font-preset"][data-preset="${width < 700 ? 'tech' : 'luxury'}"]').click(); true`);
+      steps.push(['fonts: a pairing chosen, saved as a draft for free', await until(`/Fonts \\(${width < 700 ? 'Tech' : 'Luxury'}\\)/.test(document.querySelector("#ceFeedback").textContent)`, 30000)]);
+      await w.loadURL(job.baseUrl); await until('typeof switchView === "function"'); await js('switchView("website"); true'); await until('document.querySelectorAll("#ceWhole .ce-fontrow").length === 3', 40000);
+      const rows = await fontsAt(); out.widths[width].fontRows = rows;
+      steps.push(['fonts: after a reload the pairing is still the page\'s', width < 700 ? /Space Grotesk/.test(rows[0]) && /Inter/.test(rows[1]) && /IBM Plex Mono/.test(rows[2]) : /Bodoni Moda/.test(rows[0]) && /Manrope/.test(rows[1]) && /Manrope/.test(rows[2])]);
+      steps.push(['fonts: the chosen pairing is marked', await js(`!!document.querySelector('.ce-preset.is-on[data-preset="${width < 700 ? 'tech' : 'luxury'}"]')`)]);
+      const dp2 = await preview('draft', width);
+      steps.push(['fonts: the draft still renders the pairing after the reload', !!dp2 && (width < 700 ? /SR Space Grotesk/ : /SR Bodoni Moda/).test(dp2.why.family) && dp2.inside]);
+      await shot('7-fonts-chosen');
       // a free text edit: choose the second scene, open its headline, type, save
       await js('document.querySelectorAll(".ce-scene")[1].click(); true'); await sleep(300);
       await js('[...document.querySelectorAll(".ce-item")].find(b => /Headline/.test(b.textContent)).click(); true'); await sleep(200);

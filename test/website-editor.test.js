@@ -110,3 +110,32 @@ test('Fix text layout: a free change of the selected scene -- the op reaches the
   assert.match(js, /op === 'text-layout'\) return edit\(\{ type: 'text-layout', sceneId: s\.id \}\)/, 'a free edit of the selected scene -- no quote');
   assert.match(js, /r\.body\.unchanged\)[^\n]*Nothing was saved/, '"already fit" says nothing was saved');
 });
+
+test('fonts: the picker gets the builder\'s typefaces through an allowlist (a stack that is CSS, a file that is a path, a pairing with an unknown face -- dropped), a choice reaches the builder as ids only, and a face\'s file comes through this origin by its exact name', async () => {
+  const w = await world();
+  try {
+    const o = await w.app.call('owner', 'GET', P(CREATIVE) + '/creative'); assert.equal(o.status, 200, JSON.stringify(o.body)); const F = o.body.outline.fonts;
+    assert.deepEqual(F.fonts.map(f => f.id), ['inter', 'apple-system', 'path'], 'the CSS stack is dropped');
+    assert.equal(F.fonts.find(f => f.id === 'path').specimen, null, 'a file that is a path is never asked for');
+    assert.deepEqual(F.presets.map(p => p.id), ['minimal'], 'a pairing naming an unknown face is dropped');
+    assert.deepEqual(F.categories[0].fonts, ['apple-system', 'inter', 'path']); assert.deepEqual(F.current, { headline: 'inter', body: '', label: '', preset: 'minimal' });
+    assert.doesNotMatch(o.buf.toString('utf8'), /sha256|"ffff"|url\(|e\.example/);
+    // a choice: only the editor's own fields go to the builder
+    const r = await w.app.call('owner', 'POST', P(CREATIVE) + '/creative/edit', { baseRevision: 4, op: { type: 'fonts', headline: 'syne', body: 'inter', label: 'inter', preset: 'tech', family: '"Comic Sans"', css: 'body{}' } });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.creditsCharged, 0);
+    assert.deepEqual(Object.keys(w.builder.seen.filter(x => /\/creative\/edit$/.test(x.url)).pop().body.op).sort(), ['body', 'headline', 'label', 'preset', 'type']);
+    // the face files: exactly a vendored name, through this origin, signed in
+    const ok = await w.app.call('owner', 'GET', '/api/app/website/fonts/inter-800.woff2'); assert.equal(ok.status, 200); assert.equal(ok.headers.get('content-type'), 'font/woff2'); assert.equal(ok.buf.toString(), 'wOF2fixturebytes');
+    const before = w.builder.seen.length;
+    for (const f of ['..%2Fserver.js', 'inter.css', 'inter-800.woff', 'INTER-800.woff2', 'inter-80.woff2']) assert.equal((await w.app.call('owner', 'GET', '/api/app/website/fonts/' + f)).status, 404, f);
+    assert.equal(w.builder.seen.length, before, 'no odd name reaches the builder');
+    assert.equal((await w.app.call('owner', 'GET', '/api/app/website/fonts/nope-400.woff2')).status, 404);
+    assert.notEqual((await w.app.call('nobody', 'GET', '/api/app/website/fonts/inter-800.woff2')).status, 200, 'signed-in only');
+  } finally { await w.stop(); }
+  // the picker: grouped, each name in its own face, scrolling inside the panel, touch-sized, never wider than the screen
+  const js = fs.readFileSync(path.join(__dirname, '..', 'website-creative-editor.js'), 'utf8'); const css = fs.readFileSync(path.join(__dirname, '..', 'website-creative-editor.css'), 'utf8');
+  assert.match(js, /role="listbox"/); assert.match(js, /role="option" class="ce-fontopt/); assert.match(js, /aria-selected="' \+ sel/); assert.match(js, /class="ce-fontcat" role="group"/);
+  assert.match(js, /IntersectionObserver/, 'a face is fetched only when its name is on screen'); assert.match(js, /\/api\/app\/website\/fonts\//); assert.doesNotMatch(js, /localStorage|fonts\.googleapis|gstatic/);
+  assert.match(js, /edit\(\{ type: 'fonts', preset: /); assert.match(js, /op\[b\.dataset\.role\] = b\.dataset\.font/);
+  assert.match(css, /\.ce-fontmenu\{[^}]*max-height:min\(60vh,420px\)[^}]*overflow-y:auto[^}]*max-width:100%/); assert.match(css, /\.ce-fontopt\{[^}]*min-height:44px/); assert.match(css, /\.ce-preset\{[^}]*min-height:44px/); assert.match(css, /\.ce-fontrow\{[^}]*min-height:52px/);
+});
