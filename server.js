@@ -16,17 +16,9 @@ const router = buildRouter();
 const publicLimits = require('./lib/public-rate-limit');
 const websiteLinks = require('./lib/website-links');
 const generatorBridge = require('./lib/generator-bridge');
-const { syncWorkspaceSubscription, invoiceSubscriptionId, PAID: PAID_STATUSES } = require('./lib/billing-entitlement');
-// BILLING PASS: a workspace's subscription is always written from Stripe's CURRENT state, never from the status a
-// (possibly late or repeated) event or redirect carries -- see lib/billing-entitlement.js
-const syncSubscription = (subscriptionId, workspaceId) => syncWorkspaceSubscription({ db, stripeGet: ep => stripeGet(ep), subscriptionId, workspaceId });
-
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8080);
-const SITEREMADE_MONTHLY_PRICE_CENTS = Math.max(100, Number(process.env.SITEREMADE_MONTHLY_PRICE_CENTS || 3999));
 const ADS_FEATURE_ENABLED = false; // V13: preserve ad data/code, but block new ad actions until integrations are ready.
-// OWNERSHIP + CREDITS: no subscription gate -- every signed-in workspace member uses the app (see lib/context.js)
-const hasSiteRemadeAccess=c=>!!c;
 const STATUSES = ['New','Contacted','Quoted','Won','Lost'];
 const PAY = ['Draft','Pending','Paid','Void'];
 const now = () => new Date().toISOString();
@@ -50,7 +42,7 @@ function queryError(label,error){
 }
 async function q(promise,label=''){const {data,error}=await promise;if(error)throw queryError(label,error);return data;}
 async function qc(promise,label=''){const {data,error,count}=await promise;if(error)throw queryError(label,error);return {data,count};}
-function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',siteRemadeCustomerId:w.siteremade_customer_id||'',siteRemadeSubscriptionId:w.siteremade_subscription_id||'',siteRemadeSubscriptionStatus:w.siteremade_subscription_status||'inactive',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
+function mapWorkspace(w){return {id:w.id,businessName:w.business_name,email:w.email,phone:w.phone,timezone:w.timezone,currency:w.currency,plan:w.plan,publicKey:w.public_key,stripeAccountId:w.stripe_account_id||'',ai:{enabled:w.ai_enabled,services:w.ai_services,serviceArea:w.ai_service_area,tone:w.ai_tone}};}
 function mapLead(l){return {id:l.id,name:l.name,email:l.email,phone:l.phone,service:l.service,source:l.source,status:l.status,value:Number(l.value)||0,message:l.message,notes:Array.isArray(l.notes)?l.notes:[],createdAt:l.created_at,updatedAt:l.updated_at};}
 function mapConversation(c,messages=[]){return {id:c.id,leadId:c.lead_id,name:c.name,mode:c.mode,unread:c.unread,createdAt:c.created_at,updatedAt:c.updated_at,messages:messages.filter(m=>m.conversation_id===c.id).map(m=>({id:m.id,from:m.sender,text:m.text,createdAt:m.created_at}))};}
 // Phase 5: POST /api/public/chat/history has always called mapMessage(),
@@ -146,7 +138,7 @@ async function workspaceSnapshot(c){
     q(db.from('website_updates').select('*').eq('workspace_id',c.wid).order('created_at',{ascending:false}).limit(200),'bootstrap snapshot website_updates'),
     q(db.from('website_projects').select('*').eq('workspace_id',c.wid).order('updated_at',{ascending:false}).limit(200),'bootstrap snapshot website_projects')
   ]);
-  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
+  return {workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.profile.name||c.user.email,email:c.user.email,role:c.profile.role},leads:leads.map(mapLead),conversations:convs.map(x=>mapConversation(x,msgs)),appointments:apps.map(mapAppointment),invoices:invoices.map(mapInvoice),automations:autos.map(mapAutomation),activities:activities.map(mapActivity),adSpend:adSpend.map(mapAdSpend),adFunds:adFunds.map(mapAdFund),prospectViews:prospectViews.map(x=>x.place_id),websiteAnalytics:mapWebsiteAnalytics(websiteAnalytics),websiteUpdates:websiteUpdates.map(mapWebsiteUpdate),websiteProjects:websiteProjects.map(p=>mapProject(p,invoices,websiteUpdates)),integrations:{supabase:true,openai:!!process.env.OPENAI_API_KEY,anthropic:!!(process.env.ANTHROPIC_API_KEY&&process.env.ANTHROPIC_MODEL),resend:!!process.env.RESEND_API_KEY,twilio:!!process.env.TWILIO_ACCOUNT_SID,stripe:!!process.env.STRIPE_SECRET_KEY,googlePlaces:!!process.env.GOOGLE_PLACES_API_KEY,googleAds:!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN,metaAds:!!process.env.META_ACCESS_TOKEN}};
 }
 
 // Live-refresh backend cost: the ETag added for the bootstrap poll (below)
@@ -483,26 +475,15 @@ async function api(req,res,u){
       if(meta.kind==='ad_fund'&&meta.workspaceId&&meta.fundingId){
         await db.from('ad_funds').update({status:'Funded',funded_at:now(),stripe_session_id:obj.id}).eq('id',meta.fundingId).eq('workspace_id',meta.workspaceId);
         await activity(meta.workspaceId,'ads','Ad funds added',`$${(Number(obj.amount_total||0)/100).toFixed(2)} available for advertising`);
-      }else if(meta.kind==='subscription'&&meta.workspaceId){
-        const synced=await syncSubscription(obj.subscription,meta.workspaceId);
-        if(synced&&synced.changed&&PAID_STATUSES.has(synced.status))await activity(meta.workspaceId,'payment','SiteRemade subscription active','Monthly SiteRemade billing started');
       }else if(meta.workspaceId&&meta.invoiceId){
         const inv=(await db.from('invoices').select('*').eq('id',meta.invoiceId).eq('workspace_id',meta.workspaceId).maybeSingle()).data;if(inv){await db.from('invoices').update({status:'Paid',paid_at:now()}).eq('id',inv.id);await activity(meta.workspaceId,'payment','Payment received',`${inv.customer} · $${Number(inv.amount).toFixed(2)}`);}
       }
-    }
-    // subscription lifecycle: re-read the subscription itself, so duplicates and out-of-order delivery are harmless
-    if(['customer.subscription.created','customer.subscription.updated','customer.subscription.deleted','customer.subscription.paused','customer.subscription.resumed'].includes(ev.type)){
-      if(obj.metadata?.workspaceId)await syncSubscription(obj.id,obj.metadata.workspaceId);
-    }
-    if(['invoice.payment_failed','invoice.paid','invoice.payment_succeeded','invoice.payment_action_required'].includes(ev.type)){
-      const subId=invoiceSubscriptionId(obj);if(subId)await syncSubscription(subId,null);
     }
     return json(res,200,{ok:true});
   }
 
   const c=await ctx(req,res,u);if(!c)return json(res,401,{ok:false,message:'Authentication required.'});
   if(m==='GET'&&p==='/api/app/bootstrap'){
-    if(!hasSiteRemadeAccess(c))return json(res,200,{ok:true,locked:true,workspace:mapWorkspace(c.workspace),workspaces:c.workspaces.map(mapWorkspace),user:{id:c.user.id,name:c.user.name,role:c.user.role},billing:{monthlyCents:SITEREMADE_MONTHLY_PRICE_CENTS,status:c.workspace.siteremade_subscription_status||'inactive',customerId:c.workspace.siteremade_customer_id||'',subscriptionId:c.workspace.siteremade_subscription_id||''},integrations:{stripe:!!process.env.STRIPE_SECRET_KEY},leads:[],conversations:[],appointments:[],invoices:[],automations:[],activities:[],adSpend:[],adFunds:[],websiteUpdates:[],websiteProjects:[]});
     // Performance: app.js's liveRefresh() polls this exact endpoint every
     // 5 seconds for as long as the dashboard is open. The first pass at
     // this (ETag over the full response) still had to run workspaceSnapshot
@@ -543,25 +524,6 @@ async function api(req,res,u){
     return res.end(text);
   }
   if(m==='POST'&&p==='/api/app/workspaces/switch'){const b=await body(req),wid=clean(b.workspaceId,80);if(!c.workspaces.some(w=>w.id===wid))return json(res,403,{ok:false,message:'No access.'});return json(res,200,{ok:true},[`sr_workspace=${encodeURIComponent(wid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`]);}
-  // V11: unpaid clients are blocked before ANY business feature route.
-  // Only billing recovery / activation endpoints remain available.
-  if(!hasSiteRemadeAccess(c)){
-    if(m==='GET'&&p==='/api/app/checkout/confirm'){
-      try{
-        const sid=clean(u.searchParams.get('sessionId'),200);if(!sid)return json(res,400,{ok:false,message:'Missing checkout session.'});
-        const session=await stripeGet('checkout/sessions/'+encodeURIComponent(sid));
-        if(session.payment_status!=='paid'&&session.status!=='complete')return json(res,400,{ok:false,message:'Checkout is not complete yet.'});
-        const meta=session.metadata||{};if(meta.workspaceId!==c.wid)return json(res,403,{ok:false,message:'Checkout does not belong to this workspace.'});
-        if(meta.kind==='subscription'){await syncSubscription(session.subscription,c.wid);}
-        return json(res,200,{ok:true,kind:meta.kind||''});
-      }catch(e){return json(res,400,{ok:false,message:e.message});}
-    }
-    if(m==='POST'&&p==='/api/app/billing/subscription/start')return json(res,410,{ok:false,code:'SUBSCRIPTION_RETIRED',message:'SiteRemade no longer sells a subscription. Your websites stay yours; buy credits whenever you want SiteRemade to do more work.'});
-    if(m==='POST'&&p==='/api/app/billing/portal'){
-      try{const customer=await ensureSiteRemadeCustomer(c),base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const portal=await stripeRequest('billing_portal/sessions',{customer,return_url:base+'/?billing=return'});return json(res,200,{ok:true,url:portal.url});}catch(e){return json(res,400,{ok:false,message:e.message});}
-    }
-    return json(res,402,{ok:false,code:'SUBSCRIPTION_REQUIRED',message:'An active SiteRemade subscription is required to use this feature.'});
-  }
   if(m==='POST'&&p==='/api/app/workspaces'){
     if(!c.owner)return json(res,403,{ok:false,message:'Owner only.'});const b=await body(req);const w=await q(db.from('workspaces').insert({business_name:clean(b.businessName,160)||'New Business',email:clean(b.email,254),phone:'',timezone:'America/Edmonton',currency:'CAD',plan:'Growth',ai_enabled:true,ai_services:'',ai_service_area:'',ai_tone:'Helpful, concise, professional'}).select('*').single());
     await db.from('workspace_members').insert({workspace_id:w.id,user_id:c.user.id,role:'owner'});
@@ -735,18 +697,8 @@ return json(res,201,{ok:true,lead:mapLead(l)});
       if(session.payment_status!=='paid'&&session.status!=='complete')return json(res,400,{ok:false,message:'Checkout is not complete yet.'});
       const meta=session.metadata||{};if(meta.workspaceId!==c.wid)return json(res,403,{ok:false,message:'Checkout does not belong to this workspace.'});
       if(meta.kind==='ad_fund'&&meta.fundingId){await db.from('ad_funds').update({status:'Funded',funded_at:now(),stripe_session_id:session.id}).eq('id',meta.fundingId).eq('workspace_id',c.wid);}
-      if(meta.kind==='subscription'){await db.from('workspaces').update({siteremade_customer_id:session.customer||null,siteremade_subscription_id:session.subscription||null,siteremade_subscription_status:'active'}).eq('id',c.wid);}
       return json(res,200,{ok:true,kind:meta.kind||''});
     }catch(e){return json(res,400,{ok:false,message:e.message});}
-  }
-  // OWNERSHIP + CREDITS: the Workspace subscription is retired -- no new subscription can be started. A website is bought
-  // once and owned; AI work is paid with credits (bought in the builder or from the app's Credits view).
-  if(m==='POST'&&p==='/api/app/billing/subscription/start')return json(res,410,{ok:false,code:'SUBSCRIPTION_RETIRED',message:'SiteRemade no longer sells a subscription. Your websites stay yours; buy credits whenever you want SiteRemade to do more work.'});
-  // (kept only so an existing, legacy Workspace subscriber can manage or cancel what Stripe is still billing -- it never
-  // creates a Stripe customer for anyone else)
-  if(m==='POST'&&p==='/api/app/billing/portal'){
-    if(!c.workspace?.siteremade_customer_id||!c.workspace?.siteremade_subscription_id)return json(res,404,{ok:false,code:'NO_LEGACY_SUBSCRIPTION',message:'There is no Workspace subscription to manage.'});
-    try{const base=process.env.PUBLIC_BASE_URL||'http://localhost:'+PORT;const portal=await stripeRequest('billing_portal/sessions',{customer:c.workspace.siteremade_customer_id,return_url:base+'/?billing=return'});return json(res,200,{ok:true,url:portal.url});}catch(e){return json(res,400,{ok:false,message:e.message});}
   }
   if(m==='POST'&&p==='/api/app/ad-funds'){
     if(!ADS_FEATURE_ENABLED)return json(res,503,{ok:false,message:'Google + Meta advertising is coming soon.'});
