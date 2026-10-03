@@ -38,16 +38,12 @@ test('the bridge asks the builder for a quote, sends the approved quote with the
   } finally { await new Promise(r => builder.close(r)); }
 });
 
-test('no subscription gate: every signed-in member uses the app; starting a Workspace subscription is retired; only a legacy subscriber sees the portal', () => {
+test('no subscription system remains: every signed-in workspace member uses the app and there are no membership checkout or portal routes', () => {
   const ctx = read('lib/context.js'); const server = read('server.js');
   assert.match(ctx, /function hasSiteRemadeAccess\(c\) \{\r?\n  return !!c;\r?\n\}/);
   assert.doesNotMatch(ctx, /siteremade_subscription_status/, 'access never reads a subscription status');
-  assert.match(server, /const hasSiteRemadeAccess=c=>!!c;/);
-  assert.match(server, /p==='\/api\/app\/billing\/subscription\/start'\)return json\(res,410,\{ok:false,code:'SUBSCRIPTION_RETIRED'/);
-  assert.doesNotMatch(server, /mode:'subscription'/, 'no code path creates a subscription checkout any more');
-  assert.match(server, /NO_LEGACY_SUBSCRIPTION/);
-  for (const f of ['index.html', 'app.js']) assert.doesNotMatch(read(f), /Subscribe to Workspace|Start Workspace|subscription is required/i, f);
-  // the purchased website's download and preview were never subscription-gated, and stay that way
+  assert.doesNotMatch(server, /billing\/subscription|billing\/portal|SUBSCRIPTION_REQUIRED|SUBSCRIPTION_RETIRED|siteremade_subscription/i);
+  for (const f of ['index.html', 'app.js']) assert.doesNotMatch(read(f), /subscription|Subscribe to Workspace|Start Workspace/i, f);
   assert.match(read('lib/website-download.js'), /Ownership, not subscription/);
 });
 
