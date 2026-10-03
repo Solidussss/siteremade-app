@@ -1,0 +1,40 @@
+/* THE CREATIVE WEBSITE EDITOR (website-creative-editor.js): a compact panel beside the preview -- scene chips, the chosen
+   scene's contextual controls, costs only beside paid actions. Touch-sized controls; nothing wider than its column. */
+.creative-editor{display:flex;flex-direction:column;gap:14px;min-width:0}
+.creative-editor[hidden]{display:none}
+.ce-scenes{list-style:none;margin:0;padding:0 0 4px;display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;max-width:100%}
+.ce-scene{display:flex;align-items:center;gap:8px;min-height:44px;max-width:220px;padding:8px 12px;border-radius:12px;border:1px solid var(--line,rgba(0,0,0,.14));background:var(--surface,#fff);color:inherit;font:inherit;cursor:pointer;text-align:left}
+.ce-scene.is-on{border-color:var(--accent,#2f6bff);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#2f6bff) 25%,transparent)}
+.ce-num{display:inline-grid;place-items:center;flex:0 0 auto;width:24px;height:24px;border-radius:50%;background:var(--accent,#2f6bff);color:#fff;font-size:12px;font-weight:700}
+.ce-sname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.ce-panel,.ce-whole{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ce-group{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ce-group h3{margin:4px 0 0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+.ce-item{display:flex;flex-direction:column;gap:6px;min-height:44px;width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line,rgba(0,0,0,.14));background:var(--surface,#fff);color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.ce-item.is-open{cursor:default;border-color:var(--accent,#2f6bff)}
+.ce-label{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.ce-value{font-size:13px;opacity:.75;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ce-item textarea,.ce-input,.ce-select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid var(--line,rgba(0,0,0,.2));font:inherit;background:var(--surface,#fff);color:inherit}
+.ce-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.ce-row>.ce-select,.ce-row>.ce-input{flex:1 1 180px}
+.ce-btn{min-height:44px;padding:10px 14px;border-radius:10px;border:1px solid var(--line,rgba(0,0,0,.2));background:var(--surface,#fff);color:inherit;font:inherit;font-weight:600;cursor:pointer;max-width:100%;white-space:normal;text-align:center}
+.ce-btn:disabled{opacity:.5;cursor:not-allowed}
+.ce-primary{background:var(--accent,#2f6bff);border-color:var(--accent,#2f6bff);color:#fff}
+.ce-quiet{background:transparent}
+.ce-file{position:relative;overflow:hidden;display:inline-flex;align-items:center}
+.ce-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.ce-field{display:flex;flex-direction:column;gap:4px;font-size:12px;flex:1 1 140px;min-width:0}
+.ce-field input[type=range]{width:100%;min-height:32px}
+.ce-swatches{gap:10px}
+.ce-swatch{width:44px;height:44px;border-radius:50%;border:2px solid var(--line,rgba(0,0,0,.2));background:var(--sw);cursor:pointer}
+.ce-swatch.is-on{outline:3px solid var(--accent,#2f6bff);outline-offset:2px}
+.ce-note{margin:0;font-size:12px;opacity:.7}
+.ce-confirm{padding:12px;border-radius:12px;border:1px solid var(--accent,#2f6bff);background:color-mix(in srgb,var(--accent,#2f6bff) 8%,transparent)}
+.ce-confirm p{margin:0 0 8px}
+.ce-jobs p{margin:0;display:flex;gap:8px;align-items:center;font-size:13px}
+.ce-dot{width:8px;height:8px;border-radius:50%;background:var(--accent,#2f6bff);animation:ce-pulse 1.2s ease-in-out infinite}
+@keyframes ce-pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.ce-dot{animation:none}}
+.ce-feedback{margin:0;font-size:13px;min-height:1em}
+.ce-feedback.is-error{color:var(--danger,#b42318)}.ce-feedback.is-success{color:var(--success,#067647)}
+@media (max-width:640px){.ce-scene{max-width:70vw}.ce-row>.ce-btn{flex:1 1 100%}}

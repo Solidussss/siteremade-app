@@ -35,7 +35,7 @@ function startFixtureBuilder(accounts) {
     const summary = p => ({ ok: true, hasCanonicalProject: true, projectId: p.projectId, name: p.name, status: p.status, revision: p.revision, purchaseRef: p.purchaseRef || null,
       createdAt: p.createdAt, updatedAt: p.updatedAt, deploymentStatus: 'not_deployed', businessName: p.name, domains: [], lastPublishedAt: null,
       publishedRevision: p.publishedRevision != null ? p.publishedRevision : null, purchasedRevision: p.purchasedRevision != null ? p.purchasedRevision : null,
-      hasUnpublishedChanges: p.status === 'purchased' && p.revision > delivered(p), canEdit: true, canPublish: p.status === 'purchased', previewUrl: null, liveUrl: null });
+      hasUnpublishedChanges: p.status === 'purchased' && p.revision > delivered(p), canEdit: true, canPublish: p.status === 'purchased', kind: p.mode === 'creative' ? 'creative' : 'business', previewUrl: null, liveUrl: null });
     const u = new URL(req.url, 'http://builder.test'); const parts = u.pathname.split('/').filter(Boolean); // api, app-bridge, ...
     if (u.pathname === '/api/app-bridge/website') {
       const p = purchased()[0] || projects.filter(x => x.status === 'draft' || x.status === 'checkout_pending').sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
@@ -56,6 +56,21 @@ function startFixtureBuilder(accounts) {
         if (u.searchParams.get('source') === 'draft') return send(200, `<html data-project="${p.projectId}" data-source="draft" data-revision="${p.revision}"></html>`, 'text/html');
         if (p.status !== 'purchased') return send(404, { ok: false, error: { code: 'not_found', message: 'Purchased website not found.' } });
         return send(200, `<html data-project="${p.projectId}" data-source="published" data-revision="${delivered(p)}"></html>`, 'text/html');
+      }
+      // THE CREATIVE WEBSITE EDITOR: a stand-in outline (with things the app must NOT pass on -- private fields, bytes,
+      // references) and echoed changes, so the app's allowlists and gates are tested; the real builder: website-editor-e2e
+      if (parts[4] === 'creative') {
+        if ((p.mode || 'business') !== 'creative') return send(409, { ok: false, error: { code: 'not_creative', message: 'This website is not a Creative page.' } });
+        if (req.method === 'GET' && !parts[5]) return send(200, { ok: true, projectId: p.projectId, revision: p.revision, kind: 'creative', creditsRemaining: 40, internal: 'sk_live_NOTAKEY',
+          jobs: [{ jobId: 'pj_fixture00001', kind: 'model3d', status: 'running', terminal: false, completed: 0, message: 'Creating 3D model…', providerJobId: 'tripo-task-SECRET' }],
+          outline: { name: p.name, secretNote: 'sk_live_NOTAKEY', look: { family: 'campaign', devices: ['colour-field', 'bleed-crop'] }, palette: [{ role: 'primary', label: 'Brand colour', hex: '#e30613' }],
+            scenes: [{ id: 'opening', index: 0, name: 'Opening', composition: 'object-stage', background: '#ffffff', text: { kicker: '', heading: 'Kolaro', body: '', items: [] }, actions: ['text', 'colour'], compositions: [],
+              pictures: [{ layerId: 'l1', assetId: 'u1', role: 'focal', dataUrl: 'data:image/png;base64,AAAA', source: { kind: 'upload', rootId: 'u1', title: 'Can', assetRef: 'f'.repeat(64) }, actions: ['replace', 'motion'] }], models: [] }],
+            pictures: [], models: [], media: [], threeDCompositions: ['scroll-rotate'], actions: ['reapply-look'] } });
+        let raw = ''; req.on('data', c => { raw += c; }); req.on('end', () => { let body = {}; try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; } seen[seen.length - 1].body = body;
+          if (parts[5] === 'quote') return send(200, { ok: true, quote: { id: 'q_fixture000001', credits: 12, minCredits: 0, message: 'This premium media will use up to 12 credits.', items: [{ label: 'Cinematic clip', credits: 12, optional: true, source: { ref: 'f'.repeat(64) } }] }, creditsRemaining: 40, enough: true, ceilingUsd: 9 });
+          return send(200, { ok: true, revision: p.revision + 1, changeSummary: ['Changed it'], creditsCharged: 0, creditsRemaining: 40, internal: 'x' }); });
+        return undefined;
       }
       if (parts[4] === 'download') {
         if (p.status !== 'purchased') return send(403, { ok: false, error: { code: 'not_purchased', message: 'Not purchased.' } });

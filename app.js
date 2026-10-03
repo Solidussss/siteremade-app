@@ -1414,6 +1414,8 @@ function renderWebsite(){
   if(!websiteView.device)setWebsiteDevice(window.matchMedia('(max-width:640px)').matches?'mobile':'desktop');
   setWebsiteFrame(s.url);
   renderWebsiteBuilderBlock();renderWebsiteDelivery(s);renderWebsiteRequests();renderWebsiteEditor();
+  // a Creative website gets its own editor (website-creative-editor.js); a Business one keeps the update box above
+  if(window.CreativeEditor)safeRender('creative-editor',()=>window.CreativeEditor.render(c));
   if(savedWebsites.status==='idle'&&state.user)loadSavedWebsites();
   renderSavedWebsites();
 }

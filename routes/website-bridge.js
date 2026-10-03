@@ -174,6 +174,9 @@ function summaryFrom(d) {
     lastPublishedAt: d.lastPublishedAt || null, publishedRevision: Number.isInteger(d.publishedRevision) ? d.publishedRevision : null,
     purchasedRevision: Number.isInteger(d.purchasedRevision) ? d.purchasedRevision : null,
     hasUnpublishedChanges: !!d.hasUnpublishedChanges, canEdit: !!d.canEdit, canPublish: !!d.canPublish,
+    // the website's kind, from the builder's own project (never inferred here): the Website view shows the Creative editor
+    // for 'creative' and the Business update flow for 'business'
+    kind: d.kind === 'creative' ? 'creative' : 'business',
     previewUrl: null, liveUrl: null,
   };
 }
@@ -278,6 +281,60 @@ function creditsFrom(x) {
     subscription: x.subscription ? { status: s(x.subscription.status), credits: n(x.subscription.credits), remaining: n(x.subscription.remaining), renewsAt: s(x.subscription.renewsAt), endsAt: s(x.subscription.endsAt), paymentProblem: !!x.subscription.paymentProblem } : null,
     tester: x.tester ? { credits: n(x.tester.credits), remaining: n(x.tester.remaining), resetsAt: s(x.tester.resetsAt) } : null,
     costs: { businessGeneration: n(costs.businessGeneration), creativePage: n(costs.creativePage), creativeSpatialSurcharge: n(costs.creativeSpatialSurcharge), aiUpdate: n(costs.aiUpdate), imageSupport: n(costs.imageSupport), imagePremium: n(costs.imagePremium), manualEdit: n(costs.manualEdit) },
+  };
+}
+
+// ---- THE CREATIVE WEBSITE EDITOR: what the app passes on (explicit allowlists, like summaryFrom) ----------------------
+// an owner picture as a PNG data URL: up to 8 MB of picture (the builder refuses anything bigger), base64 and JSON around it
+const CREATIVE_UPLOAD_MAX_CHARS = 12 * 1024 * 1024;
+const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId'];
+function creativeOpFrom(op) {
+  const out = {}; CREATIVE_OP_KEYS.forEach(k => { const v = op[k]; if (typeof v === 'string') out[k] = v.slice(0, k === 'value' ? 600 : 60); else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v; });
+  return out;
+}
+function creativeChangeFrom(projectId, d) {
+  return { ok: true, projectId, revision: Number.isInteger(d.revision) ? d.revision : null, changeSummary: Array.isArray(d.changeSummary) ? d.changeSummary.filter(x => typeof x === 'string').slice(0, 10) : [],
+    creditsCharged: Number.isFinite(d.creditsCharged) ? d.creditsCharged : 0, creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null, replayed: !!d.replayed };
+}
+function creativeJobFrom(j) {
+  const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  return { jobId: s(j.jobId, 60), kind: j.kind === 'model3d' ? 'model3d' : 'motion', status: s(j.status, 20), terminal: !!j.terminal, completed: Number(j.completed) || 0, message: s(j.message, 200), createdAt: s(j.createdAt, 40), completedAt: s(j.completedAt, 40) || null };
+}
+function creativeQuoteFrom(d) {
+  const n = v => (Number.isFinite(v) ? v : null); const s = (v, k) => (typeof v === 'string' ? v.slice(0, k || 200) : '');
+  if (d.ok === false) return { ok: false, code: s(d.reason, 40) || 'unavailable', message: s(d.message, 300), job: d.job ? creativeJobFrom(d.job) : undefined };
+  if (d.reuse) return { ok: true, reuse: true, credits: 0, message: s(d.message, 300), modelId: s(d.modelId, 60) || undefined, mediaId: s(d.mediaId, 60) || undefined };
+  return { ok: true, quote: d.quote ? quoteFrom(d.quote) : null, creditsRemaining: n(d.creditsRemaining), enough: d.enough !== false, needsRender: !!d.needsRender };
+}
+function creativeStartFrom(projectId, d) {
+  const s = (v, k) => (typeof v === 'string' ? v.slice(0, k || 300) : '');
+  if (d.ok === false) return { ok: false, code: s(d.reason, 40) || 'failed', message: s(d.message), creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null };
+  if (d.job) return { ok: true, projectId, job: creativeJobFrom(d.job), reused: !!d.reused, creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null };
+  return creativeChangeFrom(projectId, d);
+}
+function creativeOutlineFrom(d) {
+  const s = (v, k) => (typeof v === 'string' ? v.slice(0, k || 200) : ''); const n = v => (Number.isFinite(v) ? v : null);
+  const acts = a => (Array.isArray(a) ? a.filter(x => typeof x === 'string').slice(0, 12).map(x => x.slice(0, 30)) : []);
+  const src = x => (x && typeof x === 'object' ? { kind: s(x.kind, 20), rootId: s(x.rootId, 60), title: s(x.title, 120), cutout: !!x.cutout, author: s(x.author, 120), license: s(x.license, 60), pageUrl: /^https:\/\//.test(x.pageUrl || '') ? s(x.pageUrl, 400) : '' } : null);
+  const o = d.outline || {};
+  return {
+    ok: true, kind: 'creative', projectId: s(d.projectId, 60), revision: Number.isInteger(d.revision) ? d.revision : null, creditsRemaining: n(d.creditsRemaining),
+    jobs: (d.jobs || []).slice(0, 10).map(creativeJobFrom),
+    outline: {
+      name: s(o.name, 120), look: o.look ? { family: s(o.look.family, 30), devices: acts(o.look.devices) } : null,
+      palette: (o.palette || []).slice(0, 6).map(p => ({ role: s(p.role, 20), label: s(p.label, 40), hex: /^#[0-9a-f]{6}$/i.test(p.hex || '') ? p.hex : '' })),
+      scenes: (o.scenes || []).slice(0, 12).map(sc => ({
+        id: s(sc.id, 60), index: n(sc.index), name: s(sc.name, 80), composition: s(sc.composition, 40), background: /^#[0-9a-f]{6}$/i.test(sc.background || '') ? sc.background : '',
+        text: { kicker: s(sc.text && sc.text.kicker, 70), heading: s(sc.text && sc.text.heading, 110), body: s(sc.text && sc.text.body, 520), items: (sc.text && Array.isArray(sc.text.items) ? sc.text.items : []).slice(0, 6).map(t => s(t, 260)) },
+        pictures: (sc.pictures || []).slice(0, 6).map(p => ({ layerId: s(p.layerId, 60), assetId: s(p.assetId, 60), role: s(p.role, 20), callback: !!p.callback, source: src(p.source), clip: p.clip ? { mediaId: s(p.clip.mediaId, 60) } : null, model: p.model ? { id: s(p.model.id, 60) } : null, actions: acts(p.actions) })),
+        models: (sc.models || []).slice(0, 2).map(m => ({ id: s(m.id, 60), modelId: s(m.modelId, 60), composition: s(m.composition, 40), distance: n(m.distance), azimuth: n(m.azimuth), actions: acts(m.actions) })),
+        compositions: (sc.compositions || []).slice(0, 16).map(k => ({ id: s(k.id, 40), label: s(k.label, 120) })), actions: acts(sc.actions),
+      })),
+      pictures: (o.pictures || []).slice(0, 40).map(p => ({ assetId: s(p.assetId, 60), source: src(p.source), onPage: !!p.onPage, width: n(p.width), height: n(p.height) })),
+      models: (o.models || []).slice(0, 4).map(m => ({ id: s(m.id, 60), sourceAssetId: s(m.sourceAssetId, 60), placedIn: acts(m.placedIn) })),
+      media: (o.media || []).slice(0, 12).map(m => ({ assetId: s(m.assetId, 60), mediaId: s(m.mediaId, 60) })),
+      threeDCompositions: acts(o.threeDCompositions), actions: acts(o.actions),
+    },
   };
 }
 
@@ -560,6 +617,87 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     const r = await bridge.postEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, request, requestId: requestIdFrom(body), quoteId: typeof body.quoteId === 'string' ? body.quoteId : '' });
     if (r.status === 200 && r.data && r.data.ok) return json(res, 200, editResult(got.summary.projectId, r.data));
     return passThroughError(json, res, r);
+  });
+
+  // ---------------------------------------------------------------------
+  // THE CREATIVE WEBSITE EDITOR: a Creative website is edited as the Creative project it is -- through the builder, which
+  // stays authoritative for the page, its validation, revisions, prices, provider jobs and publishing. The app is only the
+  // control surface: these routes check the person and the workspace's link to the website (memberGate +
+  // forWorkspaceProject, exactly as every project route above), forward the request with the person's own token, and
+  // pass back an allowlisted answer. Every change is a DRAFT; publishing is POST .../publish above.
+  //   GET  .../creative           the editable outline and the page's 3D / clip jobs
+  //   POST .../creative/edit      a free change (text, picture, composition, colour, layout rules, 3D placement, clip)
+  //   POST .../creative/upload    an owner picture -- a PNG the browser made; the builder measures it
+  //   POST .../creative/quote     the builder's price for a paid action (never a price of this app's own)
+  //   POST .../creative/start     the confirmed quote: the builder reserves and runs it, exactly once
+  //   GET  .../creative/jobs      the page's 3D and clip jobs (finished ones are attached by the builder)
+  //   GET  .../creative/still     the page that draws the 3D model's still for "cinematic video from 3D"
+  // ---------------------------------------------------------------------
+  const creativeGate = async (c, json, res, params, write) => {
+    if (write && !requireSiteRemadeAccess(c, json, res)) return null;
+    const gate = await memberGate(c);
+    if (!gate.ok) { json(res, gate.status, { ok: false, code: gate.code, message: gate.message }); return null; }
+    const got = await forWorkspaceProject(c, params.projectId);
+    if (!got.ok) { if (got.r) passThroughError(json, res, got.r); else json(res, got.status, { ok: false, code: got.code, message: got.message }); return null; }
+    return got;
+  };
+  const creativeBody = async (req, json, res, limit) => {
+    try { return await readJsonBody(req, limit || 20000); } catch (e) { json(res, 400, { ok: false, code: 'invalid_request', message: 'That request couldn’t be read.' }); return null; }
+  };
+  router.get('/api/app/website/projects/:projectId/creative', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, false); if (!got) return;
+    const r = await bridge.getCreative(c.access, got.summary.projectId);
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, creativeOutlineFrom(r.data));
+    return passThroughError(json, res, r);
+  });
+  router.post('/api/app/website/projects/:projectId/creative/edit', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res); if (!body) return;
+    if (!Number.isInteger(body.baseRevision) || !body.op || typeof body.op !== 'object') return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before changing it.' });
+    const r = await bridge.postCreativeEdit(c.access, got.summary.projectId, { baseRevision: body.baseRevision, op: creativeOpFrom(body.op) });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, creativeChangeFrom(got.summary.projectId, r.data));
+    return passThroughError(json, res, r);
+  });
+  router.post('/api/app/website/projects/:projectId/creative/upload', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res, CREATIVE_UPLOAD_MAX_CHARS); if (!body) return;
+    if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before changing it.' });
+    if (typeof body.png !== 'string' || !body.png.startsWith('data:image/png;base64,')) return json(res, 400, { ok: false, code: 'invalid_file', message: 'Choose a picture to upload.' });
+    const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+    const r = await bridge.postCreativeUpload(c.access, got.summary.projectId, { baseRevision: body.baseRevision, png: body.png, title: s(body.title, 120), alt: s(body.alt, 200), sceneId: s(body.sceneId, 60), layerId: s(body.layerId, 60) });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, Object.assign(creativeChangeFrom(got.summary.projectId, r.data), { assetId: s(r.data.assetId, 60) || null }));
+    return passThroughError(json, res, r);
+  });
+  router.post('/api/app/website/projects/:projectId/creative/quote', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res); if (!body) return;
+    const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+    const r = await bridge.postCreativeQuote(c.access, got.summary.projectId, { action: s(body.action, 30), sceneId: s(body.sceneId, 60), sceneIds: Array.isArray(body.sceneIds) ? body.sceneIds.slice(0, 4).map(x => s(x, 60)) : undefined, layerId: s(body.layerId, 60), assetId: s(body.assetId, 60), field: s(body.field, 20), request: s(body.request, MAX_REQUEST_CHARS), fresh: body.fresh === true });
+    if (r.status === 200 && r.data) return json(res, 200, creativeQuoteFrom(r.data));
+    return passThroughError(json, res, r);
+  });
+  router.post('/api/app/website/projects/:projectId/creative/start', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res, CREATIVE_UPLOAD_MAX_CHARS); if (!body) return;
+    if (typeof body.quoteId !== 'string' || !body.quoteId) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Ask for the cost first.' });
+    const r = await bridge.postCreativeStart(c.access, got.summary.projectId, Object.assign({ quoteId: body.quoteId.slice(0, 60) }, Number.isInteger(body.baseRevision) ? { baseRevision: body.baseRevision } : {}, typeof body.render === 'string' && body.render.startsWith('data:image/png;base64,') ? { render: body.render } : {}));
+    if (r.status === 200 && r.data) return json(res, 200, creativeStartFrom(got.summary.projectId, r.data));
+    return passThroughError(json, res, r);
+  });
+  router.get('/api/app/website/projects/:projectId/creative/jobs', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, false); if (!got) return;
+    const r = await bridge.getCreativeJobs(c.access, got.summary.projectId);
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, { ok: true, revision: Number.isInteger(r.data.revision) ? r.data.revision : null, jobs: (r.data.jobs || []).slice(0, 10).map(creativeJobFrom), creditsRemaining: Number.isFinite(r.data.creditsRemaining) ? r.data.creditsRemaining : null });
+    return passThroughError(json, res, r);
+  });
+  router.get('/api/app/website/projects/:projectId/creative/still', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const r = await bridge.getCreativeStill(c.access, got.summary.projectId);
+    if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status === 404 ? 404 : 502, { ok: false, code: 'still_unavailable', message: 'The 3D model’s still could not be prepared.' });
+    // (the still page runs the inlined 3D engine on the inlined model and posts the PNG to the page that opened it: the
+    // same policy as a preview -- its own scripts and data: URLs, no network at all)
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
+    return res.end(r.text);
   });
 
   router.post('/api/app/website/projects/:projectId/publish', { auth: 'user' }, async (req, res, { c, json, params }) => {
