@@ -89,3 +89,24 @@ test('the Website view: one Creative editor section next to the Business update 
   const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(app, /window\.CreativeEditor\.render\(c\)/, 'the Website view hands the website to the Creative editor');
 });
+
+test('Fix text layout: a free change of the selected scene -- the op reaches the builder with only the editor fields (no CSS), what was re-set comes back bounded, "already fit" saves nothing, and the button sits with the Words', async () => {
+  const w = await world();
+  try {
+    const r = await w.app.call('owner', 'POST', P(CREATIVE) + '/creative/edit', { baseRevision: 4, op: { type: 'text-layout', sceneId: 'scene-2', css: 'h1{font-size:9px}', value: 'new words' } });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.deepEqual([r.body.revision, r.body.creditsCharged, r.body.unchanged], [5, 0, false]);
+    assert.deepEqual(Object.keys(w.builder.seen.filter(x => /\/creative\/edit$/.test(x.url)).pop().body.op).sort(), ['sceneId', 'type', 'value'], 'no CSS slips through');
+    assert.equal(r.body.fitted.length, 2); assert.equal(r.body.fitted[1].length, 200, 'bounded'); assert.equal(r.body.internal, undefined);
+    const same = await w.app.call('owner', 'POST', P(CREATIVE) + '/creative/edit', { baseRevision: 4, op: { type: 'text-layout', sceneId: 'opening' } });
+    assert.deepEqual([same.body.unchanged, same.body.revision, same.body.creditsCharged], [true, 4, 0]);
+    // another business: nothing reaches the builder
+    const before = w.builder.seen.length;
+    assert.equal((await w.app.call('other', 'POST', P(CREATIVE) + '/creative/edit', { baseRevision: 4, op: { type: 'text-layout', sceneId: 'opening' } })).status, 404);
+    assert.equal(w.builder.seen.length, before);
+  } finally { await w.stop(); }
+  const js = fs.readFileSync(path.join(__dirname, '..', 'website-creative-editor.js'), 'utf8');
+  assert.match(js, /data-op="text-layout">Fix text layout — free<\/button>/, 'the button, with its cost (free) beside it');
+  assert.match(js, /indexOf\('text-layout'\) >= 0/, 'only where the builder offers it (a scene with words)');
+  assert.match(js, /op === 'text-layout'\) return edit\(\{ type: 'text-layout', sceneId: s\.id \}\)/, 'a free edit of the selected scene -- no quote');
+  assert.match(js, /r\.body\.unchanged\)[^\n]*Nothing was saved/, '"already fit" says nothing was saved');
+});

@@ -44,6 +44,16 @@ app.whenReady().then(async () => {
       await shot('3-quote');
       await js('document.querySelector(\'[data-ce="confirm"]\').click(); true');
       steps.push(['AI rewrite charged its quote and saved a draft', await until('/This used 1 credit/.test(document.querySelector("#ceFeedback").textContent)', 60000)]);
+      // Fix text layout on the scene a save before the fix left with the old layout (fixed at the first width; already fitted at the next)
+      await js(`document.querySelector('.ce-scene[data-scene="${job.staleScene}"]').click(); true`); await sleep(300);
+      steps.push(['"Fix text layout — free" shown with the words', await js('!![...document.querySelectorAll(\'[data-op="text-layout"]\')].find(b => /Fix text layout — free/.test(b.textContent) && b.closest(".ce-group") && /Words/.test(b.closest(".ce-group").textContent))')]);
+      await js('document.querySelector(\'[data-op="text-layout"]\').click(); true');
+      const fixedOk = await until('/Fixed the text layout|already fit/.test(document.querySelector("#ceFeedback").textContent)', 30000);
+      const fb = await js('document.querySelector("#ceFeedback").textContent');
+      steps.push([`text layout ${/Fixed/.test(fb) ? 'fixed as a draft' : 'already fitted (nothing saved)'}, free`, fixedOk && /No credits were used/.test(fb) && (/Fixed/.test(fb) ? /Saved as a draft/.test(fb) : /Nothing was saved/.test(fb))]);
+      out.widths[width].textLayoutFeedback = fb.slice(0, 300);
+      if (/Fixed/.test(fb)) steps.push(['the preview shows the draft', await until(`/source=draft/.test(document.querySelector("#websiteFrame").getAttribute("src") || "")`, 20000)]);
+      await sleep(400); await shot('5-text-layout');
       // the picture and 3D controls of a scene that has them
       const picIdx = await js('[...document.querySelectorAll(".ce-scene")].findIndex((b, i) => true)'); void picIdx;
       for (let i = 0; i < await js('document.querySelectorAll(".ce-scene").length'); i++) {

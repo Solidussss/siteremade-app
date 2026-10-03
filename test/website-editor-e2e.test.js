@@ -76,6 +76,12 @@ test('the Website editor, real builder: a Business website keeps its update flow
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.creditsCharged, 0); assert.equal(await creditsAt(), c0); assert.deepEqual(paid(), before);
     const stored = async () => (await call('GET', `/api/projects/${creativeId}`)).body.project.directionsState.directions[0].creative;
     assert.equal((await stored()).plan.scenes.find(s => s.id === scene.id).text.heading, 'Small batches, big taste', 'the Creative structure itself');
+    // ---- Fix text layout: offered with the words, free, no provider; the edit already re-fitted the scene, so nothing to save
+    o = await app.call('owner', 'GET', P(creativeId) + '/creative'); assert.ok(o.body.outline.scenes[1].actions.includes('text-layout'));
+    const plan0 = JSON.stringify((await stored()).plan);
+    r = await app.call('owner', 'POST', P(creativeId) + '/creative/edit', { baseRevision: o.body.revision, op: { type: 'text-layout', sceneId: scene.id } });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.deepEqual([r.body.creditsCharged, r.body.unchanged, r.body.revision], [0, true, o.body.revision]);
+    assert.equal(JSON.stringify((await stored()).plan), plan0, 'the words and the page exactly as they were'); assert.equal(await creditsAt(), c0); assert.deepEqual(paid(), before);
     // ---- 9 / 18. reload: the draft is there; the published website is not changed until Publish
     o = await app.call('owner', 'GET', P(creativeId) + '/creative'); assert.equal(o.body.outline.scenes[1].text.heading, 'Small batches, big taste');
     assert.match((await app.call('owner', 'GET', P(creativeId) + '/preview?source=draft')).buf.toString('utf8'), /Small batches, big taste/);

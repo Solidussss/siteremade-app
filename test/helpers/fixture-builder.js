@@ -69,6 +69,9 @@ function startFixtureBuilder(accounts) {
             pictures: [], models: [], media: [], threeDCompositions: ['scroll-rotate'], actions: ['reapply-look'] } });
         let raw = ''; req.on('data', c => { raw += c; }); req.on('end', () => { let body = {}; try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; } seen[seen.length - 1].body = body;
           if (parts[5] === 'quote') return send(200, { ok: true, quote: { id: 'q_fixture000001', credits: 12, minCredits: 0, message: 'This premium media will use up to 12 credits.', items: [{ label: 'Cinematic clip', credits: 12, optional: true, source: { ref: 'f'.repeat(64) } }] }, creditsRemaining: 40, enough: true, ceilingUsd: 9 });
+          // (Fix text layout: a scene whose words already fit comes back unchanged; one that did not, with what was re-set)
+          if (body.op && body.op.type === 'text-layout') return send(200, body.op.sceneId === 'opening' ? { ok: true, unchanged: true, revision: p.revision, changeSummary: ['The words of “Kolaro” already fit their scene'], fitted: [], creditsCharged: 0, creditsRemaining: 40 }
+            : { ok: true, revision: p.revision + 1, changeSummary: ['Fixed the text layout of “Scene 2” (the words are unchanged)'], fitted: ['the heading is too long to be set as giant type here', 'x'.repeat(500), 7], creditsCharged: 0, creditsRemaining: 40, internal: 'x' });
           return send(200, { ok: true, revision: p.revision + 1, changeSummary: ['Changed it'], creditsCharged: 0, creditsRemaining: 40, internal: 'x' }); });
         return undefined;
       }

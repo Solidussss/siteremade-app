@@ -294,7 +294,9 @@ function creativeOpFrom(op) {
 }
 function creativeChangeFrom(projectId, d) {
   return { ok: true, projectId, revision: Number.isInteger(d.revision) ? d.revision : null, changeSummary: Array.isArray(d.changeSummary) ? d.changeSummary.filter(x => typeof x === 'string').slice(0, 10) : [],
-    creditsCharged: Number.isFinite(d.creditsCharged) ? d.creditsCharged : 0, creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null, replayed: !!d.replayed };
+    creditsCharged: Number.isFinite(d.creditsCharged) ? d.creditsCharged : 0, creditsRemaining: Number.isFinite(d.creditsRemaining) ? d.creditsRemaining : null, replayed: !!d.replayed,
+    // (Fix text layout: what was re-set, in plain words; unchanged -- the words already fit, nothing was saved)
+    unchanged: !!d.unchanged, fitted: Array.isArray(d.fitted) ? d.fitted.filter(x => typeof x === 'string').slice(0, 8).map(x => x.slice(0, 200)) : [] };
 }
 function creativeJobFrom(j) {
   const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');

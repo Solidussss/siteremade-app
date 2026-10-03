@@ -43,7 +43,9 @@
   // after a saved change: the builder's new draft -- the summary (draft chip, Publish), the preview and this outline
   function afterChange(r, okMsg) {
     if (Number.isFinite(r.body.creditsRemaining)) credits(r.body.creditsRemaining);
-    var summary = (r.body.changeSummary || []).join(' · ');
+    var summary = (r.body.changeSummary || []).join(' · ') + ((r.body.fitted || []).length ? ': ' + r.body.fitted.join('; ') + '.' : '');
+    // (nothing needed changing: nothing was saved -- no new draft)
+    if (r.body.unchanged) { say((summary || 'Nothing needed changing').replace(/[.!]?$/, '.') + ' Nothing was saved. No credits were used.', 'success'); ED.open = null; ED.pending = null; draw(); return; }
     var cost = Number.isFinite(r.body.creditsCharged) && r.body.creditsCharged > 0 ? ' This used ' + r.body.creditsCharged + ' credit' + (r.body.creditsCharged === 1 ? '' : 's') + '.' : ' No credits were used.';
     say((summary || okMsg || 'Saved.') + ' Saved as a draft — your published website hasn’t changed.' + cost, 'success');
     ED.open = null; ED.pending = null;
@@ -149,7 +151,9 @@
       if (ED.open === key) return '<div class="ce-item is-open"><label class="ce-label" for="ceText">' + esc(f[1]) + '</label><textarea id="ceText" rows="' + (f[0] === 'body' ? 4 : 2) + '" maxlength="' + f[2] + '">' + esc(v) + '</textarea>' +
         '<div class="ce-row"><button type="button" class="ce-btn ce-primary" data-ce="save-text" data-field="' + f[0] + '">Save · free</button>' + (s.actions.indexOf('ai-text') >= 0 && f[0] !== 'kicker' ? '<button type="button" class="ce-btn" data-ce="ai-text" data-field="' + f[0] + '">AI rewrite…</button>' : '') + '<button type="button" class="ce-btn ce-quiet" data-ce="close">Cancel</button></div></div>';
       return '<button type="button" class="ce-item" data-ce="open" data-key="' + key + '"><span class="ce-label">' + esc(f[1]) + '</span><span class="ce-value">' + esc(v || 'Empty') + '</span></button>';
-    }).join('') + '</div>';
+    }).join('') +
+      // (the same words, set again by the page's own typography -- free, no AI)
+      (s.actions.indexOf('text-layout') >= 0 && ED.open == null ? '<div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="text-layout">Fix text layout — free</button></div>' : '') + '</div>';
   }
   function pictureBlock(s) {
     if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p></div>';
@@ -232,6 +236,7 @@
     if (k === 'free') {
       var op = b.dataset.op;
       if (op === 'reapply-look') return edit({ type: 'reapply-look' });
+      if (op === 'text-layout') return edit({ type: 'text-layout', sceneId: s.id });
       if (op === 'model-place') return edit({ type: 'model-place', modelId: b.dataset.model, sectionId: s.id });
       if (op === 'model-remove') return edit({ type: 'model-remove', modelSceneId: b.dataset.msc });
       return edit({ type: op, assetId: b.dataset.asset });
