@@ -190,8 +190,8 @@
   }
   function modelBlock(s) {
     if (!s.models.length) {
-      var unplaced = (ED.outline.models || []).filter(function (m) { return !m.placedIn.length; });
-      return unplaced.length ? '<div class="ce-group"><h3>3D</h3>' + unplaced.map(function (m) { return '<button type="button" class="ce-item" data-ce="free" data-op="model-place" data-model="' + esc(m.id) + '"><span class="ce-label">Show your 3D model in this scene</span><span class="ce-value">free — no new model is made</span></button>'; }).join('') + '</div>' : '';
+      var all = ED.outline.models || []; var many = all.length > 1;
+      return all.length ? '<div class="ce-group"><h3>3D</h3>' + all.map(function (m, i) { return '<button type="button" class="ce-item" data-ce="free" data-op="model-place" data-model="' + esc(m.id) + '"><span class="ce-label">Show ' + (many ? '3D model ' + (i + 1) + (m.title ? ' (' + esc(m.title) + ')' : '') : 'your 3D model') + ' in this scene</span><span class="ce-value">free — no new model is made</span></button>'; }).join('') + '</div>' : '';
     }
     var others = ED.outline.scenes.filter(function (x) { return x.id !== s.id && !x.models.length; });
     return '<div class="ce-group"><h3>3D model</h3>' + s.models.map(function (m) {
