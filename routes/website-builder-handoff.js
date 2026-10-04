@@ -61,7 +61,11 @@ module.exports = function registerWebsiteBuilderHandoffRoutes(router) {
     // OWNERSHIP + CREDITS: the app's "Create" view asks for a kind of website, never a URL -- the builder's own origin
     // with its Business form or its Creative studio
     const kind = u.searchParams.get('target');
-    const target = new URL(kind === 'creative' ? GENERATOR_ORIGIN + '/?studio=creative' : kind === 'business' ? GENERATOR_ORIGIN + '/' : safeReturnBase(u.searchParams.get('return')));
+    // SAVED DRAFTS: a draft's "Continue in the builder" names the draft (?project=<the builder's project id>) -- the
+    // builder opens that exact project once signed in. Only an id travels, onto the builder's own origin.
+    const project = u.searchParams.get('project');
+    const target = new URL(project && /^[A-Za-z0-9_-]{1,80}$/.test(project) ? GENERATOR_ORIGIN + '/?project=' + project
+      : kind === 'creative' ? GENERATOR_ORIGIN + '/?studio=creative' : kind === 'business' ? GENERATOR_ORIGIN + '/' : safeReturnBase(u.searchParams.get('return')));
     // c is this route's getAuthUser() result -- { user, profile, access }.
     // See this file's own header comment on why `access` (not a freshly
     // minted token) is what travels.

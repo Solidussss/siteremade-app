@@ -39,7 +39,7 @@ test('15. a Draft row and an Owned row render as the different things they are',
   const d = view.rowHtml(draft), o = view.rowHtml(owned);
   // Draft: name, Draft badge, Business, last updated, preview + continue in the builder -- nothing that implies ownership
   assert.match(d, /Petal &amp; Stem/); assert.match(d, /chip-neutral">Draft</); assert.match(d, /Business website/); assert.match(d, /Updated Sep 29, 2026/);
-  assert.match(d, /href="\/api\/app\/websites\/proj_DRAFTaaaaaaaaaaaaaaaaaa\/preview">Preview draft/); assert.match(d, /Continue in the builder/);
+  assert.match(d, /href="\/api\/app\/websites\/proj_DRAFTaaaaaaaaaaaaaaaaaa\/preview">Preview draft/); assert.match(d, /href="\/handoff\/website-builder\?project=proj_DRAFTaaaaaaaaaaaaaaaaaa">Continue in the builder/, 'the link names this draft');
   assert.match(d, /not purchased yet/);
   assert.ok(!/Owned|Purchased|download|Download|Hosting|data-saved-connect|data-saved-open/.test(d), 'no purchased-only controls on a draft');
   // Owned: Owned badge, purchase date, files, preview, hosting & handoff, connect (not connected here yet)
@@ -65,4 +65,13 @@ test('the whole list: a summary, every website, an honest empty state, and escap
   assert.match(view.listHtml({ status: 'unavailable', message: 'This account belongs to more than one business' }), /more than one business/);
   const evil = view.rowHtml(savedWebsitesFrom([{ ...DRAFT, businessName: '<img src=x onerror=alert(1)>' }], new Set())[0]);
   assert.ok(!/<img/.test(evil) && /&lt;img/.test(evil));
+});
+
+// SAVED DRAFTS: the handoff carries the draft's id to the builder (which opens that exact project), and nothing else
+test('15b. Continue in the builder lands on the builder with that exact draft', async () => {
+  let route; require('../routes/website-builder-handoff')({ get: (p, o, h) => { route = h; } });
+  const go = async q => { let loc; await route({ url: '/handoff/website-builder' + q }, { writeHead: (c, h) => { loc = h.Location; }, end() {} }, { u: new URL('http://x/handoff/website-builder' + q), c: { access: 'tok' } }); return new URL(loc); };
+  const a = await go('?project=proj_DRAFTaaaaaaaaaaaaaaaaaa'); assert.equal(a.pathname + a.search, '/?project=proj_DRAFTaaaaaaaaaaaaaaaaaa'); assert.match(a.hash, /^#bridge=session&access_token=tok/);
+  for (const bad of ['?project=../x', '?project=' + encodeURIComponent('a"><b'), '?project=' + 'a'.repeat(81)]) { const b = await go(bad); assert.equal(b.search, '', bad); }
+  assert.equal((await go('?target=creative')).search, '?studio=creative', 'the Create view is unchanged');
 });

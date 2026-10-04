@@ -57,7 +57,8 @@
     } else {
       actions = [
         `<a class="saved-website-link" target="_blank" rel="noopener" href="/api/app/websites/${enc(w.projectId)}/preview">Preview draft ↗</a>`,
-        `<a class="saved-website-link" href="${BUILDER}">Continue in the builder ↗</a>`,
+        // names the draft: the builder opens this exact project (a Creative draft in the Creative studio), ready to edit
+        `<a class="saved-website-link" data-saved-continue href="${BUILDER}?project=${enc(w.projectId)}">Continue in the builder ↗</a>`,
       ];
       note = w.status === 'checkout_pending' ? 'Saved to your account. Checkout for it is in progress.' : 'Saved to your account, not purchased yet. Buy it in the builder to get its files and host it.';
     }
