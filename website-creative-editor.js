@@ -224,6 +224,7 @@
       '<div class="ce-row ce-swatches" role="group" aria-label="Scene colour (from your page’s own palette)">' + pal.map(function (p) { return '<button type="button" class="ce-swatch' + (p.hex === s.background ? ' is-on' : '') + '" data-ce="colour" data-role="' + esc(p.role) + '" style="--sw:' + esc(p.hex) + '" title="' + esc(p.label) + '"><span class="sr-only">' + esc(p.label) + '</span></button>'; }).join('') + '<span class="ce-note">colour · free</span></div>' +
       (s.compositions.length ? '<div class="ce-row"><select class="ce-select" data-ce="composition" aria-label="Composition"><option value="">Composition: ' + esc(s.composition.replace(/-/g, ' ')) + '</option>' + s.compositions.map(function (k) { return '<option value="' + esc(k.id) + '" title="' + esc(k.label) + '">' + esc(k.id.replace(/-/g, ' ')) + '</option>'; }).join('') + '</select><span class="ce-note">free</span></div>' : '') +
       motionRows(s) +
+      (s.actions.indexOf('scene-remove') >= 0 ? '<div class="ce-row"><button type="button" class="ce-btn ce-quiet" data-ce="free" data-op="scene-remove">Remove this scene · free</button></div>' : '') +
       (s.actions.indexOf('ai-scene') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSceneAsk" data-draft="ask:' + esc(s.id) + '" maxlength="400" placeholder="Optional: what should change?" aria-label="What should change in this scene"><button type="button" class="ce-btn" data-ce="ai-scene">Redesign this scene…</button></div>' : '') + '</div>';
   }
   function jobsBlock() {
@@ -319,6 +320,7 @@
       if (op === 'model-place') return edit({ type: 'model-place', modelId: b.dataset.model, sectionId: s.id });
       if (op === 'model-remove') return edit({ type: 'model-remove', modelSceneId: b.dataset.msc });
       if (op === 'model-lathe') return edit({ type: 'model-lathe', sceneId: s.id, assetId: b.dataset.asset });
+      if (op === 'scene-remove') { if (!window.confirm('Remove this scene from the page? Its picture stays in your pictures.')) return; ED.scene = null; return edit({ type: 'scene-remove', sceneId: s.id }); }
       return edit({ type: op, assetId: b.dataset.asset });
     }
   }
