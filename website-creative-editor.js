@@ -36,6 +36,7 @@
     return call('GET', base()).then(function (r) {
       if (!r.ok) { say(r.body.message || 'Your Creative page couldn’t be loaded for editing.', 'error'); return; }
       ED.outline = r.body.outline; ED.revision = r.body.revision; ED.jobs = r.body.jobs || [];
+      if (ED.focusAsset) { var fa = ED.focusAsset; ED.focusAsset = null; var hit = ED.outline.scenes.find(function (s) { return s.pictures.some(function (p) { return p.assetId === fa || p.assetId === 'c-' + fa; }); }); if (hit) { ED.scene = hit.id; ED.open = 'pic:' + (hit.pictures.find(function (p) { return p.assetId === fa || p.assetId === 'c-' + fa; }) || {}).layerId; } }
       if (!ED.scene || !ED.outline.scenes.some(function (s) { return s.id === ED.scene; })) ED.scene = ED.outline.scenes[0] ? ED.outline.scenes[0].id : null;
       if (Number.isFinite(r.body.creditsRemaining)) credits(r.body.creditsRemaining);
       followJobs(); draw();
@@ -132,7 +133,7 @@
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
       var png = cv.toDataURL('image/png');
       say('Uploading your picture…');
-      call('POST', base() + '/upload', Object.assign({ baseRevision: ED.revision, png: png, title: String(file.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 120) }, target || {})).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } afterChange(r, 'Your picture is on the page.'); });
+      call('POST', base() + '/upload', Object.assign({ baseRevision: ED.revision, png: png, title: String(file.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 120) }, target || {})).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } if (target && target.after && r.body.assetId) ED.focusAsset = r.body.assetId; afterChange(r, 'Your picture is on the page.'); });
     };
     img.onerror = function () { URL.revokeObjectURL(url); ED.busy = false; say('That picture couldn’t be read in this browser.', 'error'); draw(); };
     img.src = url;
@@ -171,13 +172,13 @@
     if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p>' + addRow(s) + '</div>';
     return '<div class="ce-group"><h3>Pictures</h3>' + s.pictures.map(function (p) {
       var key = 'pic:' + p.layerId; var src = p.source || {}; var a = p.actions || [];
-      var head = '<span class="ce-label">' + esc(src.title || 'Picture') + (p.callback ? ' · returns as the closing callback' : '') + '</span><span class="ce-value">' + esc(SOURCE[src.kind] || 'picture') + (src.cutout ? ' · cut-out' : '') + (p.clip ? ' · moves (cinematic clip)' : '') + (p.model ? ' · has a 3D model' : '') + '</span>';
+      var head = '<span class="ce-label">' + esc(src.title || 'Picture') + (p.callback ? ' · returns as the closing callback' : '') + (p.carried ? ' · floats through these scenes' : '') + '</span><span class="ce-value">' + esc(SOURCE[src.kind] || 'picture') + (src.cutout ? ' · cut-out' : '') + (p.clip ? ' · moves (cinematic clip)' : '') + (p.model ? ' · has a 3D model' : '') + '</span>';
       if (ED.open !== key) return '<button type="button" class="ce-item" data-ce="open" data-key="' + key + '">' + head + '</button>';
       var others = (ED.outline.pictures || []).filter(function (x) { return x.assetId !== p.assetId && x.source && x.source.rootId !== (src.rootId || ''); });
       return '<div class="ce-item is-open">' + head +
-        '<div class="ce-row"><label class="ce-btn ce-file">Upload a new picture<input type="file" accept="image/*" data-ce="upload" data-layer="' + esc(p.layerId) + '"></label>' +
+        (p.layerId ? '<div class="ce-row"><label class="ce-btn ce-file">Upload a new picture<input type="file" accept="image/*" data-ce="upload" data-layer="' + esc(p.layerId) + '"></label>' +
         (others.length ? '<select class="ce-select" data-ce="replace" data-layer="' + esc(p.layerId) + '" aria-label="Replace with a picture from this project"><option value="">Use another picture…</option>' + others.map(function (x) { return '<option value="' + esc(x.assetId) + '">' + esc((x.source && x.source.title) || x.assetId) + (x.onPage ? ' (already on the page)' : '') + '</option>'; }).join('') + '</select>' : '') +
-        '<button type="button" class="ce-btn ce-quiet" data-ce="remove-pic" data-layer="' + esc(p.layerId) + '">Remove · free</button></div>' +
+        '<button type="button" class="ce-btn ce-quiet" data-ce="remove-pic" data-layer="' + esc(p.layerId) + '">Remove · free</button></div>' : '') +
         '<div class="ce-row">' +
         (a.indexOf('model3d') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="model3d" data-asset="' + esc(p.assetId) + '">Make interactive 3D…</button>' : '') +
         (a.indexOf('model-lathe') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="model-lathe" data-asset="' + esc(p.assetId) + '">Make 3D from this picture · free</button>' : '') +

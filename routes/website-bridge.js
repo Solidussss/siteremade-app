@@ -328,7 +328,7 @@ function creativeOutlineFrom(d) {
       scenes: (o.scenes || []).slice(0, 12).map(sc => ({
         id: s(sc.id, 60), index: n(sc.index), name: s(sc.name, 80), composition: s(sc.composition, 40), background: /^#[0-9a-f]{6}$/i.test(sc.background || '') ? sc.background : '',
         text: { kicker: s(sc.text && sc.text.kicker, 70), heading: s(sc.text && sc.text.heading, 110), body: s(sc.text && sc.text.body, 520), items: (sc.text && Array.isArray(sc.text.items) ? sc.text.items : []).slice(0, 6).map(t => s(t, 260)) },
-        pictures: (sc.pictures || []).slice(0, 6).map(p => ({ layerId: s(p.layerId, 60), assetId: s(p.assetId, 60), role: s(p.role, 20), callback: !!p.callback, source: src(p.source), clip: p.clip ? { mediaId: s(p.clip.mediaId, 60) } : null, model: p.model ? { id: s(p.model.id, 60) } : null, actions: acts(p.actions) })),
+        pictures: (sc.pictures || []).slice(0, 6).map(p => ({ layerId: s(p.layerId, 60), assetId: s(p.assetId, 60), role: s(p.role, 20), callback: !!p.callback, carried: !!p.carried, source: src(p.source), clip: p.clip ? { mediaId: s(p.clip.mediaId, 60) } : null, model: p.model ? { id: s(p.model.id, 60) } : null, actions: acts(p.actions) })),
         models: (sc.models || []).slice(0, 2).map(m => ({ id: s(m.id, 60), modelId: s(m.modelId, 60), composition: s(m.composition, 40), distance: n(m.distance), azimuth: n(m.azimuth), actions: acts(m.actions) })),
         compositions: (sc.compositions || []).slice(0, 16).map(k => ({ id: s(k.id, 40), label: s(k.label, 120) })), actions: acts(sc.actions),
         // (how the scene moves and the set pieces it can carry -- the builder's vocabulary words only)
