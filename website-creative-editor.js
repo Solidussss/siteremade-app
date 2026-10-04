@@ -180,6 +180,7 @@
         '<button type="button" class="ce-btn ce-quiet" data-ce="remove-pic" data-layer="' + esc(p.layerId) + '">Remove · free</button></div>' +
         '<div class="ce-row">' +
         (a.indexOf('model3d') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="model3d" data-asset="' + esc(p.assetId) + '">Make interactive 3D…</button>' : '') +
+        (a.indexOf('model-lathe') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="model-lathe" data-asset="' + esc(p.assetId) + '">Make 3D from this picture · free</button>' : '') +
         (a.indexOf('model3d-reuse') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="model3d" data-asset="' + esc(p.assetId) + '">Show its 3D model here · free</button>' : '') +
         (a.indexOf('motion') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="motion" data-asset="' + esc(p.assetId) + '" data-layer="' + esc(p.layerId) + '">Add cinematic motion…</button>' : '') +
         (a.indexOf('motion-new') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="motion" data-fresh="1" data-asset="' + esc(p.assetId) + '" data-layer="' + esc(p.layerId) + '">Make a new clip…</button>' : '') +
@@ -303,6 +304,7 @@
       if (op === 'text-layout') return edit({ type: 'text-layout', sceneId: s.id });
       if (op === 'model-place') return edit({ type: 'model-place', modelId: b.dataset.model, sectionId: s.id });
       if (op === 'model-remove') return edit({ type: 'model-remove', modelSceneId: b.dataset.msc });
+      if (op === 'model-lathe') return edit({ type: 'model-lathe', sceneId: s.id, assetId: b.dataset.asset });
       return edit({ type: op, assetId: b.dataset.asset });
     }
   }
