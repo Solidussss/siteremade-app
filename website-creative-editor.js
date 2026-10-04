@@ -205,11 +205,24 @@
         ((m.actions || []).indexOf('motion-from-3d') >= 0 ? '<div class="ce-row"><button type="button" class="ce-btn" data-ce="paid" data-action="motion3d">Make cinematic video from 3D…</button></div>' : '') + '</div>';
     }).join('') + '</div>';
   }
+  // ---- how the scene moves (its headline's entrance, its pictures' move) and the page's set piece -- free
+  var WORDS = { '3d': '3D block', blur: 'Blur in', pop: 'Pop', split: 'Split from the sides', cascade: 'Letters cascade', flip: 'Letters flip', type: 'Typed out', sweep: 'Colour sweep', fill: 'Fills as it is read', rise: 'Rise' };
+  var PICTURE = { grow: 'Grows to full', tilt: 'Tilts up', drift: 'Drifts', turn: 'Turns in', rush: 'Rushes in', pixel: 'Pixel reveal', still: 'Stays still' };
+  var SIGN = { pour: 'Pour', spotlight: 'Spotlight', typewall: 'Type wall' };
+  function motionRows(s) {
+    var M = ED.outline.moves; if (!M || (s.actions || []).indexOf('scene-move') < 0) return '';
+    var mv = s.move || {};
+    var sel = function (key, list, names, label) { return '<select class="ce-select" data-ce="move-' + key + '" aria-label="' + label + '"><option value="">' + label + ': ' + (mv[key] ? esc(names[mv[key]] || mv[key]) : 'automatic') + '</option>' + (mv[key] ? '<option value="">Automatic</option>' : '') + list.map(function (k) { return '<option value="' + esc(k) + '">' + esc(names[k] || k) + '</option>'; }).join('') + '</select>'; };
+    var sig = (s.actions || []).indexOf('signature') >= 0 && ((s.signatures || []).length || s.signature)
+      ? '<div class="ce-row"><select class="ce-select" data-ce="signature" aria-label="Set piece"><option value="">Set piece: ' + (s.signature ? esc(SIGN[s.signature] || s.signature) : 'none here') + '</option>' + (s.signature ? '<option value="none">No set piece</option>' : '') + (s.signatures || []).filter(function (k) { return k !== s.signature; }).map(function (k) { return '<option value="' + esc(k) + '">' + esc(SIGN[k] || k) + '</option>'; }).join('') + '</select><span class="ce-note">free</span></div>' : '';
+    return '<div class="ce-row">' + sel('words', M.words, WORDS, 'Headline') + '</div><div class="ce-row">' + sel('picture', M.picture, PICTURE, 'Pictures') + '<span class="ce-note">free</span></div>' + sig;
+  }
   function sceneBlock(s) {
     var pal = ED.outline.palette || [];
     return '<div class="ce-group"><h3>Scene</h3>' +
       '<div class="ce-row ce-swatches" role="group" aria-label="Scene colour (from your page’s own palette)">' + pal.map(function (p) { return '<button type="button" class="ce-swatch' + (p.hex === s.background ? ' is-on' : '') + '" data-ce="colour" data-role="' + esc(p.role) + '" style="--sw:' + esc(p.hex) + '" title="' + esc(p.label) + '"><span class="sr-only">' + esc(p.label) + '</span></button>'; }).join('') + '<span class="ce-note">colour · free</span></div>' +
       (s.compositions.length ? '<div class="ce-row"><select class="ce-select" data-ce="composition" aria-label="Composition"><option value="">Composition: ' + esc(s.composition.replace(/-/g, ' ')) + '</option>' + s.compositions.map(function (k) { return '<option value="' + esc(k.id) + '" title="' + esc(k.label) + '">' + esc(k.id.replace(/-/g, ' ')) + '</option>'; }).join('') + '</select><span class="ce-note">free</span></div>' : '') +
+      motionRows(s) +
       (s.actions.indexOf('ai-scene') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSceneAsk" data-draft="ask:' + esc(s.id) + '" maxlength="400" placeholder="Optional: what should change?" aria-label="What should change in this scene"><button type="button" class="ce-btn" data-ce="ai-scene">Redesign this scene…</button></div>' : '') + '</div>';
   }
   function jobsBlock() {
@@ -315,6 +328,9 @@
     if (k === 'place-after' && el.value) { edit({ type: 'picture-scene', sceneId: s.id, assetId: el.value }); return; }
     if (k === 'replace' && el.value) { edit({ type: 'picture-replace', sceneId: s.id, layerId: el.dataset.layer, assetId: el.value }); return; }
     if (k === 'composition' && el.value) { edit({ type: 'composition', sceneId: s.id, composition: el.value }); return; }
+    if (k === 'move-words') { edit({ type: 'scene-move', sceneId: s.id, words: el.value }); return; }
+    if (k === 'move-picture') { edit({ type: 'scene-move', sceneId: s.id, picture: el.value }); return; }
+    if (k === 'signature' && el.value) { edit({ type: 'signature', sceneId: s.id, kind: el.value }); return; }
     if (k === 'model-size') { edit({ type: 'model-resize', modelSceneId: el.dataset.msc, distance: Number(el.value) }); return; }
     if (k === 'model-turn') { edit({ type: 'model-turn', modelSceneId: el.dataset.msc, azimuth: Number(el.value) }); return; }
     if (k === 'model-comp' && el.value) { edit({ type: 'model-composition', modelSceneId: el.dataset.msc, composition: el.value }); return; }

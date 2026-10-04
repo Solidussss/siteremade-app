@@ -287,7 +287,7 @@ function creditsFrom(x) {
 // ---- THE CREATIVE WEBSITE EDITOR: what the app passes on (explicit allowlists, like summaryFrom) ----------------------
 // an owner picture as a PNG data URL: up to 8 MB of picture (the builder refuses anything bigger), base64 and JSON around it
 const CREATIVE_UPLOAD_MAX_CHARS = 12 * 1024 * 1024;
-const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId', 'preset', 'headline', 'body', 'label'];
+const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId', 'preset', 'headline', 'body', 'label', 'words', 'picture', 'kind'];
 function creativeOpFrom(op) {
   const out = {}; CREATIVE_OP_KEYS.forEach(k => { const v = op[k]; if (typeof v === 'string') out[k] = v.slice(0, k === 'value' ? 600 : 60); else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v; });
   return out;
@@ -331,11 +331,15 @@ function creativeOutlineFrom(d) {
         pictures: (sc.pictures || []).slice(0, 6).map(p => ({ layerId: s(p.layerId, 60), assetId: s(p.assetId, 60), role: s(p.role, 20), callback: !!p.callback, source: src(p.source), clip: p.clip ? { mediaId: s(p.clip.mediaId, 60) } : null, model: p.model ? { id: s(p.model.id, 60) } : null, actions: acts(p.actions) })),
         models: (sc.models || []).slice(0, 2).map(m => ({ id: s(m.id, 60), modelId: s(m.modelId, 60), composition: s(m.composition, 40), distance: n(m.distance), azimuth: n(m.azimuth), actions: acts(m.actions) })),
         compositions: (sc.compositions || []).slice(0, 16).map(k => ({ id: s(k.id, 40), label: s(k.label, 120) })), actions: acts(sc.actions),
+        // (how the scene moves and the set pieces it can carry -- the builder's vocabulary words only)
+        move: { words: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.words) || '') ? sc.move.words : '', picture: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.picture) || '') ? sc.move.picture : '' },
+        signature: /^[a-z0-9-]{1,12}$/.test(sc.signature || '') ? sc.signature : '', signatures: acts(sc.signatures).filter(k => /^[a-z0-9-]{1,12}$/.test(k)),
       })),
       pictures: (o.pictures || []).slice(0, 40).map(p => ({ assetId: s(p.assetId, 60), source: src(p.source), onPage: !!p.onPage, width: n(p.width), height: n(p.height) })),
       models: (o.models || []).slice(0, 4).map(m => ({ id: s(m.id, 60), sourceAssetId: s(m.sourceAssetId, 60), placedIn: acts(m.placedIn) })),
       media: (o.media || []).slice(0, 12).map(m => ({ assetId: s(m.assetId, 60), mediaId: s(m.mediaId, 60) })),
       threeDCompositions: acts(o.threeDCompositions), actions: acts(o.actions),
+      moves: o.moves ? { words: acts(o.moves.words).filter(k => /^[a-z0-9-]{1,12}$/.test(k)), picture: acts(o.moves.picture).filter(k => /^[a-z0-9-]{1,12}$/.test(k)) } : null,
       fonts: creativeFontsFrom(o.fonts),
     },
   };

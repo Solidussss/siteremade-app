@@ -154,6 +154,26 @@ app.whenReady().then(async () => {
       await js('const b = [...document.querySelectorAll(".ce-item")].find(b => /your upload/.test(b.textContent)); if (b) b.click(); true'); await sleep(300);
       steps.push(['picture actions shown in context', await js('!!document.querySelector(".ce-file") && !!document.querySelector(\'[data-ce="remove-pic"]\')')]);
       await shot('4-picture');
+      // MOTION: a scene's headline entrance and its set piece, from the builder's own vocabulary (free)
+      await js('document.querySelectorAll(".ce-scene")[1].click(); true'); await sleep(300);
+      const hasMove = await js(`!!document.querySelector('[data-ce="move-words"]')`);
+      steps.push(['the scene offers its headline and picture motion', hasMove && await js(`!!document.querySelector('[data-ce="move-picture"]')`)]);
+      if (hasMove) {
+        await js(`(() => { const el = document.querySelector('[data-ce="move-words"]'); el.value = "cascade"; el.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+        steps.push(['the headline motion is saved (free)', await until('/Changed how/.test(document.querySelector("#ceFeedback").textContent)', 30000)]);
+        steps.push(['the control shows the chosen motion', await until(`/Letters cascade/.test((document.querySelector('[data-ce="move-words"] option') || {}).textContent || "")`, 10000)]);
+        out.widths[width].motionFeedback = (await js('document.querySelector("#ceFeedback").textContent')).slice(0, 200);
+        const sigs = await js('[...document.querySelectorAll(".ce-scene")].length');
+        let setPiece = false;
+        for (let i = 1; i < sigs - 1 && !setPiece; i++) { await js(`document.querySelectorAll(".ce-scene")[${i}].click(); true`); await sleep(250);
+          const opt = await js(`(() => { const el = document.querySelector('[data-ce="signature"]'); const o = el && [...el.options].find(o => o.value && o.value !== "none"); return o ? o.value : ""; })()`);
+          if (!opt) continue;
+          await js(`(() => { const el = document.querySelector('[data-ce="signature"]'); el.value = "${opt}"; el.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+          setPiece = await until('/set piece|type wall|the page’s (pour|spotlight)/i.test(document.querySelector("#ceFeedback").textContent)', 30000);
+          out.widths[width].setPiece = opt + ': ' + (await js('document.querySelector("#ceFeedback").textContent')).slice(0, 160); }
+        steps.push(['a set piece can be put on a scene that carries it (free)', setPiece]);
+        await js(`(() => { const el = document.querySelector('[data-ce="move-words"]'); if (el) el.scrollIntoView({ block: "center" }); return true; })()`); await sleep(300); await shot('5-motion');
+      }
       // ADD A PICTURE: under a scene's pictures; the upload becomes its own new scene after it (a real file input, a real file)
       const n0 = await js('document.querySelectorAll(".ce-scene").length');
       await js('document.querySelectorAll(".ce-scene")[1].click(); true'); await sleep(300);
