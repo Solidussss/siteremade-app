@@ -701,7 +701,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before changing it.' });
     if (typeof body.png !== 'string' || !body.png.startsWith('data:image/png;base64,')) return json(res, 400, { ok: false, code: 'invalid_file', message: 'Choose a picture to upload.' });
     const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
-    const r = await bridge.postCreativeUpload(c.access, got.summary.projectId, { baseRevision: body.baseRevision, png: body.png, title: s(body.title, 120), alt: s(body.alt, 200), sceneId: s(body.sceneId, 60), layerId: s(body.layerId, 60) });
+    const r = await bridge.postCreativeUpload(c.access, got.summary.projectId, { baseRevision: body.baseRevision, png: body.png, title: s(body.title, 120), alt: s(body.alt, 200), sceneId: s(body.sceneId, 60), layerId: s(body.layerId, 60), after: s(body.after, 60) });
     if (r.status === 200 && r.data && r.data.ok) return json(res, 200, Object.assign(creativeChangeFrom(got.summary.projectId, r.data), { assetId: s(r.data.assetId, 60) || null }));
     return passThroughError(json, res, r);
   });

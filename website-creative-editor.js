@@ -158,8 +158,17 @@
       // (the same words, set again by the page's own typography -- free, no AI)
       (s.actions.indexOf('text-layout') >= 0 && ED.open == null ? '<div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="text-layout">Fix text layout — free</button></div>' : '') + '</div>';
   }
+  // ADD A PICTURE: the picture goes on the page as its own new scene right after this one (the builder shows it big and
+  // leaves every other scene as it was) -- a new upload, or a picture this project already has that is not on the page
+  function addRow(s) {
+    if ((s.actions || []).indexOf('picture-scene') < 0) return '<p class="ce-note">This page has as many scenes as it can hold. Replace a picture to show a new one.</p>';
+    var spare = (ED.outline.pictures || []).filter(function (x) { return !x.onPage; });
+    return '<div class="ce-row ce-add"><label class="ce-btn ce-primary ce-file">+ Add a picture<input type="file" accept="image/*" data-ce="upload-after"></label>' +
+      (spare.length ? '<select class="ce-select" data-ce="place-after" aria-label="Add a picture this website already has"><option value="">Or add one you already have…</option>' + spare.map(function (x) { return '<option value="' + esc(x.assetId) + '">' + esc((x.source && x.source.title) || 'Picture') + '</option>'; }).join('') + '</select>' : '') +
+      '</div><p class="ce-note">It goes in as a new scene right after this one, shown big. Nothing else on the page moves. Free.</p>';
+  }
   function pictureBlock(s) {
-    if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p></div>';
+    if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p>' + addRow(s) + '</div>';
     return '<div class="ce-group"><h3>Pictures</h3>' + s.pictures.map(function (p) {
       var key = 'pic:' + p.layerId; var src = p.source || {}; var a = p.actions || [];
       var head = '<span class="ce-label">' + esc(src.title || 'Picture') + (p.callback ? ' · returns as the closing callback' : '') + '</span><span class="ce-value">' + esc(SOURCE[src.kind] || 'picture') + (src.cutout ? ' · cut-out' : '') + (p.clip ? ' · moves (cinematic clip)' : '') + (p.model ? ' · has a 3D model' : '') + '</span>';
@@ -177,7 +186,7 @@
         (a.indexOf('motion-remove') >= 0 ? '<button type="button" class="ce-btn ce-quiet" data-ce="free" data-op="motion-remove" data-asset="' + esc(p.assetId) + '">Stop the motion · free</button>' : '') +
         (a.indexOf('motion-restore') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="motion-restore" data-asset="' + esc(p.assetId) + '">Put the clip back · free</button>' : '') +
         '</div><button type="button" class="ce-btn ce-quiet" data-ce="close">Done</button></div>';
-    }).join('') + '</div>';
+    }).join('') + addRow(s) + '</div>';
   }
   function modelBlock(s) {
     if (!s.models.length) {
@@ -300,6 +309,8 @@
   function onChange(e) {
     var el = e.target; if (!el.dataset || !el.dataset.ce || !qs('#creativeEditor').contains(el)) return; var s = sceneOf(ED.scene); var k = el.dataset.ce;
     if (k === 'upload') { upload(el.files && el.files[0], { sceneId: s.id, layerId: el.dataset.layer }); return; }
+    if (k === 'upload-after') { upload(el.files && el.files[0], { after: s.id }); return; }
+    if (k === 'place-after' && el.value) { edit({ type: 'picture-scene', sceneId: s.id, assetId: el.value }); return; }
     if (k === 'replace' && el.value) { edit({ type: 'picture-replace', sceneId: s.id, layerId: el.dataset.layer, assetId: el.value }); return; }
     if (k === 'composition' && el.value) { edit({ type: 'composition', sceneId: s.id, composition: el.value }); return; }
     if (k === 'model-size') { edit({ type: 'model-resize', modelSceneId: el.dataset.msc, distance: Number(el.value) }); return; }
