@@ -211,6 +211,7 @@
         '<div class="ce-row">' +
         (a.indexOf('model3d') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="model3d" data-asset="' + esc(p.assetId) + '">Make interactive 3D…</button>' : '') +
         (a.indexOf('model-lathe') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="model-lathe" data-asset="' + esc(p.assetId) + '">Make 3D from this picture · free</button>' : '') +
+        (a.indexOf('model3d-used') >= 0 ? '<p class="ce-note">This page has made its 3D model (a Creative page makes one). Show it in any scene for free, or upload your own .glb in the 3D section below — free.</p>' : '') +
         (a.indexOf('model3d-reuse') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="model3d" data-asset="' + esc(p.assetId) + '">Show its 3D model here · free</button>' : '') +
         (a.indexOf('motion') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="motion" data-asset="' + esc(p.assetId) + '" data-layer="' + esc(p.layerId) + '">Add cinematic motion…</button>' : '') +
         (a.indexOf('motion-new') >= 0 ? '<button type="button" class="ce-btn" data-ce="paid" data-action="motion" data-fresh="1" data-asset="' + esc(p.assetId) + '" data-layer="' + esc(p.layerId) + '">Make a new clip…</button>' : '') +
