@@ -122,6 +122,20 @@
     }, 3000);
   }
   // ---- an upload: converted to PNG here (scaled so its longest side is at most 2400 px); the builder measures it
+  // a .glb read as it is (no conversion) and sent to the builder, which checks it as every 3D model
+  function uploadModel(file, sceneId) {
+    if (!file) return;
+    if (!/\.glb$/i.test(file.name || '') && file.type !== 'model/gltf-binary') { say('Choose a .glb 3D model file.', 'error'); return; }
+    if (file.size > 8 * 1024 * 1024) { say('That 3D model is larger than 8 MB. Choose a lighter one.', 'error'); return; }
+    ED.busy = true; say('Uploading your 3D model…'); draw();
+    var fr = new FileReader();
+    fr.onload = function () {
+      var glb = 'data:model/gltf-binary;base64,' + String(fr.result || '').replace(/^data:[^,]*,/, '');
+      call('POST', base() + '/model-upload', { baseRevision: ED.revision, glb: glb, sceneId: sceneId, title: String(file.name || '').replace(/\.glb$/i, '').slice(0, 120) }).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } afterChange(r, 'Your 3D model is on the page.'); });
+    };
+    fr.onerror = function () { ED.busy = false; say('That file could not be read.', 'error'); draw(); };
+    fr.readAsDataURL(file);
+  }
   function upload(file, target) {
     if (!file || !/^image\//.test(file.type)) { say('Choose a picture file.', 'error'); return; }
     if (file.size > 25 * 1024 * 1024) { say('That file is too large. Choose a picture under 25 MB.', 'error'); return; }
@@ -196,10 +210,15 @@
         '</div><button type="button" class="ce-btn ce-quiet" data-ce="close">Done</button></div>';
     }).join('') + addRow(s) + '</div>';
   }
+  // (the owner's own 3D model, a .glb file: shown in this scene turning as the page scrolls -- free)
+  function ownModelRow(s) {
+    return '<div class="ce-row ce-add"><label class="ce-btn ce-file">Upload your own 3D model (.glb)<input type="file" data-ce="upload-model"></label></div>' +
+      '<p class="ce-note">' + (s.models.length ? 'It takes this scene’s 3D place' : 'It stands where this scene’s picture is') + ' and turns as the page scrolls. Up to 8 MB. Free.</p>';
+  }
   function modelBlock(s) {
     if (!s.models.length) {
       var all = ED.outline.models || []; var many = all.length > 1;
-      return all.length ? '<div class="ce-group"><h3>3D</h3>' + all.map(function (m, i) { return '<button type="button" class="ce-item" data-ce="free" data-op="model-place" data-model="' + esc(m.id) + '"><span class="ce-label">Show ' + (many ? '3D model ' + (i + 1) + (m.title ? ' (' + esc(m.title) + ')' : '') : 'your 3D model') + ' in this scene</span><span class="ce-value">free — no new model is made</span></button>'; }).join('') + '</div>' : '';
+      return '<div class="ce-group"><h3>3D</h3>' + all.map(function (m, i) { return '<button type="button" class="ce-item" data-ce="free" data-op="model-place" data-model="' + esc(m.id) + '"><span class="ce-label">Show ' + (many ? '3D model ' + (i + 1) + (m.title ? ' (' + esc(m.title) + ')' : '') : 'your 3D model') + ' in this scene</span><span class="ce-value">free — no new model is made</span></button>'; }).join('') + ownModelRow(s) + '</div>';
     }
     var others = ED.outline.scenes.filter(function (x) { return x.id !== s.id && !x.models.length; });
     return '<div class="ce-group"><h3>3D model</h3>' + s.models.map(function (m) {
@@ -210,7 +229,7 @@
         (others.length ? '<select class="ce-select" data-ce="model-move" data-msc="' + esc(m.id) + '" aria-label="Move to another scene"><option value="">Move to…</option>' + others.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('') + '</select>' : '') +
         '<button type="button" class="ce-btn ce-quiet" data-ce="free" data-op="model-remove" data-msc="' + esc(m.id) + '">Take off · free</button></div>' +
         ((m.actions || []).indexOf('motion-from-3d') >= 0 ? '<div class="ce-row"><button type="button" class="ce-btn" data-ce="paid" data-action="motion3d">Make cinematic video from 3D…</button></div>' : '') + '</div>';
-    }).join('') + '</div>';
+    }).join('') + ownModelRow(s) + '</div>';
   }
   // ---- how the scene moves (its headline's entrance, its pictures' move) and the page's set piece -- free
   var WORDS = { '3d': '3D block', blur: 'Blur in', pop: 'Pop', split: 'Split from the sides', cascade: 'Letters cascade', flip: 'Letters flip', type: 'Typed out', sweep: 'Colour sweep', fill: 'Fills as it is read', rise: 'Rise' };
@@ -334,6 +353,7 @@
     var el = e.target; if (!el.dataset || !el.dataset.ce || !qs('#creativeEditor').contains(el)) return; var s = sceneOf(ED.scene); var k = el.dataset.ce;
     if (k === 'upload') { upload(el.files && el.files[0], { sceneId: s.id, layerId: el.dataset.layer }); return; }
     if (k === 'upload-after') { upload(el.files && el.files[0], { after: s.id }); return; }
+    if (k === 'upload-model') { uploadModel(el.files && el.files[0], s.id); return; }
     if (k === 'upload-into') { upload(el.files && el.files[0], { into: s.id }); return; }
     if (k === 'place-into' && el.value) { edit({ type: 'picture-add', sceneId: s.id, assetId: el.value }); return; }
     if (k === 'place-after' && el.value) { edit({ type: 'picture-scene', sceneId: s.id, assetId: el.value }); return; }

@@ -720,6 +720,17 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (r.status === 200 && r.data && r.data.ok) return json(res, 200, Object.assign(creativeChangeFrom(got.summary.projectId, r.data), { assetId: s(r.data.assetId, 60) || null }));
     return passThroughError(json, res, r);
   });
+  // the owner's own 3D model (.glb, up to 8 MB -- the builder checks it as every model) shown in a scene: free
+  router.post('/api/app/website/projects/:projectId/creative/model-upload', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res, CREATIVE_UPLOAD_MAX_CHARS); if (!body) return;
+    if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before changing it.' });
+    if (typeof body.glb !== 'string' || !/^data:[\w.+/-]*;base64,/.test(body.glb)) return json(res, 400, { ok: false, code: 'invalid_file', message: 'Choose a .glb 3D model to upload.' });
+    const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+    const r = await bridge.postCreativeModelUpload(c.access, got.summary.projectId, { baseRevision: body.baseRevision, glb: body.glb, sceneId: s(body.sceneId, 60), title: s(body.title, 120) });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, Object.assign(creativeChangeFrom(got.summary.projectId, r.data), { modelId: s(r.data.modelId, 60) || null }));
+    return passThroughError(json, res, r);
+  });
   router.post('/api/app/website/projects/:projectId/creative/quote', { auth: 'user' }, async (req, res, { c, json, params }) => {
     const got = await creativeGate(c, json, res, params, true); if (!got) return;
     const body = await creativeBody(req, json, res); if (!body) return;

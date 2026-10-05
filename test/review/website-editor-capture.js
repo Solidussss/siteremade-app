@@ -198,6 +198,19 @@ app.whenReady().then(async () => {
       steps.push(['the picture is in that scene, saved as a draft for free', await until('/Added your picture to/.test(document.querySelector("#ceFeedback").textContent) && /No credits were used/.test(document.querySelector("#ceFeedback").textContent)', 60000)]);
       await sleep(800); steps.push(['no new scene', (await js('document.querySelectorAll(".ce-scene").length')) === n1]);
       steps.push(['the scene lists the picture', await until('[...document.querySelectorAll("#creativeEditor .ce-item .ce-label")].some(e => /in-the-scene/.test(e.textContent))', 15000)]);
+      // THE OWNER'S OWN 3D MODEL: a real .glb file into this scene, and the preview draws it
+      const glbPath = process.env.SITEREMADE_BUILDER_DIR ? path.join(process.env.SITEREMADE_BUILDER_DIR, 'test', 'fixtures', 'three-d', 'product-normalized.glb') : '';
+      if (glbPath && fs.existsSync(glbPath)) {
+        const b64 = fs.readFileSync(glbPath).toString('base64');
+        const btn = await js('(() => { const i = document.querySelector(\'[data-ce="upload-model"]\'); const l = i && i.closest("label"); if (!l) return null; l.scrollIntoView({ block: "center" }); const r = l.getBoundingClientRect(); return { h: r.height, inside: r.left >= 0 && r.right <= innerWidth + 0.5, text: l.textContent.trim() }; })()');
+        steps.push(['"Upload your own 3D model (.glb)" shown, touch-sized, on screen', !!btn && btn.h >= 43.5 && btn.inside && /3D model/.test(btn.text)]);
+        await sleep(300); await shot('7c-own-model');
+        await js(`(() => { const bin = atob("${b64}"); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          const dt = new DataTransfer(); dt.items.add(new File([u], 'my-orb.glb', { type: '' })); const i = document.querySelector('[data-ce="upload-model"]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+        steps.push(['the 3D model is on the page, saved as a draft for free', await until('/Added your 3D model/.test(document.querySelector("#ceFeedback").textContent) && /No credits were used/.test(document.querySelector("#ceFeedback").textContent)', 60000)]);
+        steps.push(['the scene shows its 3D model', await until('/Interactive 3D model/.test(document.querySelector("#cePanel").textContent)', 15000)]);
+        out.widths[width].ownModelFeedback = (await js('document.querySelector("#ceFeedback").textContent')).slice(0, 300);
+      } else steps.push(['(no builder fixture model: own-model upload not checked)', true]);
       await sleep(600); await shot('7-picture-added');
       out.widths[width].overflowAtEnd = await overflow();
       out.widths[width].tapTargetsUnder44 = await js('[...document.querySelectorAll("#creativeEditor button, #creativeEditor select, #creativeEditor .ce-file")].filter(e => e.offsetParent && e.getBoundingClientRect().height < 43.5).map(e => e.textContent.trim().slice(0, 30))');
