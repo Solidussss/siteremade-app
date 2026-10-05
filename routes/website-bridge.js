@@ -302,7 +302,7 @@ function creditsFrom(x) {
 // ---- THE CREATIVE WEBSITE EDITOR: what the app passes on (explicit allowlists, like summaryFrom) ----------------------
 // an owner picture as a PNG data URL: up to 8 MB of picture (the builder refuses anything bigger), base64 and JSON around it
 const CREATIVE_UPLOAD_MAX_CHARS = 12 * 1024 * 1024;
-const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId', 'preset', 'headline', 'body', 'label', 'words', 'picture', 'kind'];
+const CREATIVE_OP_KEYS = ['type', 'sceneId', 'field', 'index', 'value', 'layerId', 'assetId', 'composition', 'role', 'modelSceneId', 'modelId', 'sectionId', 'distance', 'azimuth', 'mediaId', 'preset', 'headline', 'body', 'label', 'words', 'picture', 'kind', 'dir'];
 function creativeOpFrom(op) {
   const out = {}; CREATIVE_OP_KEYS.forEach(k => { const v = op[k]; if (typeof v === 'string') out[k] = v.slice(0, k === 'value' ? 600 : 60); else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v; });
   return out;
@@ -351,6 +351,7 @@ function creativeOutlineFrom(d) {
         move: { words: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.words) || '') ? sc.move.words : '', picture: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.picture) || '') ? sc.move.picture : '' },
         signature: /^[a-z0-9-]{1,12}$/.test(sc.signature || '') ? sc.signature : '', signatures: acts(sc.signatures).filter(k => /^[a-z0-9-]{1,12}$/.test(k)),
       })),
+      undo: o.undo && Number.isInteger(o.undo.steps) ? { steps: Math.max(0, Math.min(5, o.undo.steps)), last: s(o.undo.last, 160) } : { steps: 0, last: '' },
       pictures: (o.pictures || []).slice(0, 40).map(p => ({ assetId: s(p.assetId, 60), source: src(p.source), onPage: !!p.onPage, width: n(p.width), height: n(p.height) })),
       models: (o.models || []).slice(0, 4).map(m => ({ id: s(m.id, 60), sourceAssetId: s(m.sourceAssetId, 60), placedIn: acts(m.placedIn) })),
       media: (o.media || []).slice(0, 12).map(m => ({ assetId: s(m.assetId, 60), mediaId: s(m.mediaId, 60) })),
@@ -721,6 +722,15 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     const s = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
     const r = await bridge.postCreativeUpload(c.access, got.summary.projectId, { baseRevision: body.baseRevision, png: body.png, title: s(body.title, 120), alt: s(body.alt, 200), sceneId: s(body.sceneId, 60), layerId: s(body.layerId, 60), after: s(body.after, 60), into: s(body.into, 60) });
     if (r.status === 200 && r.data && r.data.ok) return json(res, 200, Object.assign(creativeChangeFrom(got.summary.projectId, r.data), { assetId: s(r.data.assetId, 60) || null }));
+    return passThroughError(json, res, r);
+  });
+  // undo the last editor change (free): the builder puts the page back as it was
+  router.post('/api/app/website/projects/:projectId/creative/undo', { auth: 'user' }, async (req, res, { c, json, params }) => {
+    const got = await creativeGate(c, json, res, params, true); if (!got) return;
+    const body = await creativeBody(req, json, res); if (!body) return;
+    if (!Number.isInteger(body.baseRevision)) return json(res, 400, { ok: false, code: 'invalid_request', message: 'Refresh your website before changing it.' });
+    const r = await bridge.postCreativeUndo(c.access, got.summary.projectId, { baseRevision: body.baseRevision });
+    if (r.status === 200 && r.data && r.data.ok) return json(res, 200, creativeChangeFrom(got.summary.projectId, r.data));
     return passThroughError(json, res, r);
   });
   // the owner's own 3D model (.glb, up to 8 MB -- the builder checks it as every model) shown in a scene: free

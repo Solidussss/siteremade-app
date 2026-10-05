@@ -190,6 +190,11 @@
   }
   // THE SCENE'S CINEMATIC CLIP, on its own: where it plays, and taking it off -- apart from the pictures, so a picture
   // removed or added again never leaves the clip doubled or lost
+  // UNDO: one step back (free) -- the page as it was before the last change
+  function undoRow() {
+    var u = ED.outline && ED.outline.undo; if (!u || !u.steps) return '';
+    return '<div class="ce-row"><button type="button" class="ce-btn ce-quiet" data-ce="undo"' + (ED.busy ? ' disabled' : '') + '>↶ Undo last change · free</button></div>' + (u.last ? '<p class="ce-note">Last change: ' + esc(u.last) + '</p>' : '');
+  }
   function clipBlock(s) {
     var k = s.clips || []; if (!k.length) return '';
     return '<div class="ce-group"><h3>Cinematic clip</h3>' + k.map(function (c) {
@@ -259,6 +264,7 @@
       '<div class="ce-row ce-swatches" role="group" aria-label="Scene colour (from your page’s own palette)">' + pal.map(function (p) { return '<button type="button" class="ce-swatch' + (p.hex === s.background ? ' is-on' : '') + '" data-ce="colour" data-role="' + esc(p.role) + '" style="--sw:' + esc(p.hex) + '" title="' + esc(p.label) + '"><span class="sr-only">' + esc(p.label) + '</span></button>'; }).join('') + '<span class="ce-note">colour · free</span></div>' +
       (s.compositions.length ? '<div class="ce-row"><select class="ce-select" data-ce="composition" aria-label="Composition"><option value="">Composition: ' + esc(s.composition.replace(/-/g, ' ')) + '</option>' + s.compositions.map(function (k) { return '<option value="' + esc(k.id) + '" title="' + esc(k.label) + '">' + esc(k.id.replace(/-/g, ' ')) + '</option>'; }).join('') + '</select><span class="ce-note">free</span></div>' : '') +
       motionRows(s) +
+      (s.actions.indexOf('scene-up') >= 0 || s.actions.indexOf('scene-down') >= 0 ? '<div class="ce-row">' + (s.actions.indexOf('scene-up') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="scene-order" data-dir="up">↑ Move up · free</button>' : '') + (s.actions.indexOf('scene-down') >= 0 ? '<button type="button" class="ce-btn" data-ce="free" data-op="scene-order" data-dir="down">↓ Move down · free</button>' : '') + '</div>' : '') +
       (s.actions.indexOf('scene-remove') >= 0 ? '<div class="ce-row"><button type="button" class="ce-btn ce-quiet" data-ce="free" data-op="scene-remove">Remove this scene · free</button></div>' : '') +
       (s.actions.indexOf('ai-scene') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSceneAsk" data-draft="ask:' + esc(s.id) + '" maxlength="400" placeholder="Optional: what should change?" aria-label="What should change in this scene"><button type="button" class="ce-btn" data-ce="ai-scene">Redesign this scene…</button></div>' : '') + '</div>';
   }
@@ -313,7 +319,7 @@
     // nothing leaves the fields (their text, caret and input method) exactly as they are
     var put = function (el, key, html) { if (!el || (ED.html[key] === html && el.childNodes.length)) return; el.innerHTML = html; ED.html[key] = html; };
     put(qs('#ceScenes'), 'scenes', ED.outline.scenes.map(function (x, i) { return '<li><button type="button" class="ce-scene' + (x.id === ED.scene ? ' is-on' : '') + '" data-ce="scene" data-scene="' + esc(x.id) + '" aria-pressed="' + (x.id === ED.scene) + '"><span class="ce-num">' + (i + 1) + '</span><span class="ce-sname">' + esc(x.name) + '</span></button></li>'; }).join(''));
-    put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + textBlock(s) + clipBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
+    put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + undoRow() + textBlock(s) + clipBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
     put(qs('#ceWhole'), 'whole', fontsBlock() + '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
       ((ED.outline.actions || []).indexOf('ai-site') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSiteAsk" data-draft="site" maxlength="600" placeholder="Describe a new direction for the whole page" aria-label="Describe a new direction for the whole page"><button type="button" class="ce-btn" data-ce="ai-site">Redesign the page…</button></div>' : '') + '</div>');
     // every free-form field shows the owner's unsaved words when there are any (a field drawn again starts from them)
@@ -337,6 +343,7 @@
     if (k === 'open') { ED.open = b.dataset.key; draw(); var t = qs('#ceText'); if (t) t.focus(); return; }
     if (k === 'close') { if (ED.open && ED.open.indexOf('text:') === 0) delete ED.drafts['text:' + ED.scene + ':' + ED.open.slice(5)]; ED.open = null; draw(); return; }
     if (k === 'cancel') { ED.pending = null; say(''); draw(); return; }
+    if (k === 'undo') { if (ED.busy) return; ED.busy = true; say('Undoing your last change…'); draw(); call('POST', base() + '/undo', { baseRevision: ED.revision }).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } afterChange(r, 'Undone.'); }); return; }
     if (k === 'confirm') { confirmPending(); return; }
     if (k === 'font-open') { ED.fontOpen = ED.fontOpen === b.dataset.role ? null : b.dataset.role; draw(); var m = qs('#ceFontMenu'); var on = m && m.querySelector('.is-on'); if (on) m.scrollTop = Math.max(0, m.scrollTop + on.getBoundingClientRect().top - m.getBoundingClientRect().top - (m.clientHeight - on.offsetHeight) / 2); /* (the current choice, in the middle of the menu) */ return; }
     if (k === 'font-pick') { var op = { type: 'fonts' }; op[b.dataset.role] = b.dataset.font; ED.fontOpen = null; edit(op); return; }
@@ -355,6 +362,7 @@
       if (op === 'model-place') return edit({ type: 'model-place', modelId: b.dataset.model, sectionId: s.id });
       if (op === 'model-remove') return edit({ type: 'model-remove', modelSceneId: b.dataset.msc });
       if (op === 'model-lathe') return edit({ type: 'model-lathe', sceneId: s.id, assetId: b.dataset.asset });
+      if (op === 'scene-order') return edit({ type: 'scene-order', sceneId: s.id, dir: b.dataset.dir === 'up' ? 'up' : 'down' });
       if (op === 'scene-remove') { if (!window.confirm('Remove this scene from the page? Its picture stays in your pictures.')) return; ED.scene = null; return edit({ type: 'scene-remove', sceneId: s.id }); }
       return edit({ type: op, assetId: b.dataset.asset });
     }
