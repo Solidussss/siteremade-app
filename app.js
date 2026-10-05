@@ -1446,6 +1446,10 @@ function renderWebsiteBuilderBlock(){
   host.innerHTML=`<p class="eyebrow">BUILDER PROJECT</p><h3>Connect a website</h3><p>We found ${cands.length} SiteRemade websites on your account. Choose the one for this business.</p><fieldset class="admin-relink-list">${cands.map(cardFor).join('')}</fieldset><div class="admin-relink-actions"><button type="button" class="primary-action" id="websiteConnectChosen" ${websiteCandidates.connecting?'disabled':''}>${websiteCandidates.connecting?'Connecting…':'Connect'}</button></div>${errLine}${link}`;
   const goBtn=qs('#websiteConnectChosen');if(goBtn)goBtn.onclick=()=>{const picked=qs('input[name="website-connect-pick"]:checked');if(!picked){websiteCandidates.error='Choose a website first.';host.dataset.sig='';renderWebsiteBuilderBlock();return;}connectWebsite(picked.value);};
 }
+// (a preview whose files this app no longer holds -- it restarted while the preview was open -- asks to be loaded again;
+// at most once in 30 s, so a file that is really missing never loops)
+let websiteFrameStaleAt=0;
+window.addEventListener('message',e=>{const f=qs('#websiteFrame');if(!f||e.source!==f.contentWindow||!e.data||e.data.type!=='sr-preview-stale')return;const now=Date.now();if(now-websiteFrameStaleAt<30000)return;websiteFrameStaleAt=now;const u=f.getAttribute('src');if(u)f.src=u;});
 function setWebsiteFrame(url){
   const f=qs('#websiteFrame'),empty=qs('#websiteEmpty');if(!f||!empty)return;
   if(!url){f.hidden=true;if(f.getAttribute('src'))f.removeAttribute('src');websiteView.frameSrc='';empty.hidden=false;return;}

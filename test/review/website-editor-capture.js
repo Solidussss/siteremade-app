@@ -130,6 +130,9 @@ app.whenReady().then(async () => {
       steps.push(['scene colour changed (free)', await until('/now stands on the/.test(document.querySelector("#ceFeedback").textContent)', 30000)]);
       // a paid AI rewrite: the builder's quote shown, then confirmed
       await js('[...document.querySelectorAll(".ce-item")].find(b => /Headline/.test(b.textContent)).click(); true'); await sleep(200);
+      // (the editor reloads its outline after a change: a field opened before that reload lands is closed by it -- wait for
+      // the field's actions, opening it again if the reload closed it)
+      for (let i = 0; i < 3 && !(await until('!!document.querySelector(\'[data-ce="ai-text"]\')', 3000)); i++) { await js('[...document.querySelectorAll(".ce-item")].find(b => /Headline/.test(b.textContent)).click(); true'); await sleep(300); }
       await js('document.querySelector(\'[data-ce="ai-text"]\').click(); true');
       steps.push(['the builder\'s quote shown beside the action', await until('document.querySelector(".ce-confirm") && /uses 1 credit/.test(document.querySelector(".ce-confirm").textContent)', 20000)]);
       await shot('3-quote');

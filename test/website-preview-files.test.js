@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const fs = require('fs');
 const { startApp } = require('./helpers/app-harness');
 const { startFixtureBuilder } = require('./helpers/fixture-builder');
 // (the harness loads the app's modules afresh: the one its routes use is read after it starts)
@@ -54,4 +55,12 @@ test('a lifted file is served without a session, a clip in ranges, nothing for a
     r = await fetch(url, { headers: { range: `bytes=${MP4.length + 5}-` } }); assert.equal(r.status, 416);
     for (const bad of ['0'.repeat(40), 'nope', id.slice(0, 39)]) assert.equal((await fetch(app.base + FILES.PATH + bad)).status, 404, bad);
   } finally { await app.stop(); await builder.stop(); }
+});
+
+test('a preview whose files this app no longer holds (it restarted) asks the Website view to load it again -- the view reloads it at most every 30 s', () => {
+  const FILES = files(); const out = FILES.lift('<!doctype html><body><img src="' + uri('image/png', PNG) + '"></body>');
+  assert.ok(out.includes("parent.postMessage({type:'sr-preview-stale'},'*')"), 'the page asks'); assert.ok(out.indexOf('sr-preview-stale') < out.lastIndexOf('</body>'), 'inside the body');
+  assert.ok(!FILES.lift('<p>no big files</p>').includes('sr-preview-stale'), 'a page with nothing lifted is left as it was');
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.ok(app.includes("e.data.type!=='sr-preview-stale'") && app.includes('now-websiteFrameStaleAt<30000'), 'the Website view reloads, throttled');
 });
