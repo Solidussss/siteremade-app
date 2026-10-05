@@ -56,7 +56,13 @@ test('every preview route sends ONE policy, and it lets a Creative page\'s 3D en
     for (const [d, url, what] of NEVER) assert.equal(CSP.allows(policy, d, url, ORIGIN), false, `${what} must stay blocked (${d})`);
     // nothing else was opened up: no frames of it elsewhere, no forms, no plugins of the old kind
     const p = CSP.parse(policy);
-    assert.deepEqual(p['frame-ancestors'], ["'self'"]); assert.deepEqual(p['form-action'], ["'none'"]); assert.deepEqual(p['connect-src'].slice(0, 2), ['data:', 'blob:']); assert.equal(p['connect-src'].length, 3);
+    assert.deepEqual(p['frame-ancestors'], ["'self'"]); assert.deepEqual(p['form-action'], ["'none'"]); assert.deepEqual(p['connect-src'].slice(0, 2), ['data:', 'blob:']); assert.equal(p['connect-src'].length, 4);
+    // (each with its scheme written out: Safari matches a scheme-less source against the sandboxed frame's empty scheme and
+    // refused the 3D model in the app's preview -- production bug, 2026-10-04)
+    for (const d of ['connect-src', 'script-src']) {
+      const files = p[d].filter(x => x.endsWith('/api/app/website/preview-file/'));
+      assert.ok(files.length && files.every(x => x.startsWith('https://') || x.startsWith('http://')) && files.some(x => x.startsWith('https://')), d + ': ' + p[d].join(' '));
+    }
     // the preview's lifted files (lib/preview-files.js): that one path of this app, for the engine and the model -- nothing else of it
     const files = w.app.base + '/api/app/website/preview-file/' + 'a'.repeat(40);
     assert.equal(CSP.allows(policy, 'script-src-elem', files, w.app.base), true, 'the 3D engine from its preview file');

@@ -250,7 +250,9 @@ const PREVIEW_CSP = "default-src 'self' data: blob: https:; img-src 'self' data:
 // app -- no other path of it, no other host -- and the policy is otherwise the one above
 function previewPolicy(req) {
   const host = String((req && req.headers && req.headers.host) || ''); if (!/^[a-z0-9.-]+(:\d+)?$/i.test(host)) return PREVIEW_CSP;
-  const files = host.toLowerCase() + PREVIEW_FILES.PATH;
+  // (with its scheme written out: the preview runs in a sandboxed frame with no origin of its own, and Safari matches a
+  // source without a scheme against that frame's (empty) scheme -- it refused the 3D model and engine; Chromium did not)
+  const at = host.toLowerCase() + PREVIEW_FILES.PATH; const files = 'https://' + at + ' http://' + at;
   return PREVIEW_CSP.replace("default-src 'self' data: blob: https:;", "default-src 'self' data: blob: https: " + files + ';').replace("script-src 'unsafe-inline' data:;", "script-src 'unsafe-inline' data: " + files + ';').replace('connect-src data: blob:;', 'connect-src data: blob: ' + files + ';');
 }
 function sendPreview(req, res, html) {
