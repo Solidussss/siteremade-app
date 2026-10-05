@@ -188,6 +188,15 @@
       (after ? '<div class="ce-row ce-add"><label class="ce-btn ce-file">+ Add as a new scene after this one<input type="file" accept="image/*" data-ce="upload-after"></label>' + pick('place-after', 'Add a picture this website already has as a new scene') +
         '</div><p class="ce-note">Shown big in its own scene. Nothing else on the page moves. Free.</p>' : '');
   }
+  // THE SCENE'S CINEMATIC CLIP, on its own: where it plays, and taking it off -- apart from the pictures, so a picture
+  // removed or added again never leaves the clip doubled or lost
+  function clipBlock(s) {
+    var k = s.clips || []; if (!k.length) return '';
+    return '<div class="ce-group"><h3>Cinematic clip</h3>' + k.map(function (c) {
+      return '<div class="ce-item is-open"><span class="ce-label">' + esc(c.title || 'Cinematic clip') + '</span><span class="ce-value">' + (c.where === 'picture' ? 'Plays inside its picture' : 'Plays full-screen behind this scene') + ' · on phones the whole clip shows</span>' +
+        ((c.actions || []).indexOf('motion-remove') >= 0 ? '<div class="ce-row"><button type="button" class="ce-btn ce-quiet" data-ce="free" data-op="motion-remove" data-asset="' + esc(c.assetId) + '">Take the clip off · free</button></div>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
   function pictureBlock(s) {
     if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p>' + addRow(s) + '</div>';
     return '<div class="ce-group"><h3>Pictures</h3>' + s.pictures.map(function (p) {
@@ -303,7 +312,7 @@
     // nothing leaves the fields (their text, caret and input method) exactly as they are
     var put = function (el, key, html) { if (!el || (ED.html[key] === html && el.childNodes.length)) return; el.innerHTML = html; ED.html[key] = html; };
     put(qs('#ceScenes'), 'scenes', ED.outline.scenes.map(function (x, i) { return '<li><button type="button" class="ce-scene' + (x.id === ED.scene ? ' is-on' : '') + '" data-ce="scene" data-scene="' + esc(x.id) + '" aria-pressed="' + (x.id === ED.scene) + '"><span class="ce-num">' + (i + 1) + '</span><span class="ce-sname">' + esc(x.name) + '</span></button></li>'; }).join(''));
-    put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + textBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
+    put(qs('#cePanel'), 'panel', s ? (jobsBlock() + costRow() + textBlock(s) + clipBlock(s) + pictureBlock(s) + modelBlock(s) + sceneBlock(s)) : '');
     put(qs('#ceWhole'), 'whole', fontsBlock() + '<div class="ce-group"><h3>Whole page</h3><div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="reapply-look">Re-apply today’s layout rules · free</button></div>' +
       ((ED.outline.actions || []).indexOf('ai-site') >= 0 ? '<div class="ce-row"><input class="ce-input" id="ceSiteAsk" data-draft="site" maxlength="600" placeholder="Describe a new direction for the whole page" aria-label="Describe a new direction for the whole page"><button type="button" class="ce-btn" data-ce="ai-site">Redesign the page…</button></div>' : '') + '</div>');
     // every free-form field shows the owner's unsaved words when there are any (a field drawn again starts from them)

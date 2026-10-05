@@ -345,6 +345,7 @@ function creativeOutlineFrom(d) {
         models: (sc.models || []).slice(0, 2).map(m => ({ id: s(m.id, 60), modelId: s(m.modelId, 60), composition: s(m.composition, 40), distance: n(m.distance), azimuth: n(m.azimuth), actions: acts(m.actions) })),
         compositions: (sc.compositions || []).slice(0, 16).map(k => ({ id: s(k.id, 40), label: s(k.label, 120) })), actions: acts(sc.actions),
         // (how the scene moves and the set pieces it can carry -- the builder's vocabulary words only)
+        clips: (sc.clips || []).slice(0, 4).map(k => ({ assetId: s(k.assetId, 60), mediaId: s(k.mediaId, 60), title: s(k.title, 80), where: k.where === 'picture' ? 'picture' : 'behind', actions: acts(k.actions) })),
         move: { words: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.words) || '') ? sc.move.words : '', picture: /^[a-z0-9-]{1,12}$/.test((sc.move && sc.move.picture) || '') ? sc.move.picture : '' },
         signature: /^[a-z0-9-]{1,12}$/.test(sc.signature || '') ? sc.signature : '', signatures: acts(sc.signatures).filter(k => /^[a-z0-9-]{1,12}$/.test(k)),
       })),
