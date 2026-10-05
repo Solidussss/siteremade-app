@@ -22,8 +22,11 @@ function allows(policy, directive, url, origin) {
     if (/^[a-z][a-z0-9+.-]*:$/i.test(s)) return u.protocol === s.toLowerCase(); // a scheme source
     if (s.startsWith("'")) return false; // other keywords never match a URL
     if (s === '*') return !['data:', 'blob:', 'filesystem:'].includes(u.protocol);
-    const m = /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?([^/:]+)(?::(\d+|\*))?/i.exec(s); if (!m) return false;
+    const m = /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?([^/:]+)(?::(\d+|\*))?(\/.*)?$/i.exec(s); if (!m) return false;
     if (m[1] && u.protocol !== m[1].toLowerCase() + ':') return false;
+    if (m[4] && m[4] !== '*' && (u.port || (u.protocol === 'https:' ? '443' : '80')) !== m[4]) return false;
+    // (a path: a prefix when it ends in /, else exactly that path)
+    if (m[5] && !(m[5].endsWith('/') ? u.pathname.startsWith(m[5]) : u.pathname === m[5])) return false;
     return m[2] ? u.hostname.endsWith('.' + m[3]) : u.hostname === m[3].toLowerCase();
   });
 }

@@ -55,6 +55,7 @@ const { sendWebsiteDownload } = require('../lib/website-download');
 const bridge = require('../lib/generator-bridge');
 const websiteLinks = require('../lib/website-links');
 const { savedWebsitesFrom } = require('../lib/saved-websites');
+const PREVIEW_FILES = require('../lib/preview-files');
 const websiteAdmin = require('../lib/website-admin');
 const { provisionWorkspaceSite, analytics, ensureWorkspaceSite, umamiDomainOk, domainOf, umamiConfigured } = require('./umami-analytics');
 
@@ -242,8 +243,20 @@ async function forWorkspaceProject(c, projectId) {
 // scripts inline, and every file it needs inlined as a data: URL -- including, on a Creative page with 3D, the 3D engine
 // (which the page's loader adds as <script src="data:...">) and the GLB (which the engine fetch()es from its data: URL,
 // then decodes the textures inside it through blob: URLs). So scripts may come from the page and from data: URLs, and
-// fetch() may read data: and blob: URLs -- never the network: connect-src names no host, not even this one.
+// fetch() may read data: and blob: URLs -- never the network: connect-src names no host but the one path below
+// (previewPolicy: this app's preview files, where the big files of that page are lifted to).
 const PREVIEW_CSP = "default-src 'self' data: blob: https:; img-src 'self' data: blob: https:; style-src 'unsafe-inline' https:; script-src 'unsafe-inline' data:; connect-src data: blob:; form-action 'none'; frame-ancestors 'self'";
+// a preview page with its big files lifted out (lib/preview-files.js): the page may load them from that one path of this
+// app -- no other path of it, no other host -- and the policy is otherwise the one above
+function previewPolicy(req) {
+  const host = String((req && req.headers && req.headers.host) || ''); if (!/^[a-z0-9.-]+(:\d+)?$/i.test(host)) return PREVIEW_CSP;
+  const files = host.toLowerCase() + PREVIEW_FILES.PATH;
+  return PREVIEW_CSP.replace("default-src 'self' data: blob: https:;", "default-src 'self' data: blob: https: " + files + ';').replace("script-src 'unsafe-inline' data:;", "script-src 'unsafe-inline' data: " + files + ';').replace('connect-src data: blob:;', 'connect-src data: blob: ' + files + ';');
+}
+function sendPreview(req, res, html) {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': previewPolicy(req) });
+  return res.end(PREVIEW_FILES.lift(html));
+}
 function previewWantsDraft(u) { return !!(u && u.searchParams && u.searchParams.get('source') === 'draft'); }
 // BILLING PASS: the browser sends one id per update attempt; a retry of the same attempt reuses it
 function requestIdFrom(body) { const v = typeof body.requestId === 'string' ? body.requestId.trim() : ''; return /^[A-Za-z0-9_.:-]{8,120}$/.test(v) ? v : null; }
@@ -496,8 +509,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     const published = !!(u && u.searchParams && u.searchParams.get('source') === 'published');
     const r = await bridge.getPreview(c.access, params.projectId, { draft: !published });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status === 404 ? 404 : (r.status || 502), { ok: false, code: r.status === 404 ? 'not_found' : 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
-    return res.end(r.text);
+    return sendPreview(req, res, r.text);
   });
   router.get('/api/app/websites/:projectId/download', { auth: 'user' }, async (req, res, { c, json, params }) => {
     const gate = await memberGate(c);
@@ -587,8 +599,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!got.ok) return got.r ? passThroughError(json, res, got.r) : json(res, got.status, { ok: false, code: got.code, message: got.message });
     const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
-    return res.end(r.text);
+    return sendPreview(req, res, r.text);
   });
 
   router.get('/api/app/website/projects/:projectId/deployment', { auth: 'user' }, async (req, res, { c, json, params }) => {
@@ -737,8 +748,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status === 404 ? 404 : 502, { ok: false, code: 'still_unavailable', message: 'The 3D model’s still could not be prepared.' });
     // (the still page runs the inlined 3D engine on the inlined model and posts the PNG to the page that opened it: the
     // same policy as a preview -- its own scripts and data: URLs, no network at all)
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
-    return res.end(r.text);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP }); return res.end(r.text);
   });
 
   router.post('/api/app/website/projects/:projectId/publish', { auth: 'user' }, async (req, res, { c, json, params }) => {
@@ -765,6 +775,8 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     return sendWebsiteDownload({ bridge, token: c.access, projectId: got.summary.projectId, res, json });
   });
 
+  // a preview's lifted file (lib/preview-files.js): its unguessable id is the only key, as a sandboxed frame sends no session
+  router.get(PREVIEW_FILES.PATH + ':id', { auth: 'none' }, async (req, res, { params }) => PREVIEW_FILES.send(req, res, params.id));
   router.get('/api/app/website/preview', { auth: 'user' }, async (req, res, { c, json, u }) => {
     const gate = await workspaceGate(c);
     if (!gate.ok) return json(res, gate.status, { ok: false, code: gate.code, message: gate.message });
@@ -772,8 +784,7 @@ module.exports = function registerWebsiteBridgeRoutes(router) {
     if (!got.ok) return passThroughError(json, res, got.r);
     const r = await bridge.getPreview(c.access, got.summary.projectId, { draft: previewWantsDraft(u) });
     if (r.status !== 200 || typeof r.text !== 'string') return json(res, r.status || 502, { ok: false, code: 'preview_unavailable', message: 'The website preview could not be loaded.' });
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': PREVIEW_CSP });
-    return res.end(r.text);
+    return sendPreview(req, res, r.text);
   });
 
   router.get('/api/app/website/deployment', { auth: 'user' }, async (req, res, { c, json }) => {

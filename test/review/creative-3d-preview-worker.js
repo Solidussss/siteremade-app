@@ -20,7 +20,7 @@ const RECORDER = `(() => { if (window.__rec) return; const rec = window.__rec = 
   const short = u => { u = String(u); return u.startsWith('data:') ? u.slice(0, u.indexOf(',') + 1) + '…(' + u.length + ' chars)' : u.slice(0, 120); };
   const ap = Node.prototype.appendChild; Node.prototype.appendChild = function (n) { if (n && n.tagName === 'SCRIPT' && n.src) { const e = { src: short(n.src), loaded: null }; rec.scripts.push(e); n.addEventListener('load', () => { e.loaded = true; }); n.addEventListener('error', () => { e.loaded = false; }); } return ap.call(this, n); };
   const f = window.fetch; window.fetch = function (u, o) { const url = String((u && u.url) || u); const e = { url: short(url), ok: null, bytes: 0, sha256: '' }; rec.fetches.push(e);
-    return f.call(this, u, o).then(r => { e.ok = r.ok; if (url.startsWith('data:')) r.clone().arrayBuffer().then(b => { e.bytes = b.byteLength; return crypto.subtle.digest('SHA-256', b); }).then(h => { e.sha256 = [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join(''); }).catch(() => {}); return r; }, err => { e.ok = false; e.error = String(err && err.message || err).slice(0, 80); throw err; }); };
+    return f.call(this, u, o).then(r => { e.ok = r.ok; if (url.startsWith('data:') || url.includes('/preview-file/')) r.clone().arrayBuffer().then(b => { e.bytes = b.byteLength; return crypto.subtle.digest('SHA-256', b); }).then(h => { e.sha256 = [...new Uint8Array(h)].map(x => x.toString(16).padStart(2, '0')).join(''); }).catch(() => {}); return r; }, err => { e.ok = false; e.error = String(err && err.message || err).slice(0, 80); throw err; }); };
   document.addEventListener('securitypolicyviolation', e => rec.violations.push(e.violatedDirective + ' ' + String(e.blockedURI).slice(0, 40)));
 })();`;
 
@@ -55,7 +55,9 @@ app.whenReady().then(async () => {
     await inPage(`window.scrollTo(0, ${top + 400})`); await sleep(900); const after = await state();
     await sleep(300); const rec = await inPage('window.__rec');
     const img = await Promise.race([w.webContents.capturePage(), sleep(8000).then(() => null)]); if (img) fs.writeFileSync(path.join(job.outDir, v.name + '.png'), img.toPNG());
-    const engineScript = rec.scripts.find(x => /^data:/.test(x.src)); const glb = rec.fetches.find(x => /^data:/.test(x.url) && x.sha256 === job.assetRef);
+    // (inlined as data: URLs, or -- lifted out of the page by lib/preview-files.js -- from this app's preview-file path)
+    const lifted = u => /^data:/.test(u) || /\/api\/app\/website\/preview-file\/[a-f0-9]{40}$/.test(u);
+    const engineScript = rec.scripts.find(x => lifted(x.src)); const glb = rec.fetches.find(x => lifted(x.url) && x.sha256 === job.assetRef);
     const out = {
       name: v.name, url: v.url, inAppFrame: v.frame, csp: null,
       atLoad: { scriptsAdded: scriptsAtLoad, fetches: fetchesAtLoad, engine: atLoad.engine },

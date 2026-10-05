@@ -39,12 +39,16 @@ test('the real builder\'s 3D page, previewed through every app route: its scene,
       assert.ok(data, `${url}: the page carries its 3D scene data`); assert.equal(data.scenes.length, 1, url);
       assert.match(html, new RegExp(`<div class="td-stage" data-td="${data.scenes[0].id}" data-td-comp="scroll-rotate"`), `${url}: and its 3D stage`);
       assert.match(html, /__sr3d/, `${url}: and the 3D loader`);
-      // the engine and the model, inlined -- the model is byte for byte the one the job stored (its reference)
-      assert.match(data.runtime, /^data:[\w/.+-]+;base64,/); assert.match(Buffer.from(data.runtime.split(',')[1], 'base64').toString('utf8', 0, 40), /^\/\*! SiteRemade 3D engine/, `${url}: the engine`);
-      const model = Buffer.from(data.scenes[0].model.split(',')[1], 'base64'); assert.equal(crypto.createHash('sha256').update(model).digest('hex'), s.assetRef, `${url}: the stored model`);
-      // and the policy this page runs under lets the browser load both (and still nothing from the network)
-      assert.equal(CSP.allows(policy, 'script-src-elem', data.runtime.slice(0, 80), app.base), true, `${url}: the engine may run`);
-      assert.equal(CSP.allows(policy, 'connect-src', data.scenes[0].model.slice(0, 80), app.base), true, `${url}: the model may be read`);
+      // the engine and the model, lifted out of the page to this app's preview files (lib/preview-files.js: the page an
+      // iPhone opens stays small) -- the model is byte for byte the one the job stored (its reference)
+      const FILE = /^\/api\/app\/website\/preview-file\/[a-f0-9]{40}$/; assert.match(data.runtime, FILE, url); assert.match(data.scenes[0].model, FILE, url);
+      assert.ok(html.length < 1024 * 1024, `${url}: the page itself is ${html.length} characters`);
+      const engine = await fetch(app.base + data.runtime); assert.equal(engine.headers.get('content-type'), 'text/javascript');
+      assert.match((await engine.text()).slice(0, 40), /^\/\*! SiteRemade 3D engine/, `${url}: the engine`);
+      const model = Buffer.from(await (await fetch(app.base + data.scenes[0].model)).arrayBuffer()); assert.equal(crypto.createHash('sha256').update(model).digest('hex'), s.assetRef, `${url}: the stored model`);
+      // and the policy this page runs under lets the browser load both (and still nothing else from the network)
+      assert.equal(CSP.allows(policy, 'script-src-elem', app.base + data.runtime, app.base), true, `${url}: the engine may run`);
+      assert.equal(CSP.allows(policy, 'connect-src', app.base + data.scenes[0].model, app.base), true, `${url}: the model may be read`);
       assert.equal(CSP.allows(policy, 'connect-src', `blob:${app.base}/x`, app.base), true, `${url}: its textures may be decoded`);
       assert.equal(CSP.allows(policy, 'connect-src', `${app.base}/api/app/website`, app.base), false, `${url}: no network`);
     }

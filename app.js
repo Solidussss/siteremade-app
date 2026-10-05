@@ -1466,7 +1466,10 @@ function fitWebsiteFrame(){
   const c=qs('#websiteCanvas'),f=qs('#websiteFrame');if(!c||!f||f.hidden)return;
   const W=c.clientWidth,H=c.clientHeight;if(!W||!H)return;
   if(websiteView.device==='mobile'){const bw=390,bh=844,sc=Math.min(1,H/bh,W/bw);f.style.width=bw+'px';f.style.height=bh+'px';f.style.transform=`scale(${sc})`;f.style.left=Math.max(0,(W-bw*sc)/2)+'px';f.style.top=Math.max(0,(H-bh*sc)/2)+'px';}
-  else{const bw=1440,sc=W/bw;f.style.width=bw+'px';f.style.height=(H/sc)+'px';f.style.transform=`scale(${sc})`;f.style.left='0px';f.style.top='0px';}
+  // (a real desktop window: it fills a wide stage; on a narrow one it is 1440x900 scaled to fit -- never stretched to fill a tall stage: on a phone that made a frame
+  // four screens tall at desktop size, and the page's 3D, clips and effects drawn into all of it closed the browser tab)
+  else{const bw=1440,sc0=W/bw,tall=H/sc0;if(tall<=1200){f.style.width=bw+'px';f.style.height=tall+'px';f.style.transform=`scale(${sc0})`;f.style.left='0px';f.style.top='0px';return;}
+    const bh=900,sc=Math.min(sc0,H/bh);f.style.width=bw+'px';f.style.height=bh+'px';f.style.transform=`scale(${sc})`;f.style.left=Math.max(0,(W-bw*sc)/2)+'px';f.style.top='0px';}
 }
 if(window.ResizeObserver&&qs('#websiteCanvas'))new ResizeObserver(()=>fitWebsiteFrame()).observe(qs('#websiteCanvas'));
 qsa('[data-site-device]').forEach(b=>b.onclick=()=>setWebsiteDevice(b.dataset.siteDevice));

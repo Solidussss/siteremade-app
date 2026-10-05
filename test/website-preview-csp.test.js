@@ -56,7 +56,13 @@ test('every preview route sends ONE policy, and it lets a Creative page\'s 3D en
     for (const [d, url, what] of NEVER) assert.equal(CSP.allows(policy, d, url, ORIGIN), false, `${what} must stay blocked (${d})`);
     // nothing else was opened up: no frames of it elsewhere, no forms, no plugins of the old kind
     const p = CSP.parse(policy);
-    assert.deepEqual(p['frame-ancestors'], ["'self'"]); assert.deepEqual(p['form-action'], ["'none'"]); assert.deepEqual(p['connect-src'], ['data:', 'blob:']);
+    assert.deepEqual(p['frame-ancestors'], ["'self'"]); assert.deepEqual(p['form-action'], ["'none'"]); assert.deepEqual(p['connect-src'].slice(0, 2), ['data:', 'blob:']); assert.equal(p['connect-src'].length, 3);
+    // the preview's lifted files (lib/preview-files.js): that one path of this app, for the engine and the model -- nothing else of it
+    const files = w.app.base + '/api/app/website/preview-file/' + 'a'.repeat(40);
+    assert.equal(CSP.allows(policy, 'script-src-elem', files, w.app.base), true, 'the 3D engine from its preview file');
+    assert.equal(CSP.allows(policy, 'connect-src', files, w.app.base), true, 'the 3D model from its preview file');
+    for (const other of ['/api/app/website/preview', '/api/app/website/preview-files', '/app.js', '/api/app/website'])
+      for (const d of ['script-src-elem', 'connect-src']) assert.equal(CSP.allows(policy, d, w.app.base + other, w.app.base), false, `${other} must stay blocked (${d})`);
     assert.ok(!p['script-src'].includes("'unsafe-eval'") && !p['script-src'].includes('https:') && !p['script-src'].includes("'self'") && !p['script-src'].includes('*'));
   } finally { await w.stop(); }
 });
