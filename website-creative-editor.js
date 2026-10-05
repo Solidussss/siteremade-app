@@ -133,7 +133,7 @@
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
       var png = cv.toDataURL('image/png');
       say('Uploading your picture…');
-      call('POST', base() + '/upload', Object.assign({ baseRevision: ED.revision, png: png, title: String(file.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 120) }, target || {})).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } if (target && target.after && r.body.assetId) ED.focusAsset = r.body.assetId; afterChange(r, 'Your picture is on the page.'); });
+      call('POST', base() + '/upload', Object.assign({ baseRevision: ED.revision, png: png, title: String(file.name || '').replace(/\.[a-z0-9]+$/i, '').slice(0, 120) }, target || {})).then(function (r) { ED.busy = false; if (!r.ok) { failed(r); draw(); return; } if (target && (target.after || target.into) && r.body.assetId) ED.focusAsset = r.body.assetId; afterChange(r, 'Your picture is on the page.'); });
     };
     img.onerror = function () { URL.revokeObjectURL(url); ED.busy = false; say('That picture couldn’t be read in this browser.', 'error'); draw(); };
     img.src = url;
@@ -159,14 +159,20 @@
       // (the same words, set again by the page's own typography -- free, no AI)
       (s.actions.indexOf('text-layout') >= 0 && ED.open == null ? '<div class="ce-row"><button type="button" class="ce-btn" data-ce="free" data-op="text-layout">Fix text layout — free</button></div>' : '') + '</div>';
   }
-  // ADD A PICTURE: the picture goes on the page as its own new scene right after this one (the builder shows it big and
-  // leaves every other scene as it was) -- a new upload, or a picture this project already has that is not on the page
+  // ADD A PICTURE: into THIS scene, beside its words (the builder composes the scene again around it -- a page that holds
+  // as many scenes as it can still takes one), or as its own new scene right after this one, shown big; a new upload, or
+  // a picture this project already has that is not on the page. Both free.
   function addRow(s) {
-    if ((s.actions || []).indexOf('picture-scene') < 0) return '<p class="ce-note">This page has as many scenes as it can hold. Replace a picture to show a new one.</p>';
+    var a = s.actions || []; var into = a.indexOf('picture-add') >= 0, after = a.indexOf('picture-scene') >= 0;
+    var carried = (s.pictures || []).some(function (p) { return p.carried; });
+    var why = carried ? '<p class="ce-note">Your product floats through this scene, so it holds no other picture. Choose another scene above to add one there.</p>' : '';
+    if (!into && !after) return why || '<p class="ce-note">This scene shows as many pictures as it can, and the page has as many scenes as it can hold. Replace a picture to show a new one.</p>';
     var spare = (ED.outline.pictures || []).filter(function (x) { return !x.onPage; });
-    return '<div class="ce-row ce-add"><label class="ce-btn ce-primary ce-file">+ Add a picture<input type="file" accept="image/*" data-ce="upload-after"></label>' +
-      (spare.length ? '<select class="ce-select" data-ce="place-after" aria-label="Add a picture this website already has"><option value="">Or add one you already have…</option>' + spare.map(function (x) { return '<option value="' + esc(x.assetId) + '">' + esc((x.source && x.source.title) || 'Picture') + '</option>'; }).join('') + '</select>' : '') +
-      '</div><p class="ce-note">It goes in as a new scene right after this one, shown big. Nothing else on the page moves. Free.</p>';
+    var pick = function (k, label) { return spare.length ? '<select class="ce-select" data-ce="' + k + '" aria-label="' + label + '"><option value="">Or one you already have…</option>' + spare.map(function (x) { return '<option value="' + esc(x.assetId) + '">' + esc((x.source && x.source.title) || 'Picture') + '</option>'; }).join('') + '</select>' : ''; };
+    return (into ? '' : why) + (into ? '<div class="ce-row ce-add"><label class="ce-btn ce-primary ce-file">+ Add a picture to this scene<input type="file" accept="image/*" data-ce="upload-into"></label>' + pick('place-into', 'Add a picture this website already has to this scene') +
+        '</div><p class="ce-note">It goes in beside this scene’s words, and the scene is laid out again around it. Free.</p>' : '') +
+      (after ? '<div class="ce-row ce-add"><label class="ce-btn ce-file">+ Add as a new scene after this one<input type="file" accept="image/*" data-ce="upload-after"></label>' + pick('place-after', 'Add a picture this website already has as a new scene') +
+        '</div><p class="ce-note">Shown big in its own scene. Nothing else on the page moves. Free.</p>' : '');
   }
   function pictureBlock(s) {
     if (!s.pictures.length) return '<div class="ce-group"><h3>Pictures</h3><p class="ce-note">This scene is carried by its words and colour.</p>' + addRow(s) + '</div>';
@@ -328,6 +334,8 @@
     var el = e.target; if (!el.dataset || !el.dataset.ce || !qs('#creativeEditor').contains(el)) return; var s = sceneOf(ED.scene); var k = el.dataset.ce;
     if (k === 'upload') { upload(el.files && el.files[0], { sceneId: s.id, layerId: el.dataset.layer }); return; }
     if (k === 'upload-after') { upload(el.files && el.files[0], { after: s.id }); return; }
+    if (k === 'upload-into') { upload(el.files && el.files[0], { into: s.id }); return; }
+    if (k === 'place-into' && el.value) { edit({ type: 'picture-add', sceneId: s.id, assetId: el.value }); return; }
     if (k === 'place-after' && el.value) { edit({ type: 'picture-scene', sceneId: s.id, assetId: el.value }); return; }
     if (k === 'replace' && el.value) { edit({ type: 'picture-replace', sceneId: s.id, layerId: el.dataset.layer, assetId: el.value }); return; }
     if (k === 'composition' && el.value) { edit({ type: 'composition', sceneId: s.id, composition: el.value }); return; }

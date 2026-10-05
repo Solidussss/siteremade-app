@@ -178,7 +178,7 @@ app.whenReady().then(async () => {
       const n0 = await js('document.querySelectorAll(".ce-scene").length');
       await js('document.querySelectorAll(".ce-scene")[1].click(); true'); await sleep(300);
       const add = await js('(() => { const i = document.querySelector(\'[data-ce="upload-after"]\'); const l = i && i.closest("label"); if (!l) return null; l.scrollIntoView({ block: "center" }); const r = l.getBoundingClientRect(); return { h: r.height, inside: r.left >= 0 && r.right <= innerWidth + 0.5, text: l.textContent.trim() }; })()');
-      steps.push(['"+ Add a picture" shown under the scene\'s pictures, touch-sized, on screen', !!add && add.h >= 43.5 && add.inside && /Add a picture/.test(add.text)]);
+      steps.push(['"+ Add as a new scene" shown under the scene\'s pictures, touch-sized, on screen', !!add && add.h >= 43.5 && add.inside && /new scene/.test(add.text)]);
       await sleep(300); await shot('6-add-picture');
       await js(`(async () => { const c = document.createElement('canvas'); c.width = 1200; c.height = 800; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 1200, 800); gr.addColorStop(0, '#d0342c'); gr.addColorStop(1, '#f7c948'); g.fillStyle = gr; g.fillRect(0, 0, 1200, 800);
         const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9)); const dt = new DataTransfer(); dt.items.add(new File([b], 'summer-launch.jpg', { type: 'image/jpeg' }));
@@ -186,6 +186,18 @@ app.whenReady().then(async () => {
       steps.push(['the picture is on the page as a new scene, saved as a draft for free', await until('/new scene/.test(document.querySelector("#ceFeedback").textContent) && /No credits were used/.test(document.querySelector("#ceFeedback").textContent)', 60000)]);
       steps.push(['the outline has one more scene', await until(`document.querySelectorAll(".ce-scene").length === ${n0} + 1`, 20000)]);
       out.widths[width].addPictureFeedback = (await js('document.querySelector("#ceFeedback").textContent')).slice(0, 300);
+      // ADD A PICTURE TO THIS SCENE: the upload goes into the chosen scene beside its words -- no new scene
+      await sleep(600); const n1 = await js('document.querySelectorAll(".ce-scene").length');
+      await js('document.querySelectorAll(".ce-scene")[2].click(); true'); await sleep(400);
+      const into = await js('(() => { const i = document.querySelector(\'[data-ce="upload-into"]\'); const l = i && i.closest("label"); if (!l) return null; l.scrollIntoView({ block: "center" }); const r = l.getBoundingClientRect(); return { h: r.height, inside: r.left >= 0 && r.right <= innerWidth + 0.5, text: l.textContent.trim() }; })()');
+      steps.push(['"+ Add a picture to this scene" shown, touch-sized, on screen', !!into && into.h >= 43.5 && into.inside && /to this scene/.test(into.text)]);
+      await sleep(300); await shot('7b-add-into');
+      await js(`(async () => { const c = document.createElement('canvas'); c.width = 1000; c.height = 1200; const g = c.getContext('2d'); g.fillStyle = '#2f6bff'; g.fillRect(0, 0, 1000, 1200); g.fillStyle = '#fff'; g.fillRect(300, 300, 400, 600);
+        const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9)); const dt = new DataTransfer(); dt.items.add(new File([b], 'in-the-scene.jpg', { type: 'image/jpeg' }));
+        const i = document.querySelector('[data-ce="upload-into"]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      steps.push(['the picture is in that scene, saved as a draft for free', await until('/Added your picture to/.test(document.querySelector("#ceFeedback").textContent) && /No credits were used/.test(document.querySelector("#ceFeedback").textContent)', 60000)]);
+      await sleep(800); steps.push(['no new scene', (await js('document.querySelectorAll(".ce-scene").length')) === n1]);
+      steps.push(['the scene lists the picture', await until('[...document.querySelectorAll("#creativeEditor .ce-item .ce-label")].some(e => /in-the-scene/.test(e.textContent))', 15000)]);
       await sleep(600); await shot('7-picture-added');
       out.widths[width].overflowAtEnd = await overflow();
       out.widths[width].tapTargetsUnder44 = await js('[...document.querySelectorAll("#creativeEditor button, #creativeEditor select, #creativeEditor .ce-file")].filter(e => e.offsetParent && e.getBoundingClientRect().height < 43.5).map(e => e.textContent.trim().slice(0, 30))');
